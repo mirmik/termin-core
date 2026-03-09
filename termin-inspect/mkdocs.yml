@@ -1,0 +1,29 @@
+site_name: termin-inspect
+site_description: Inspect/Kind library documentation for Termin
+repo_url: https://github.com/mirmik/termin-inspect
+repo_name: mirmik/termin-inspect
+theme:
+  name: material
+  language: ru
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+nav:
+  - Главная: index.md
+  - Быстрый старт: getting-started.md
+  - Архитектура: architecture.md
+  - Inspect Dispatcher: inspect-dispatcher.md
+  - Kind System: kind-system.md
+  - C++ API: cpp-api.md
+  - Наследование: inheritance.md
+  - Python bridge: python-bridge.md
+  - Интеграция: integration.md
+  - API Reference: api.md
+  - Ограничения и gotchas: gotchas.md

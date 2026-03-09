@@ -1,0 +1,27 @@
+include_guard(GLOBAL)
+
+include("${CMAKE_CURRENT_LIST_DIR}/../../nanobind/cmake/nanobind-config.cmake")
+
+if(NOT TARGET nanobind)
+    add_library(nanobind SHARED IMPORTED GLOBAL)
+
+    set(_nanobind_root "${CMAKE_CURRENT_LIST_DIR}/../../nanobind")
+    set(_nanobind_lib_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
+
+    if(WIN32)
+        set_target_properties(nanobind PROPERTIES
+            IMPORTED_LOCATION "${_nanobind_lib_dir}/nanobind.dll"
+            IMPORTED_IMPLIB "${_nanobind_lib_dir}/nanobind.lib"
+            INTERFACE_COMPILE_DEFINITIONS "NB_SHARED"
+            INTERFACE_INCLUDE_DIRECTORIES "${_nanobind_root}/include;${_nanobind_root}/ext/robin_map/include"
+            INTERFACE_LINK_LIBRARIES "Python::Module"
+        )
+    else()
+        set_target_properties(nanobind PROPERTIES
+            IMPORTED_LOCATION "${_nanobind_lib_dir}/libnanobind.so"
+            INTERFACE_COMPILE_DEFINITIONS "NB_SHARED"
+            INTERFACE_INCLUDE_DIRECTORIES "${_nanobind_root}/include;${_nanobind_root}/ext/robin_map/include"
+            INTERFACE_LINK_LIBRARIES "Python::Module"
+        )
+    endif()
+endif()
