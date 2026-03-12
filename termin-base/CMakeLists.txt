@@ -11,6 +11,7 @@ option(TERMIN_BASE_BUILD_TESTS "Build termin-base tests" ON)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 add_library(termin_base SHARED
     src/tc_log.c
+    src/tc_profiler.c
     src/tc_value.c
     src/tc_pool.c
     src/tc_resource_map.c
@@ -69,6 +70,11 @@ install(DIRECTORY include/tcbase
 )
 
 install(DIRECTORY include/termin
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(FILES
+    include/tc_profiler.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
