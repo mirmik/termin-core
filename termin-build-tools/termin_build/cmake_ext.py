@@ -40,7 +40,7 @@ def get_sdk_prefix():
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
         return Path(base) / "termin-sdk"
-    return Path("/opt/termin")
+    return None
 
 
 def copytree(src, dst):
