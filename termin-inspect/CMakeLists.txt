@@ -149,10 +149,6 @@ if(TERMIN_BUILD_PYTHON AND nanobind_FOUND)
     else()
         install(TARGETS _inspect_native DESTINATION lib/python/termin/inspect)
     endif()
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python/termin/inspect/
-        DESTINATION lib/python/termin/inspect
-        FILES_MATCHING PATTERN "*.py"
-    )
 endif()
 
 if(TI_BUILD_TESTS)
