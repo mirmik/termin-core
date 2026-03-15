@@ -45,6 +45,9 @@ set(TI_PY_HEADERS
 
 find_package(termin_base REQUIRED)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
+include(TerminRpath)
+
 if(TERMIN_BUILD_PYTHON)
     if(NOT Python_EXECUTABLE)
         if(WIN32)
@@ -138,11 +141,7 @@ if(TERMIN_BUILD_PYTHON AND nanobind_FOUND)
     )
     target_link_libraries(_inspect_native PRIVATE termin_inspect_python)
 
-    set(TI_PY_RPATH "$ORIGIN;$ORIGIN/..;$ORIGIN/../..;$ORIGIN/../../..")
-    set_target_properties(_inspect_native PROPERTIES
-        INSTALL_RPATH "${TI_PY_RPATH}"
-        BUILD_WITH_INSTALL_RPATH TRUE
-    )
+    termin_set_rpath_python(_inspect_native)
 
     if(TI_PYTHON_PREFIX)
         install(TARGETS _inspect_native DESTINATION ${TI_PYTHON_PREFIX}/inspect)
