@@ -10,6 +10,13 @@ import sys
 import os
 
 
+def _copytree(src, dst):
+    if dst.exists():
+        shutil.rmtree(dst)
+    follow = sys.platform == "win32"
+    shutil.copytree(src, dst, symlinks=not follow)
+
+
 def _split_prefix_path(raw):
     if not raw:
         return []
@@ -89,11 +96,20 @@ class CMakeBuildExt(build_ext):
         ext_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(built_module, ext_path)
 
+        # Bundle native libraries from staging
+        build_temp = Path(self.build_temp)
+        staging_dir = (build_temp / "install").resolve()
+        ext_pkg_dir = ext_path.parent
+        if (staging_dir / "lib").exists():
+            _copytree(staging_dir / "lib", ext_pkg_dir / "lib")
+
         # Also copy to source tree so build_py picks them up
         source_dir = Path(directory)
         pkg_dir = source_dir / "python" / "tcbase"
         pkg_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(built_module, pkg_dir / built_module.name)
+        if (staging_dir / "lib").exists():
+            _copytree(staging_dir / "lib", pkg_dir / "lib")
 
 
 directory = os.path.dirname(os.path.realpath(__file__))
@@ -112,6 +128,10 @@ setup(
         "tcbase": [
             "include/**/*.h",
             "include/**/*.hpp",
+            "lib/*.so*",
+            "*.dll",
+            "lib/*.dll",
+            "lib/*.lib",
             "lib/cmake/termin_base/*.cmake",
         ],
     },
