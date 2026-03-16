@@ -64,10 +64,10 @@ endif()
 
 if(TI_BUILD_SHARED)
     add_library(termin_inspect SHARED ${TI_SOURCES} ${TI_CPP_SOURCES} ${TI_CORE_HEADERS})
-    target_compile_definitions(termin_inspect PRIVATE TC_EXPORTS TERMIN_INSPECT_CPP_EXPORTS)
+    target_compile_definitions(termin_inspect PRIVATE TC_EXPORTS TERMIN_INSPECT_CPP_EXPORTS TERMIN_INSPECT_EXPORTS)
 else()
     add_library(termin_inspect STATIC ${TI_SOURCES} ${TI_CPP_SOURCES} ${TI_CORE_HEADERS})
-    target_compile_definitions(termin_inspect PRIVATE TERMIN_INSPECT_CPP_EXPORTS)
+    target_compile_definitions(termin_inspect PRIVATE TERMIN_INSPECT_CPP_EXPORTS TERMIN_INSPECT_EXPORTS)
 endif()
 
 add_library(termin_inspect::termin_inspect ALIAS termin_inspect)

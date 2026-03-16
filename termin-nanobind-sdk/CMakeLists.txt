@@ -12,6 +12,7 @@ execute_process(
     OUTPUT_VARIABLE NANOBIND_PY_ROOT
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+file(TO_CMAKE_PATH "${NANOBIND_PY_ROOT}" NANOBIND_PY_ROOT)
 if(NOT EXISTS "${NANOBIND_PY_ROOT}/cmake/nanobind-config.cmake")
     message(FATAL_ERROR "nanobind Python package was not found. Install it before configuring termin-nanobind-sdk.")
 endif()

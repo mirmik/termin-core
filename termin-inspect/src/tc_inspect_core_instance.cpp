@@ -6,6 +6,16 @@
 
 #include <string>
 
+#ifdef _WIN32
+    #ifdef TERMIN_INSPECT_EXPORTS
+        #define TC_INSPECT_INIT_API __declspec(dllexport)
+    #else
+        #define TC_INSPECT_INIT_API __declspec(dllimport)
+    #endif
+#else
+    #define TC_INSPECT_INIT_API
+#endif
+
 namespace tc {
 
 InspectRegistry& InspectRegistry::instance() {
@@ -87,16 +97,16 @@ void init_cpp_inspect_vtable() {
 
 extern "C" {
 
-void tc_inspect_kind_core_init(void) {
+TC_INSPECT_INIT_API void tc_inspect_kind_core_init(void) {
     tc::init_cpp_inspect_vtable();
     (void)tc::KindRegistryCpp::instance();
 }
 
-void tc_inspect_python_adapter_init(void) {
+TC_INSPECT_INIT_API void tc_inspect_python_adapter_init(void) {
     // Python adapter wiring is owned by consumer layer.
 }
 
-void tc_init_full(void) {
+TC_INSPECT_INIT_API void tc_init_full(void) {
     // Compatibility wrapper kept for legacy callers.
     // In extracted architecture this initializes inspect/kind core only.
     tc_inspect_kind_core_init();
