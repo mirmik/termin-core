@@ -33,29 +33,18 @@ static tc_value cpp_deserialize(const char* kind_name, const tc_value* input, vo
     (void)context;
     if (!input || !kind_name) return tc_value_nil();
 
-    // vec3: list [x, y, z] → TC_VALUE_VEC3
+    // vec3: pass-through list [x, y, z]
     if (strcmp(kind_name, "vec3") == 0) {
-        if (input->type == TC_VALUE_VEC3) return tc_value_copy(input);
         if (input->type == TC_VALUE_LIST && input->data.list.count >= 3) {
-            tc_vec3 v;
-            v.x = tc_value_to_double(&input->data.list.items[0]);
-            v.y = tc_value_to_double(&input->data.list.items[1]);
-            v.z = tc_value_to_double(&input->data.list.items[2]);
-            return tc_value_vec3(v);
+            return tc_value_copy(input);
         }
         return tc_value_nil();
     }
 
-    // quat: list [w, x, y, z] → TC_VALUE_QUAT
+    // quat: pass-through list [w, x, y, z]
     if (strcmp(kind_name, "quat") == 0) {
-        if (input->type == TC_VALUE_QUAT) return tc_value_copy(input);
         if (input->type == TC_VALUE_LIST && input->data.list.count >= 4) {
-            tc_quat q;
-            q.w = tc_value_to_double(&input->data.list.items[0]);
-            q.x = tc_value_to_double(&input->data.list.items[1]);
-            q.y = tc_value_to_double(&input->data.list.items[2]);
-            q.z = tc_value_to_double(&input->data.list.items[3]);
-            return tc_value_quat(q);
+            return tc_value_copy(input);
         }
         return tc_value_nil();
     }

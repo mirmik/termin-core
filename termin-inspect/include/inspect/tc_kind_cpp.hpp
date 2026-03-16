@@ -166,18 +166,19 @@ inline void register_builtin_cpp_kinds() {
         [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
     );
 
-    // vec3 - serialized as list [x, y, z], deserialized to TC_VALUE_VEC3
+    // vec3 - serialized as list [x, y, z]
     reg.register_kind("vec3",
         [](const std::any& v) -> tc_value {
-            // Serialize: vec3 → tc_value_vec3 (tc_value_to_trent will convert to list)
             auto vec = std::any_cast<tc_vec3>(v);
-            return tc_value_vec3(vec);
+            tc_value list = tc_value_list_new();
+            tc_value_list_push(&list, tc_value_double(vec.x));
+            tc_value_list_push(&list, tc_value_double(vec.y));
+            tc_value_list_push(&list, tc_value_double(vec.z));
+            return list;
         },
         [](const tc_value* v, void*) -> std::any {
             tc_vec3 result = {0, 0, 0};
-            if (v->type == TC_VALUE_VEC3) {
-                result = v->data.v3;
-            } else if (v->type == TC_VALUE_LIST && v->data.list.count >= 3) {
+            if (v->type == TC_VALUE_LIST && v->data.list.count >= 3) {
                 result.x = tc_value_to_double(&v->data.list.items[0]);
                 result.y = tc_value_to_double(&v->data.list.items[1]);
                 result.z = tc_value_to_double(&v->data.list.items[2]);
@@ -186,16 +187,24 @@ inline void register_builtin_cpp_kinds() {
         }
     );
 
-    // quat - serialized as list [w, x, y, z], deserialized to TC_VALUE_QUAT
+    // quat - serialized as list [w, x, y, z]
     reg.register_kind("quat",
         [](const std::any& v) -> tc_value {
             auto q = std::any_cast<tc_quat>(v);
-            return tc_value_quat(q);
+            tc_value list = tc_value_list_new();
+            tc_value_list_push(&list, tc_value_double(q.w));
+            tc_value_list_push(&list, tc_value_double(q.x));
+            tc_value_list_push(&list, tc_value_double(q.y));
+            tc_value_list_push(&list, tc_value_double(q.z));
+            return list;
         },
         [](const tc_value* v, void*) -> std::any {
             tc_quat result = {0, 0, 0, 1};
-            if (v->type == TC_VALUE_QUAT) {
-                result = v->data.q;
+            if (v->type == TC_VALUE_LIST && v->data.list.count >= 4) {
+                result.w = tc_value_to_double(&v->data.list.items[0]);
+                result.x = tc_value_to_double(&v->data.list.items[1]);
+                result.y = tc_value_to_double(&v->data.list.items[2]);
+                result.z = tc_value_to_double(&v->data.list.items[3]);
             }
             return result;
         }

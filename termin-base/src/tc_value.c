@@ -70,18 +70,6 @@ tc_value tc_value_string(const char* s) {
     return val;
 }
 
-tc_value tc_value_vec3(tc_vec3 v) {
-    tc_value val = {.type = TC_VALUE_VEC3};
-    val.data.v3 = v;
-    return val;
-}
-
-tc_value tc_value_quat(tc_quat q) {
-    tc_value val = {.type = TC_VALUE_QUAT};
-    val.data.q = q;
-    return val;
-}
-
 tc_value tc_value_list_new(void) {
     tc_value val = {.type = TC_VALUE_LIST};
     val.data.list.items = NULL;
@@ -186,12 +174,6 @@ bool tc_value_equals(const tc_value* a, const tc_value* b) {
     case TC_VALUE_STRING:
         if (!a->data.s || !b->data.s) return a->data.s == b->data.s;
         return strcmp(a->data.s, b->data.s) == 0;
-    case TC_VALUE_VEC3:
-        return a->data.v3.x == b->data.v3.x && a->data.v3.y == b->data.v3.y &&
-               a->data.v3.z == b->data.v3.z;
-    case TC_VALUE_QUAT:
-        return a->data.q.x == b->data.q.x && a->data.q.y == b->data.q.y &&
-               a->data.q.z == b->data.q.z && a->data.q.w == b->data.q.w;
     case TC_VALUE_LIST:
         if (a->data.list.count != b->data.list.count) return false;
         for (size_t i = 0; i < a->data.list.count; i++) {

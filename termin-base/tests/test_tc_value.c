@@ -74,10 +74,6 @@ static int test_tc_value(void) {
     TEST_ASSERT(strcmp(v_str.data.s, "hello") == 0, "string value");
     tc_value_free(&v_str);
 
-    tc_value v_vec = tc_value_vec3((tc_vec3){1, 2, 3});
-    TEST_ASSERT(v_vec.type == TC_VALUE_VEC3, "vec3 type");
-    TEST_ASSERT(fabs(v_vec.data.v3.x - 1.0) < EPSILON, "vec3 x");
-
     tc_value list = tc_value_list_new();
     tc_value_list_push(&list, tc_value_int(1));
     tc_value_list_push(&list, tc_value_int(2));

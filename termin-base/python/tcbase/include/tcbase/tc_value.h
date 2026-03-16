@@ -18,8 +18,6 @@ typedef enum tc_value_type {
     TC_VALUE_FLOAT,
     TC_VALUE_DOUBLE,
     TC_VALUE_STRING,
-    TC_VALUE_VEC3,
-    TC_VALUE_QUAT,
     TC_VALUE_LIST,
     TC_VALUE_DICT,
 } tc_value_type;
@@ -53,8 +51,6 @@ struct tc_value {
         float f;
         double d;
         char* s;
-        tc_vec3 v3;
-        tc_quat q;
         tc_value_list list;
         tc_value_dict dict;
     } data;
@@ -66,8 +62,6 @@ TC_API tc_value tc_value_int(int64_t v);
 TC_API tc_value tc_value_float(float v);
 TC_API tc_value tc_value_double(double v);
 TC_API tc_value tc_value_string(const char* s);
-TC_API tc_value tc_value_vec3(tc_vec3 v);
-TC_API tc_value tc_value_quat(tc_quat q);
 TC_API tc_value tc_value_list_new(void);
 TC_API tc_value tc_value_dict_new(void);
 

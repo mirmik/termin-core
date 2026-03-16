@@ -31,3 +31,6 @@ if(NOT WIN32)
         INSTALL_RPATH "$ORIGIN/lib;${CMAKE_INSTALL_PREFIX}/lib"
     )
 endif()
+
+install(TARGETS _tcbase_native DESTINATION lib/python/tcbase)
+install(TARGETS _geom_native DESTINATION lib/python/tcbase)

@@ -66,25 +66,6 @@ nos::trent tc_value_to_trent(const tc_value& v) {
         case TC_VALUE_STRING:
             return nos::trent(v.data.s ? v.data.s : "");
 
-        case TC_VALUE_VEC3: {
-            nos::trent result;
-            result.init(nos::trent_type::list);
-            result.push_back(nos::trent(static_cast<double>(v.data.v3.x)));
-            result.push_back(nos::trent(static_cast<double>(v.data.v3.y)));
-            result.push_back(nos::trent(static_cast<double>(v.data.v3.z)));
-            return result;
-        }
-
-        case TC_VALUE_QUAT: {
-            nos::trent result;
-            result.init(nos::trent_type::list);
-            result.push_back(nos::trent(static_cast<double>(v.data.q.w)));
-            result.push_back(nos::trent(static_cast<double>(v.data.q.x)));
-            result.push_back(nos::trent(static_cast<double>(v.data.q.y)));
-            result.push_back(nos::trent(static_cast<double>(v.data.q.z)));
-            return result;
-        }
-
         case TC_VALUE_LIST: {
             nos::trent result;
             result.init(nos::trent_type::list);

@@ -70,19 +70,6 @@ inline tc_value nb_to_tc_value(nb::object obj) {
         return dict;
     }
 
-    // Try numpy array / vec3-like
-    if (nb::hasattr(obj, "__len__") && nb::len(obj) == 3) {
-        try {
-            nb::list lst = nb::cast<nb::list>(obj);
-            tc_vec3 v = {
-                nb::cast<double>(lst[0]),
-                nb::cast<double>(lst[1]),
-                nb::cast<double>(lst[2])
-            };
-            return tc_value_vec3(v);
-        } catch (...) {}
-    }
-
     // Fallback: try tolist() for numpy
     if (nb::hasattr(obj, "tolist")) {
         return nb_to_tc_value(obj.attr("tolist")());
@@ -113,23 +100,6 @@ inline nb::object tc_value_to_nb(const tc_value* v) {
     case TC_VALUE_STRING:
         if (v->data.s) return nb::str(v->data.s);
         return nb::none();
-
-    case TC_VALUE_VEC3: {
-        nb::list lst;
-        lst.append(v->data.v3.x);
-        lst.append(v->data.v3.y);
-        lst.append(v->data.v3.z);
-        return lst;
-    }
-
-    case TC_VALUE_QUAT: {
-        nb::list lst;
-        lst.append(v->data.q.x);
-        lst.append(v->data.q.y);
-        lst.append(v->data.q.z);
-        lst.append(v->data.q.w);
-        return lst;
-    }
 
     case TC_VALUE_LIST: {
         nb::list lst;
