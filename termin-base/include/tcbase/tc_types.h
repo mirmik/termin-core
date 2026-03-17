@@ -14,8 +14,17 @@ extern "C" {
 #endif
 
 // Backward-compatible export macro used by existing C APIs.
+// Each library that exposes TC_API symbols defines TC_EXPORTS when building.
 #ifndef TC_API
-#define TC_API TCBASE_API
+    #ifdef _WIN32
+        #ifdef TC_EXPORTS
+            #define TC_API __declspec(dllexport)
+        #else
+            #define TC_API __declspec(dllimport)
+        #endif
+    #else
+        #define TC_API
+    #endif
 #endif
 
 typedef struct tc_vec3 {

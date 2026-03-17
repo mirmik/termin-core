@@ -34,7 +34,7 @@ target_include_directories(termin_base PUBLIC
     $<INSTALL_INTERFACE:include/tcbase>
 )
 
-target_compile_definitions(termin_base PRIVATE TCBASE_EXPORTS)
+target_compile_definitions(termin_base PRIVATE TCBASE_EXPORTS TC_EXPORTS)
 
 # Python bindings
 option(TERMIN_BUILD_PYTHON "Build Python bindings" OFF)
@@ -62,7 +62,7 @@ install(TARGETS termin_base
     EXPORT termin_baseTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
 install(DIRECTORY include/tcbase
