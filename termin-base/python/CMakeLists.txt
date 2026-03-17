@@ -34,3 +34,9 @@ endif()
 
 install(TARGETS _tcbase_native DESTINATION lib/python/tcbase)
 install(TARGETS _geom_native DESTINATION lib/python/tcbase)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tcbase/
+    DESTINATION lib/python/tcbase
+    PATTERN "__pycache__" EXCLUDE
+    PATTERN "*.pyc" EXCLUDE
+    PATTERN "include" EXCLUDE
+)
