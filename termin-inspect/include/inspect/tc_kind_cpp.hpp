@@ -2,6 +2,11 @@
 // Works standalone without Python. Python support is in tc_kind_python.hpp.
 #pragma once
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251) // STL members in dllexport classes
+#endif
+
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -216,3 +221,7 @@ template<typename H>
 void register_cpp_handle_kind(const std::string& kind_name);
 
 } // namespace tc
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

@@ -3,6 +3,11 @@
 // Use tc_inspect.hpp if you need Python interop.
 #pragma once
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251) // STL members in dllexport classes
+#endif
+
 #include "inspect/tc_inspect.h"
 #include <tcbase/tc_log.h>
 #include <string>
@@ -179,7 +184,7 @@ public:
             if (val.has_value()) {
                 try {
                     static_cast<C*>(obj)->*member = std::any_cast<T>(val);
-                } catch (const std::bad_any_cast& e) {
+                } catch (const std::bad_any_cast&) {
                     tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
                                    "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
                                    type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
@@ -227,7 +232,7 @@ public:
             if (val.has_value()) {
                 try {
                     setter_fn(static_cast<C*>(obj), std::any_cast<T>(val));
-                } catch (const std::bad_any_cast& e) {
+                } catch (const std::bad_any_cast&) {
                     tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
                                    "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
                                    type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
@@ -268,7 +273,7 @@ public:
             if (val.has_value()) {
                 try {
                     setter_fn(static_cast<C*>(obj), std::any_cast<T>(val));
-                } catch (const std::bad_any_cast& e) {
+                } catch (const std::bad_any_cast&) {
                     tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
                                    "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
                                    type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
@@ -305,7 +310,7 @@ public:
             if (val.has_value()) {
                 try {
                     static_cast<C*>(obj)->*member = std::any_cast<H>(val);
-                } catch (const std::bad_any_cast& e) {
+                } catch (const std::bad_any_cast&) {
                     tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
                                    "Check that field type matches kind",
                                    type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
@@ -551,7 +556,7 @@ struct InspectFieldChoicesRegistrar {
             if (val.has_value()) {
                 try {
                     static_cast<C*>(obj)->*member = std::any_cast<T>(val);
-                } catch (const std::bad_any_cast& e) {
+                } catch (const std::bad_any_cast&) {
                     tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
                                    "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
                                    type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
@@ -637,3 +642,7 @@ struct InspectButtonRegistrar {
                 auto* self = static_cast<cls*>(obj); \
                 if (self) (self->*method)(); \
             }};
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
