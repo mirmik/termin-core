@@ -140,7 +140,14 @@ class TerminCMakeBuildExt(build_ext):
     def _bundle_to_dir(self, staging_dir, target_dir):
         """Copy staging libs and upstream libs into target_dir."""
         if self.bundle_libs and (staging_dir / "lib").exists():
-            copytree(staging_dir / "lib", target_dir / "lib")
+            dst_lib = target_dir / "lib"
+            if dst_lib.exists():
+                shutil.rmtree(dst_lib)
+            shutil.copytree(
+                staging_dir / "lib", dst_lib,
+                symlinks=(sys.platform != "win32"),
+                ignore=shutil.ignore_patterns("python"),
+            )
 
         if self.bundle_includes and (staging_dir / "include").exists():
             copytree(staging_dir / "include", target_dir / "include")
