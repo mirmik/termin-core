@@ -54,8 +54,8 @@ struct InspectFieldInfo {
     std::string path;
     std::string label;
     std::string kind;
-    double min = 0.0;
-    double max = 1.0;
+    double min = -1e9;
+    double max = 1e9;
     double step = 0.01;
     bool is_serializable = true;
     bool is_inspectable = true;
@@ -204,8 +204,8 @@ public:
         const char* kind_str,
         std::function<T&(C*)> getter_fn,
         std::function<void(C*, const T&)> setter_fn,
-        double min_val = 0.0,
-        double max_val = 1.0,
+        double min_val = -1e9,
+        double max_val = 1e9,
         double step_val = 0.01
     ) {
         InspectFieldInfo info;
@@ -495,7 +495,7 @@ template<typename C, typename T>
 struct InspectFieldRegistrar {
     InspectFieldRegistrar(T C::*member, const char* type_name,
                           const char* path, const char* label, const char* kind,
-                          double min = 0.0, double max = 1.0, double step = 0.01) {
+                          double min = -1e9, double max = 1e9, double step = 0.01) {
         InspectRegistry::instance().add<C, T>(type_name, member, path, label, kind, min, max, step);
     }
 };
@@ -509,8 +509,8 @@ struct InspectFieldCallbackRegistrar {
         const char* kind,
         std::function<T&(C*)> getter,
         std::function<void(C*, const T&)> setter,
-        double min_val = 0.0,
-        double max_val = 1.0,
+        double min_val = -1e9,
+        double max_val = 1e9,
         double step_val = 0.01
     ) {
         InspectRegistry::instance().add_with_callbacks<C, T>(
