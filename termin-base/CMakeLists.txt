@@ -47,6 +47,7 @@ if(TERMIN_BASE_BUILD_TESTS)
     enable_testing()
 
     add_executable(termin_base_value_test tests/test_tc_value.c)
+    set_target_properties(termin_base_value_test PROPERTIES LINKER_LANGUAGE CXX)
     target_link_libraries(termin_base_value_test PRIVATE termin_base)
     if(UNIX AND NOT APPLE)
         target_link_libraries(termin_base_value_test PRIVATE m)
