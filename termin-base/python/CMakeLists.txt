@@ -39,4 +39,5 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tcbase/
     PATTERN "__pycache__" EXCLUDE
     PATTERN "*.pyc" EXCLUDE
     PATTERN "include" EXCLUDE
+    PATTERN "lib" EXCLUDE
 )

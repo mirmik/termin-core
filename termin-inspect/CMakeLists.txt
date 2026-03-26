@@ -153,6 +153,7 @@ if(TERMIN_BUILD_PYTHON AND nanobind_FOUND)
         DESTINATION lib/python/termin/inspect
         PATTERN "__pycache__" EXCLUDE
         PATTERN "*.pyc" EXCLUDE
+        PATTERN "lib" EXCLUDE
     )
 endif()
 

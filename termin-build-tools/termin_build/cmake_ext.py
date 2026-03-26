@@ -169,11 +169,6 @@ class TerminCMakeBuildExt(build_ext):
         if self.bundle_includes and (staging_dir / "include").exists():
             copytree(staging_dir / "include", target_dir / "include")
 
-        for pkg_name, lib_prefix in self.upstream_packages.items():
-            pkg_dir = self._find_package_dir(pkg_name)
-            if pkg_dir:
-                copy_upstream_libs(pkg_dir / "lib", target_dir / "lib", lib_prefix)
-
         if sys.platform == "win32" and (staging_dir / "lib").exists():
             for dll in (staging_dir / "lib").glob("*.dll"):
                 shutil.copy2(dll, target_dir / dll.name)
@@ -228,6 +223,41 @@ class TerminCMakeBuildExt(build_ext):
         self._staging_dir = staging_dir
         self._cmake_ready = True
 
+    def _compute_upstream_rpaths(self, ext_name):
+        """Compute RPATH entries from ext module to upstream package lib/ dirs.
+
+        All pip packages land in one site-packages/ dir, so relative paths
+        are predictable from the package structure:
+          ext at site-packages/termin/scene/_scene_native.so
+          upstream at site-packages/tcbase/lib/
+          relative: ../../tcbase/lib
+        """
+        # Depth of the ext module below site-packages
+        # e.g. "termin.scene._scene_native" → ["termin", "scene"] → depth 2
+        parts = ext_name.rsplit(".", 1)[0].split(".")  # package parts
+        up = "/".join(".." for _ in parts)  # e.g. "../.."
+
+        rpaths = ["$ORIGIN/lib"]
+        for pkg_name in self.upstream_packages:
+            # pkg_name like "tcbase" → "tcbase/lib"
+            # pkg_name like "termin.inspect" → "termin/inspect/lib"
+            pkg_path = pkg_name.replace(".", "/")
+            rpaths.append(f"$ORIGIN/{up}/{pkg_path}/lib")
+        return rpaths
+
+    def _patch_rpath(self, so_path, rpaths):
+        """Set RPATH on a shared object using patchelf."""
+        if sys.platform == "win32":
+            return
+        rpath_str = ":".join(rpaths)
+        try:
+            subprocess.check_call(
+                ["patchelf", "--set-rpath", rpath_str, str(so_path)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
+
     def build_extension(self, ext):
         self._ensure_cmake_build()
 
@@ -242,6 +272,18 @@ class TerminCMakeBuildExt(build_ext):
 
         ext_pkg_dir = ext_path.parent
         self._bundle_to_dir(self._staging_dir, ext_pkg_dir)
+
+        # Patch RPATH to find upstream libs without bundling them
+        rpaths = self._compute_upstream_rpaths(ext.name)
+        self._patch_rpath(ext_path, rpaths)
+
+        # Also patch bundled libs in lib/ (one level deeper)
+        lib_dir = ext_pkg_dir / "lib"
+        if lib_dir.exists():
+            lib_rpaths = ["$ORIGIN"] + [f"../{r[len('$ORIGIN/'):]}" for r in rpaths if r.startswith("$ORIGIN/") and r != "$ORIGIN/lib"]
+            for so in lib_dir.glob("*.so*"):
+                if so.is_file() and not so.is_symlink():
+                    self._patch_rpath(so, lib_rpaths)
 
         # Also copy to source tree so build_py picks them up
         source_dir = self._get_source_dir()
