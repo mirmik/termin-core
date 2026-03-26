@@ -108,6 +108,26 @@ class TerminCMakeBuildExt(build_ext):
             return Path(self.source_dir)
         return Path.cwd()
 
+    @staticmethod
+    def _find_package_dir(pkg_name):
+        """Find installed package directory by import or site-packages scan."""
+        try:
+            mod = importlib.import_module(pkg_name)
+            return Path(mod.__file__).parent
+        except Exception:
+            pass
+        # Fallback: scan site-packages for namespace subpackages
+        # whose parent __init__.py may fail to import
+        try:
+            import site
+            for sp in site.getsitepackages() + [site.getusersitepackages()]:
+                candidate = Path(sp) / pkg_name.replace(".", "/")
+                if candidate.is_dir():
+                    return candidate
+        except Exception:
+            pass
+        return None
+
     def _find_built_module(self, build_temp, cfg, module_name, staging_dir=None):
         patterns = [f"{module_name}.*.so", f"{module_name}.*.pyd", f"{module_name}.pyd"]
         built_files = []
@@ -128,12 +148,9 @@ class TerminCMakeBuildExt(build_ext):
             paths.append(str(sdk))
 
         for pkg_name in self.upstream_packages:
-            try:
-                mod = importlib.import_module(pkg_name)
-                pkg_dir = str(Path(mod.__file__).parent)
-                paths.append(pkg_dir)
-            except ImportError:
-                pass
+            pkg_dir = self._find_package_dir(pkg_name)
+            if pkg_dir:
+                paths.append(str(pkg_dir))
 
         return paths
 
@@ -153,12 +170,9 @@ class TerminCMakeBuildExt(build_ext):
             copytree(staging_dir / "include", target_dir / "include")
 
         for pkg_name, lib_prefix in self.upstream_packages.items():
-            try:
-                mod = importlib.import_module(pkg_name)
-                pkg_lib_dir = Path(mod.__file__).parent / "lib"
-                copy_upstream_libs(pkg_lib_dir, target_dir / "lib", lib_prefix)
-            except ImportError:
-                pass
+            pkg_dir = self._find_package_dir(pkg_name)
+            if pkg_dir:
+                copy_upstream_libs(pkg_dir / "lib", target_dir / "lib", lib_prefix)
 
         if sys.platform == "win32" and (staging_dir / "lib").exists():
             for dll in (staging_dir / "lib").glob("*.dll"):
