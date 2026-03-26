@@ -280,15 +280,22 @@ class TerminCMakeBuildExt(build_ext):
         # Also patch bundled libs in lib/ (one level deeper)
         lib_dir = ext_pkg_dir / "lib"
         if lib_dir.exists():
-            lib_rpaths = ["$ORIGIN"] + [f"../{r[len('$ORIGIN/'):]}" for r in rpaths if r.startswith("$ORIGIN/") and r != "$ORIGIN/lib"]
+            lib_rpaths = ["$ORIGIN"] + [f"$ORIGIN/../{r[len('$ORIGIN/'):]}" for r in rpaths if r.startswith("$ORIGIN/") and r != "$ORIGIN/lib"]
             for so in lib_dir.glob("*.so*"):
                 if so.is_file() and not so.is_symlink():
                     self._patch_rpath(so, lib_rpaths)
 
-        # Also copy to source tree so build_py picks them up
+        # Copy native module + metadata to source tree so build_py picks them up
         source_dir = self._get_source_dir()
         pkg_name = ext.name.rsplit(".", 1)[0]
         src_pkg_dir = source_dir / "python" / pkg_name
         if src_pkg_dir.exists():
             shutil.copy2(built_module, src_pkg_dir / built_module.name)
-            self._bundle_to_dir(self._staging_dir, src_pkg_dir)
+            # Copy includes and cmake configs (but not libs — those stay in build dir only)
+            if self.bundle_includes and (self._staging_dir / "include").exists():
+                copytree(self._staging_dir / "include", src_pkg_dir / "include")
+            staging_cmake = self._staging_dir / "lib" / "cmake"
+            if staging_cmake.exists():
+                dst_cmake = src_pkg_dir / "lib" / "cmake"
+                dst_cmake.parent.mkdir(parents=True, exist_ok=True)
+                copytree(staging_cmake, dst_cmake)

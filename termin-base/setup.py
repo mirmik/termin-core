@@ -11,6 +11,7 @@ _DIR = os.path.dirname(os.path.realpath(__file__))
 class BuildExt(TerminCMakeBuildExt):
     module_names = ["_tcbase_native", "_geom_native"]
     upstream_packages = {"termin_nanobind": "libnanobind"}
+    bundle_includes = True
     source_dir = _DIR
 
 
@@ -26,6 +27,8 @@ setup(
     package_dir={"tcbase": "python/tcbase"},
     package_data={
         "tcbase": [
+            "include/*.h",
+            "include/*.hpp",
             "include/**/*.h",
             "include/**/*.hpp",
             "lib/*.so*",
