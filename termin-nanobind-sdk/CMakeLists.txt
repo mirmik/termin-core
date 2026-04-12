@@ -43,6 +43,15 @@ install(TARGETS nanobind
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# Install the termin_nanobind Python helper package (runtime.py + __init__.py)
+# into sdk/lib/python/ so bundled-Python consumers (termin_launcher, embedded
+# editor) can import termin_nanobind.runtime the same way pip-installed users
+# do.
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python/termin_nanobind/
+    DESTINATION lib/python/termin_nanobind
+    FILES_MATCHING PATTERN "*.py"
+)
+
 install(DIRECTORY "${NANOBIND_PY_ROOT}/cmake/"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/nanobind/cmake
 )
