@@ -1,301 +1,121 @@
-"""Common CMake build extension for termin SDK pip packages.
+"""Thin build extension for termin pip packages.
+
+Pip-path architecture: native shared libraries and nanobind binding modules
+live in a separately-built SDK ($TERMIN_SDK, /opt/termin, or
+%LOCALAPPDATA%/termin-sdk). This extension does NOT invoke CMake; it locates
+pre-built binding .so files in the SDK and copies them into the pip package.
 
 Usage in setup.py:
 
     from termin_build.cmake_ext import TerminCMakeBuild, TerminCMakeBuildExt
 
     class BuildExt(TerminCMakeBuildExt):
-        module_names = ["_tgfx_native"]
-        upstream_packages = {"tcbase": "libtermin_base", "tmesh": "libtermin_mesh"}
+        module_names = ["_display_native", "_viewport_native"]
+        source_dir = _DIR
 
     setup(
         ...
+        ext_modules=[
+            Extension("termin.display._display_native", sources=[]),
+            Extension("termin.viewport._viewport_native", sources=[]),
+        ],
         cmdclass={"build": TerminCMakeBuild, "build_ext": BuildExt},
     )
+
+The class names `TerminCMakeBuild` / `TerminCMakeBuildExt` are kept for
+backward compatibility with existing subproject setup.py files; the class no
+longer runs CMake.
 """
 
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build import build as _build
 from pathlib import Path
-import importlib
-import shutil
-import subprocess
-import sys
 import os
+import shutil
+import sys
 
 
-def split_prefix_path(raw):
-    """Normalize CMAKE_PREFIX_PATH from environment."""
-    if not raw:
-        return []
-    normalized = raw.replace(";", os.pathsep)
-    return [p for p in normalized.split(os.pathsep) if p]
-
-
-def get_sdk_prefix():
-    """Resolve SDK prefix for finding dependencies."""
-    override = os.environ.get("TERMIN_SDK_PREFIX")
-    if override:
-        return Path(override)
+def _find_sdk():
+    env = os.environ.get("TERMIN_SDK")
+    if env:
+        p = Path(env)
+        if (p / "lib").is_dir():
+            return p
     if sys.platform == "win32":
-        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
-        return Path(base) / "termin-sdk"
+        local = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
+        default = Path(local) / "termin-sdk"
+    else:
+        default = Path("/opt/termin")
+    if (default / "lib").is_dir():
+        return default
     return None
 
 
-def copytree(src, dst):
-    """Recursively copy directory, handling symlinks per-platform."""
-    if dst.exists():
-        shutil.rmtree(dst)
-    follow = sys.platform == "win32"
-    shutil.copytree(src, dst, symlinks=not follow)
-
-
-def copy_upstream_libs(src_lib_dir, dst_lib_dir, name_prefix):
-    """Copy shared libraries matching name_prefix from src to dst."""
-    if not src_lib_dir.exists():
-        return
-    dst_lib_dir.mkdir(parents=True, exist_ok=True)
-
-    if sys.platform == "win32":
-        for f in src_lib_dir.glob(f"{name_prefix}*.dll"):
-            shutil.copy2(f, dst_lib_dir / f.name)
-        for f in src_lib_dir.glob(f"{name_prefix}*.lib"):
-            shutil.copy2(f, dst_lib_dir / f.name)
-    else:
-        # Copy real files first, then symlinks
-        for f in sorted(src_lib_dir.glob(f"{name_prefix}*.so*")):
-            dst = dst_lib_dir / f.name
-            if f.is_file() and not f.is_symlink():
-                shutil.copy2(f, dst)
-        for f in sorted(src_lib_dir.glob(f"{name_prefix}*.so*")):
-            dst = dst_lib_dir / f.name
-            if f.is_symlink():
-                if dst.exists() or dst.is_symlink():
-                    dst.unlink()
-                dst.symlink_to(os.readlink(f))
-
-
 class TerminCMakeBuild(_build):
-    """Hook build_ext to run before build_py."""
+    """Ensure build_ext runs before build_py so .so files land in the wheel."""
     def run(self):
         self.run_command("build_ext")
         super().run()
 
 
 class TerminCMakeBuildExt(build_ext):
-    """Base class for CMake-based build extensions.
+    """Copy pre-built binding modules from $TERMIN_SDK into the pip package.
 
     Subclasses must set:
-        module_names: list of native module names (e.g. ["_tgfx_native"])
-        source_dir: Path to the project root (default: auto-detected)
-
-    Subclasses may set:
-        upstream_packages: dict mapping pip package name to lib prefix
-            e.g. {"tcbase": "libtermin_base", "tmesh": "libtermin_mesh"}
-        bundle_libs: whether to bundle native libs into the pip package (default: True)
-        bundle_includes: whether to bundle include/ dir (default: False)
+        module_names: list of binding base names (e.g. ["_display_native"]).
+        source_dir: absolute path to the setup.py directory.
     """
 
     module_names = []
-    upstream_packages = {}
-    bundle_libs = True
-    bundle_includes = False
     source_dir = None
+    # Legacy knobs kept for compatibility; ignored in thin mode.
+    upstream_packages = {}
+    bundle_libs = False
+    bundle_includes = False
 
     def _get_source_dir(self):
-        if self.source_dir:
-            return Path(self.source_dir)
-        return Path.cwd()
+        return Path(self.source_dir) if self.source_dir else Path.cwd()
 
-    @staticmethod
-    def _find_package_dir(pkg_name):
-        """Find installed package directory by import or site-packages scan."""
-        try:
-            mod = importlib.import_module(pkg_name)
-            return Path(mod.__file__).parent
-        except Exception:
-            pass
-        # Fallback: scan site-packages for namespace subpackages
-        # whose parent __init__.py may fail to import
-        try:
-            import site
-            for sp in site.getsitepackages() + [site.getusersitepackages()]:
-                candidate = Path(sp) / pkg_name.replace(".", "/")
-                if candidate.is_dir():
-                    return candidate
-        except Exception:
-            pass
-        return None
+    def _sdk(self):
+        sdk = _find_sdk()
+        if sdk is None:
+            raise RuntimeError(
+                "termin SDK not found. Set TERMIN_SDK or install to /opt/termin."
+            )
+        return sdk
 
-    def _find_built_module(self, build_temp, cfg, module_name, staging_dir=None):
+    def _find_sdk_module(self, sdk, pkg_dotted_path, module_name):
+        """Locate a built binding .so inside the SDK python tree."""
+        pkg_fs_path = pkg_dotted_path.replace(".", "/")
+        search_dir = sdk / "lib" / "python" / pkg_fs_path
+        if not search_dir.is_dir():
+            raise RuntimeError(
+                f"SDK Python directory {search_dir} does not exist. "
+                f"Run build-sdk-bindings.sh to build the SDK."
+            )
         patterns = [f"{module_name}.*.so", f"{module_name}.*.pyd", f"{module_name}.pyd"]
-        built_files = []
-        search_dirs = [build_temp / "python", build_temp / "python" / cfg]
-        if staging_dir:
-            search_dirs.append(staging_dir)
         for pat in patterns:
-            for d in search_dirs:
-                built_files.extend(d.rglob(pat))
-        return built_files[0] if built_files else None
-
-    def _get_prefix_paths(self):
-        """Build CMAKE_PREFIX_PATH from env, SDK, and imported upstream packages."""
-        paths = split_prefix_path(os.environ.get("CMAKE_PREFIX_PATH"))
-
-        sdk = get_sdk_prefix()
-        if sdk and sdk.exists():
-            paths.append(str(sdk))
-
-        for pkg_name in self.upstream_packages:
-            pkg_dir = self._find_package_dir(pkg_name)
-            if pkg_dir:
-                paths.append(str(pkg_dir))
-
-        return paths
-
-    def _bundle_to_dir(self, staging_dir, target_dir):
-        """Copy staging libs and upstream libs into target_dir."""
-        if self.bundle_libs and (staging_dir / "lib").exists():
-            dst_lib = target_dir / "lib"
-            if dst_lib.exists():
-                shutil.rmtree(dst_lib)
-            shutil.copytree(
-                staging_dir / "lib", dst_lib,
-                symlinks=(sys.platform != "win32"),
-                ignore=shutil.ignore_patterns("python"),
-            )
-
-        if self.bundle_includes and (staging_dir / "include").exists():
-            copytree(staging_dir / "include", target_dir / "include")
-
-        if sys.platform == "win32" and (staging_dir / "lib").exists():
-            for dll in (staging_dir / "lib").glob("*.dll"):
-                shutil.copy2(dll, target_dir / dll.name)
-            if (staging_dir / "bin").exists():
-                for dll in (staging_dir / "bin").glob("*.dll"):
-                    shutil.copy2(dll, target_dir / dll.name)
-
-    def _ensure_cmake_build(self):
-        if getattr(self, "_cmake_ready", False):
-            return
-
-        source_dir = self._get_source_dir()
-        build_temp = Path(self.build_temp)
-        build_temp.mkdir(parents=True, exist_ok=True)
-
-        staging_dir = (build_temp / "install").resolve()
-        staging_dir.mkdir(parents=True, exist_ok=True)
-
-        cfg = "Debug" if self.debug else "Release"
-
-        cmake_args = [
-            str(source_dir),
-            f"-DCMAKE_BUILD_TYPE={cfg}",
-            "-DTERMIN_BUILD_PYTHON=ON",
-            f"-DPython_EXECUTABLE={sys.executable}",
-            f"-DCMAKE_INSTALL_PREFIX={staging_dir}",
-            "-DCMAKE_INSTALL_LIBDIR=lib",
-        ]
-
-        prefix_paths = self._get_prefix_paths()
-        if prefix_paths:
-            cmake_args.append(f"-DCMAKE_PREFIX_PATH={';'.join(prefix_paths)}")
-
-        subprocess.check_call(["cmake", *cmake_args], cwd=build_temp)
-        subprocess.check_call(
-            ["cmake", "--build", ".", "--config", cfg, "--parallel"],
-            cwd=build_temp,
+            matches = sorted(search_dir.glob(pat))
+            if matches:
+                return matches[0]
+        raise RuntimeError(
+            f"Cannot find binding {module_name} in {search_dir}. "
+            f"Did the SDK build succeed?"
         )
-        subprocess.check_call(
-            ["cmake", "--install", ".", "--config", cfg],
-            cwd=build_temp,
-        )
-
-        modules = {}
-        for name in self.module_names:
-            built = self._find_built_module(build_temp, cfg, name, staging_dir)
-            if not built:
-                raise RuntimeError(f"CMake build did not produce {name} module")
-            modules[name] = built
-
-        self._cmake_modules = modules
-        self._staging_dir = staging_dir
-        self._cmake_ready = True
-
-    def _compute_upstream_rpaths(self, ext_name):
-        """Compute RPATH entries from ext module to upstream package lib/ dirs.
-
-        All pip packages land in one site-packages/ dir, so relative paths
-        are predictable from the package structure:
-          ext at site-packages/termin/scene/_scene_native.so
-          upstream at site-packages/tcbase/lib/
-          relative: ../../tcbase/lib
-        """
-        # Depth of the ext module below site-packages
-        # e.g. "termin.scene._scene_native" → ["termin", "scene"] → depth 2
-        parts = ext_name.rsplit(".", 1)[0].split(".")  # package parts
-        up = "/".join(".." for _ in parts)  # e.g. "../.."
-
-        rpaths = ["$ORIGIN/lib"]
-        for pkg_name in self.upstream_packages:
-            # pkg_name like "tcbase" → "tcbase/lib"
-            # pkg_name like "termin.inspect" → "termin/inspect/lib"
-            pkg_path = pkg_name.replace(".", "/")
-            rpaths.append(f"$ORIGIN/{up}/{pkg_path}/lib")
-        return rpaths
-
-    def _patch_rpath(self, so_path, rpaths):
-        """Set RPATH on a shared object using patchelf."""
-        if sys.platform == "win32":
-            return
-        rpath_str = ":".join(rpaths)
-        try:
-            subprocess.check_call(
-                ["patchelf", "--set-rpath", rpath_str, str(so_path)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            pass
 
     def build_extension(self, ext):
-        self._ensure_cmake_build()
+        sdk = self._sdk()
+        pkg_dotted, module_name = ext.name.rsplit(".", 1)
 
-        module_name = ext.name.rsplit(".", 1)[-1]
-        built_module = self._cmake_modules.get(module_name)
-        if not built_module:
-            raise RuntimeError(f"Unknown module requested by setuptools: {module_name}")
+        built = self._find_sdk_module(sdk, pkg_dotted, module_name)
 
         ext_path = Path(self.get_ext_fullpath(ext.name))
         ext_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(built_module, ext_path)
+        shutil.copy2(built, ext_path)
 
-        ext_pkg_dir = ext_path.parent
-        self._bundle_to_dir(self._staging_dir, ext_pkg_dir)
-
-        # Patch RPATH to find upstream libs without bundling them
-        rpaths = self._compute_upstream_rpaths(ext.name)
-        self._patch_rpath(ext_path, rpaths)
-
-        # Also patch bundled libs in lib/ (one level deeper)
-        lib_dir = ext_pkg_dir / "lib"
-        if lib_dir.exists():
-            lib_rpaths = ["$ORIGIN"] + [f"$ORIGIN/../{r[len('$ORIGIN/'):]}" for r in rpaths if r.startswith("$ORIGIN/") and r != "$ORIGIN/lib"]
-            for so in lib_dir.glob("*.so*"):
-                if so.is_file() and not so.is_symlink():
-                    self._patch_rpath(so, lib_rpaths)
-
-        # Copy native module + metadata to source tree so build_py picks them up
+        # Also copy into the source tree so editable installs and build_py
+        # pick up the binding alongside the Python sources.
         source_dir = self._get_source_dir()
-        pkg_name = ext.name.rsplit(".", 1)[0]
-        src_pkg_dir = source_dir / "python" / pkg_name
+        src_pkg_dir = source_dir / "python" / pkg_dotted.replace(".", "/")
         if src_pkg_dir.exists():
-            shutil.copy2(built_module, src_pkg_dir / built_module.name)
-            # Copy includes and cmake configs (but not libs — those stay in build dir only)
-            if self.bundle_includes and (self._staging_dir / "include").exists():
-                copytree(self._staging_dir / "include", src_pkg_dir / "include")
-            staging_cmake = self._staging_dir / "lib" / "cmake"
-            if staging_cmake.exists():
-                dst_cmake = src_pkg_dir / "lib" / "cmake"
-                dst_cmake.parent.mkdir(parents=True, exist_ok=True)
-                copytree(staging_cmake, dst_cmake)
+            shutil.copy2(built, src_pkg_dir / built.name)
