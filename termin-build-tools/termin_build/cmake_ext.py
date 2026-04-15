@@ -73,6 +73,33 @@ class TerminCMakeBuildExt(build_ext):
     bundle_libs = False
     bundle_includes = False
 
+    @classmethod
+    def compute_local_version(cls, base_version):
+        # pip caches wheels by (name, version, source path). Our local source
+        # tree is stable, but the .so files we copy out of $TERMIN_SDK are
+        # not — they get rebuilt whenever C/C++ changes. Without help, pip
+        # reinstalls the stale cached wheel and the freshly-built .so never
+        # reaches site-packages. We expose the SDK state through the version
+        # string: pip then sees a different version on every SDK rebuild and
+        # invalidates its cache automatically.
+        sdk = _find_sdk()
+        if sdk is None:
+            return base_version
+        sdk_python = sdk / "lib" / "python"
+        if not sdk_python.is_dir():
+            return base_version
+        max_mtime_ns = 0
+        for so in sdk_python.rglob("*.so"):
+            try:
+                mt = so.stat().st_mtime_ns
+            except OSError:
+                continue
+            if mt > max_mtime_ns:
+                max_mtime_ns = mt
+        if max_mtime_ns == 0:
+            return base_version
+        return f"{base_version}+sdk{max_mtime_ns // 1_000_000_000}"
+
     def _get_source_dir(self):
         return Path(self.source_dir) if self.source_dir else Path.cwd()
 
