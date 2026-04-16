@@ -88,14 +88,21 @@ class TerminCMakeBuildExt(build_ext):
         sdk_python = sdk / "lib" / "python"
         if not sdk_python.is_dir():
             return base_version
+        # Scan all native binding modules regardless of platform. On
+        # Linux the binding is `.so`, on Windows `.pyd`, on macOS also
+        # `.so` (or occasionally `.dylib` for transitive deps). If we
+        # only look for `.so` the Windows path silently returns 0 and
+        # pip ends up serving a cached wheel built against the
+        # previous SDK.
         max_mtime_ns = 0
-        for so in sdk_python.rglob("*.so"):
-            try:
-                mt = so.stat().st_mtime_ns
-            except OSError:
-                continue
-            if mt > max_mtime_ns:
-                max_mtime_ns = mt
+        for pattern in ("*.so", "*.pyd", "*.dylib"):
+            for so in sdk_python.rglob(pattern):
+                try:
+                    mt = so.stat().st_mtime_ns
+                except OSError:
+                    continue
+                if mt > max_mtime_ns:
+                    max_mtime_ns = mt
         if max_mtime_ns == 0:
             return base_version
         return f"{base_version}+sdk{max_mtime_ns // 1_000_000_000}"
