@@ -191,15 +191,23 @@ struct Mat44f {
         return rotation(Quat::from_axis_angle(axis, angle));
     }
 
-    // ========== Projection matrices (Y-forward, Z-up convention) ==========
+    // ========== Projection matrices (Vulkan-native NDC) ==========
+    //
+    // Clip-space convention used uniformly across backends:
+    //   - Y+ goes DOWN (framebuffer row 0 = top, matches Vulkan native).
+    //   - Z ∈ [0, 1] (0 at near, 1 at far).
+    //
+    // OpenGL reaches the same convention via a one-time
+    // `glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE)` in OpenGLRenderDevice
+    // — see coord_system.md.
+    //
+    // Camera looks along +Y axis:
+    //   - View X  -> Clip X (right)
+    //   - View Z  -> Clip -Y (camera-up maps to top-of-framebuffer)
+    //   - View Y  -> Depth (forward)
 
     /**
-     * Perspective projection matrix.
-     *
-     * Camera looks along +Y axis:
-     *   - View X -> Screen X (right)
-     *   - View Z -> Screen Y (up)
-     *   - View Y -> Depth (forward)
+     * Perspective projection matrix (Vulkan-native, Y-down clip, Z ∈ [0,1]).
      *
      * @param fov_y  Vertical field of view in radians
      * @param aspect Aspect ratio (width / height)
@@ -210,11 +218,11 @@ struct Mat44f {
         float f = 1.0f / std::tan(fov_y * 0.5f);
         Mat44f m;
 
-        m(0, 0) = f / aspect;                           // X -> screen X
-        m(2, 1) = f;                                    // Z -> screen Y (up)
-        m(1, 2) = (far + near) / (far - near);          // Y -> depth
-        m(3, 2) = (-2.0f * far * near) / (far - near);
-        m(1, 3) = 1.0f;                                 // w = y
+        m(0, 0) = f / aspect;                 // X -> clip X
+        m(2, 1) = -f;                         // Z (cam up) -> clip -Y
+        m(1, 2) = far / (far - near);         // Y -> clip Z (0..1)
+        m(3, 2) = -(far * near) / (far - near);
+        m(1, 3) = 1.0f;                       // w = y
 
         return m;
     }
@@ -225,19 +233,19 @@ struct Mat44f {
         float fy = 1.0f / std::tan(fov_y * 0.5f);
         Mat44f m;
         m(0, 0) = fx;
-        m(2, 1) = fy;
-        m(1, 2) = (far + near) / (far - near);
-        m(3, 2) = (-2.0f * far * near) / (far - near);
+        m(2, 1) = -fy;
+        m(1, 2) = far / (far - near);
+        m(3, 2) = -(far * near) / (far - near);
         m(1, 3) = 1.0f;
         return m;
     }
 
     /**
-     * Orthographic projection matrix.
+     * Orthographic projection matrix (Vulkan-native, Y-down clip, Z ∈ [0,1]).
      *
      * Camera looks along +Y axis:
-     *   - View X -> Screen X (left/right)
-     *   - View Z -> Screen Y (bottom/top, representing up)
+     *   - View X -> Clip X (left/right)
+     *   - View Z -> Clip -Y (top/bottom, camera-up → top)
      *   - View Y -> Depth (near/far)
      */
     static Mat44f orthographic(float left, float right, float bottom, float top,
@@ -247,12 +255,12 @@ struct Mat44f {
         float fn = far - near;
 
         Mat44f m;
-        m(0, 0) = 2.0f / lr;                            // X -> screen X
-        m(2, 1) = 2.0f / tb;                            // Z -> screen Y (up)
-        m(1, 2) = 2.0f / fn;                            // Y -> depth
+        m(0, 0) = 2.0f / lr;
+        m(2, 1) = -2.0f / tb;                 // cam Z up -> clip -Y
+        m(1, 2) = 1.0f / fn;                  // cam Y -> clip Z (0..1)
         m(3, 0) = -(right + left) / lr;
-        m(3, 1) = -(top + bottom) / tb;
-        m(3, 2) = -(far + near) / fn;
+        m(3, 1) = (top + bottom) / tb;        // sign flipped for Y-down
+        m(3, 2) = -near / fn;
         m(3, 3) = 1.0f;
 
         return m;
@@ -514,13 +522,15 @@ struct Mat44 {
         return rotation(Quat::from_axis_angle(axis, angle));
     }
 
+    // Double-precision twin of Mat44f::perspective — same Vulkan-native
+    // NDC convention (clip Y-down, Z ∈ [0, 1]). See the Mat44f comment.
     static Mat44 perspective(double fov_y, double aspect, double near, double far) {
         double f = 1.0 / std::tan(fov_y * 0.5);
         Mat44 m;
         m(0, 0) = f / aspect;
-        m(2, 1) = f;
-        m(1, 2) = (far + near) / (far - near);
-        m(3, 2) = (-2.0 * far * near) / (far - near);
+        m(2, 1) = -f;
+        m(1, 2) = far / (far - near);
+        m(3, 2) = -(far * near) / (far - near);
         m(1, 3) = 1.0;
         return m;
     }
@@ -531,9 +541,9 @@ struct Mat44 {
         double fy = 1.0 / std::tan(fov_y * 0.5);
         Mat44 m;
         m(0, 0) = fx;
-        m(2, 1) = fy;
-        m(1, 2) = (far + near) / (far - near);
-        m(3, 2) = (-2.0 * far * near) / (far - near);
+        m(2, 1) = -fy;
+        m(1, 2) = far / (far - near);
+        m(3, 2) = -(far * near) / (far - near);
         m(1, 3) = 1.0;
         return m;
     }
@@ -546,11 +556,11 @@ struct Mat44 {
 
         Mat44 m;
         m(0, 0) = 2.0 / lr;
-        m(2, 1) = 2.0 / tb;
-        m(1, 2) = 2.0 / fn;
+        m(2, 1) = -2.0 / tb;
+        m(1, 2) = 1.0 / fn;
         m(3, 0) = -(right + left) / lr;
-        m(3, 1) = -(top + bottom) / tb;
-        m(3, 2) = -(far + near) / fn;
+        m(3, 1) = (top + bottom) / tb;
+        m(3, 2) = -near / fn;
         m(3, 3) = 1.0;
         return m;
     }
