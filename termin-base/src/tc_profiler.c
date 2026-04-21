@@ -1,4 +1,5 @@
 #include "tc_profiler.h"
+#include "tcbase/tc_log.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -75,7 +76,14 @@ void tc_profiler_set_detailed_rendering(bool enabled) {
 
 void tc_profiler_begin_frame(void) {
     if (!g_profiler.enabled) return;
-    if (g_profiler.current_frame != NULL) return;
+    if (g_profiler.current_frame != NULL) {
+        tc_log(TC_LOG_ERROR,
+            "tc_profiler_begin_frame: previous frame is still open "
+            "(stack_depth=%d). Nested/duplicate begin_frame call — check "
+            "the caller. The existing frame is kept.",
+            g_profiler.stack_depth);
+        return;
+    }
 
     int slot = (g_profiler.history_start + g_profiler.history_count) % PROFILER_HISTORY_SIZE;
     if (g_profiler.history_count == PROFILER_HISTORY_SIZE) {
@@ -95,7 +103,12 @@ void tc_profiler_begin_frame(void) {
 
 void tc_profiler_end_frame(void) {
     if (!g_profiler.enabled) return;
-    if (g_profiler.current_frame == NULL) return;
+    if (g_profiler.current_frame == NULL) {
+        tc_log(TC_LOG_ERROR,
+            "tc_profiler_end_frame: no frame is open. Unbalanced "
+            "begin_frame/end_frame pairing — check the caller.");
+        return;
+    }
 
     g_profiler.current_frame->total_ms = get_time_ms() - g_profiler.frame_start_time;
     g_profiler.current_frame = NULL;
@@ -124,6 +137,15 @@ static int find_or_create_section(const char* name, int parent_index) {
     }
 
     if (frame->section_count >= TC_PROFILER_MAX_SECTIONS) {
+        static int s_overflow_logged = 0;
+        if (!s_overflow_logged) {
+            tc_log(TC_LOG_WARN,
+                "tc_profiler: frame section count hit TC_PROFILER_MAX_SECTIONS=%d "
+                "(dropped section: %s). Raise the cap in tc_profiler.h or shorten "
+                "the pass list. Subsequent overflows are silenced.",
+                TC_PROFILER_MAX_SECTIONS, name);
+            s_overflow_logged = 1;
+        }
         return -1;
     }
 
@@ -158,15 +180,35 @@ static int find_or_create_section(const char* name, int parent_index) {
 void tc_profiler_begin_section(const char* name) {
     if (!g_profiler.enabled) return;
     if (g_profiler.current_frame == NULL) return;
-    if (g_profiler.stack_depth >= TC_PROFILER_MAX_DEPTH) return;
+    if (g_profiler.stack_depth >= TC_PROFILER_MAX_DEPTH) {
+        static int s_depth_logged = 0;
+        if (!s_depth_logged) {
+            tc_log(TC_LOG_WARN,
+                "tc_profiler: nesting depth exceeded TC_PROFILER_MAX_DEPTH=%d "
+                "(dropped section: %s). Raise the cap in tc_profiler.h.",
+                TC_PROFILER_MAX_DEPTH, name);
+            s_depth_logged = 1;
+        }
+        // Still push a sentinel so the paired end_section is harmless —
+        // otherwise it would pop somebody else's section off the stack
+        // and accumulate elapsed time on the wrong record.
+        if (g_profiler.stack_depth < TC_PROFILER_MAX_DEPTH * 2) {
+            g_profiler.section_stack[TC_PROFILER_MAX_DEPTH - 1] = -1;
+        }
+        g_profiler.stack_depth++;
+        return;
+    }
 
     int parent_index = (g_profiler.stack_depth > 0)
         ? g_profiler.section_stack[g_profiler.stack_depth - 1]
         : -1;
 
     int section_idx = find_or_create_section(name, parent_index);
-    if (section_idx < 0) return;
 
+    // Push even on overflow (section_idx == -1). end_section checks for
+    // the sentinel and skips accounting. Without this the begin/end pairs
+    // go out of sync and every subsequent end_section closes somebody
+    // else's section — cpu_ms values get corrupted silently.
     g_profiler.section_stack[g_profiler.stack_depth] = section_idx;
     g_profiler.section_start_times[g_profiler.stack_depth] = get_time_ms();
     g_profiler.stack_depth++;
@@ -179,6 +221,9 @@ void tc_profiler_end_section(void) {
 
     g_profiler.stack_depth--;
     int section_idx = g_profiler.section_stack[g_profiler.stack_depth];
+    // Sentinel (-1) means begin_section overflowed — skip accounting.
+    if (section_idx < 0) return;
+
     double elapsed = get_time_ms() - g_profiler.section_start_times[g_profiler.stack_depth];
 
     tc_section_timing* section = &g_profiler.current_frame->sections[section_idx];
