@@ -3,6 +3,7 @@ find_package(nanobind CONFIG REQUIRED)
 
 nanobind_add_module(_tcbase_native
     bindings/tcbase_module.cpp
+    bindings/profiler.cpp
 )
 
 target_link_libraries(_tcbase_native PRIVATE termin_base)

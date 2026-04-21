@@ -7,6 +7,8 @@
 
 namespace nb = nanobind;
 
+void bind_profiler(nb::module_& m);
+
 static nb::callable g_py_callback;
 
 static void py_log_callback_wrapper(tc_log_level level, const char* message) {
@@ -154,6 +156,12 @@ NB_MODULE(_tcbase_native, m) {
     // Logging submodule
     auto log_module = m.def_submodule("log", "Logging module");
     bind_log(log_module);
+
+    // Profiler submodule — hierarchical CPU section timing backed by
+    // tc_profiler. Lives here so non-termin hosts (tcgui standalone
+    // demos) can still push sections without pulling in termin-app.
+    auto profiler_module = m.def_submodule("profiler", "Profiler module");
+    bind_profiler(profiler_module);
 
     // Settings
     nb::class_<tc::Settings>(m, "Settings", "Persistent JSON-based settings")
