@@ -35,6 +35,11 @@ typedef struct {
     int section_stack[TC_PROFILER_MAX_DEPTH];
     double section_start_times[TC_PROFILER_MAX_DEPTH];
     int stack_depth;
+    // stack_depth at which the outermost muted section was opened.
+    // While stack_depth >= muted_depth, every begin_section is treated
+    // as a sentinel (no recording) so callees inside don't need to
+    // know they're inside a muted subtree. -1 means "not muted".
+    int muted_depth;
     tc_frame_profile history[PROFILER_HISTORY_SIZE];
     int history_start;
     int history_count;
@@ -98,6 +103,7 @@ void tc_profiler_begin_frame(void) {
 
     g_profiler.current_frame = frame;
     g_profiler.stack_depth = 0;
+    g_profiler.muted_depth = -1;
     g_profiler.frame_start_time = get_time_ms();
 }
 
@@ -177,7 +183,7 @@ static int find_or_create_section(const char* name, int parent_index) {
     return new_idx;
 }
 
-void tc_profiler_begin_section(const char* name) {
+static void begin_section_internal(const char* name, bool muted) {
     if (!g_profiler.enabled) return;
     if (g_profiler.current_frame == NULL) return;
     if (g_profiler.stack_depth >= TC_PROFILER_MAX_DEPTH) {
@@ -199,6 +205,21 @@ void tc_profiler_begin_section(const char* name) {
         return;
     }
 
+    // Mute propagation: if we're already inside a muted subtree or the
+    // caller is opening a new muted scope, push a sentinel and skip
+    // recording. The first muted level latches muted_depth so end_section
+    // can clear it on the matching pop.
+    const bool already_muted = g_profiler.muted_depth >= 0;
+    if (already_muted || muted) {
+        if (muted && !already_muted) {
+            g_profiler.muted_depth = g_profiler.stack_depth;
+        }
+        g_profiler.section_stack[g_profiler.stack_depth] = -1;
+        g_profiler.section_start_times[g_profiler.stack_depth] = 0.0;
+        g_profiler.stack_depth++;
+        return;
+    }
+
     int parent_index = (g_profiler.stack_depth > 0)
         ? g_profiler.section_stack[g_profiler.stack_depth - 1]
         : -1;
@@ -214,14 +235,31 @@ void tc_profiler_begin_section(const char* name) {
     g_profiler.stack_depth++;
 }
 
+void tc_profiler_begin_section(const char* name) {
+    begin_section_internal(name, false);
+}
+
+void tc_profiler_begin_section_muted(const char* name) {
+    begin_section_internal(name, true);
+}
+
 void tc_profiler_end_section(void) {
     if (!g_profiler.enabled) return;
     if (g_profiler.current_frame == NULL) return;
     if (g_profiler.stack_depth <= 0) return;
 
     g_profiler.stack_depth--;
+
+    // If we just exited the mute scope, clear the latch so the next
+    // begin_section at this depth records normally again.
+    if (g_profiler.muted_depth >= 0 &&
+        g_profiler.stack_depth == g_profiler.muted_depth) {
+        g_profiler.muted_depth = -1;
+    }
+
     int section_idx = g_profiler.section_stack[g_profiler.stack_depth];
-    // Sentinel (-1) means begin_section overflowed — skip accounting.
+    // Sentinel (-1) means begin_section was muted or overflowed — skip
+    // accounting.
     if (section_idx < 0) return;
 
     double elapsed = get_time_ms() - g_profiler.section_start_times[g_profiler.stack_depth];

@@ -41,6 +41,13 @@ TCBASE_API void tc_profiler_set_detailed_rendering(bool enabled);
 TCBASE_API void tc_profiler_begin_frame(void);
 TCBASE_API void tc_profiler_end_frame(void);
 TCBASE_API void tc_profiler_begin_section(const char* name);
+// Begin a "muted" section — pushes a balanced stack entry but drops all
+// timing (for the section and every nested begin_section inside it). Use
+// it at the boundary where the caller has decided that this subtree of
+// work should not show up in the profile tree, without spraying a flag
+// check through every nested callee. Paired with the regular
+// `tc_profiler_end_section()`.
+TCBASE_API void tc_profiler_begin_section_muted(const char* name);
 TCBASE_API void tc_profiler_end_section(void);
 TCBASE_API tc_frame_profile* tc_profiler_current_frame(void);
 TCBASE_API int tc_profiler_history_count(void);

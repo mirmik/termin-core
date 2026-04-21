@@ -107,6 +107,22 @@ class Profiler:
         finally:
             self._tc.end_section()
 
+    @contextmanager
+    def section_muted(self, name: str) -> Iterator[None]:
+        """Open a section whose contents (and every nested section) are
+        dropped from the profile tree, without forcing callees to check
+        any flag. Symmetric with ``section`` — use at the boundary where
+        the caller decides the subtree should not show up.
+        """
+        if not self._tc.enabled:
+            yield
+            return
+        self._tc.begin_section_muted(name)
+        try:
+            yield
+        finally:
+            self._tc.end_section()
+
     def _convert_history(self) -> List[FrameProfile]:
         result = []
         for c_frame in self._tc.history:

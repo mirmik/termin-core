@@ -65,6 +65,7 @@ public:
     void end_frame() { tc_profiler_end_frame(); }
 
     void begin_section(const std::string& name) { tc_profiler_begin_section(name.c_str()); }
+    void begin_section_muted(const std::string& name) { tc_profiler_begin_section_muted(name.c_str()); }
     void end_section() { tc_profiler_end_section(); }
 
     int frame_count() const { return tc_profiler_frame_count(); }
@@ -128,6 +129,7 @@ void bind_profiler(nb::module_& m) {
         .def("begin_frame", &TcProfiler::begin_frame)
         .def("end_frame", &TcProfiler::end_frame)
         .def("begin_section", &TcProfiler::begin_section, nb::arg("name"))
+        .def("begin_section_muted", &TcProfiler::begin_section_muted, nb::arg("name"))
         .def("end_section", &TcProfiler::end_section)
         .def_prop_ro("frame_count", &TcProfiler::frame_count)
         .def_prop_ro("history_count", &TcProfiler::history_count)
