@@ -27,12 +27,15 @@ backward compatibility with existing subproject setup.py files; the class no
 longer runs CMake.
 """
 
+import logging
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build import build as _build
 from pathlib import Path
 import os
 import shutil
 import sys
+
+_logger = logging.getLogger(__name__)
 
 
 def _find_sdk():
@@ -99,7 +102,8 @@ class TerminCMakeBuildExt(build_ext):
             for so in sdk_python.rglob(pattern):
                 try:
                     mt = so.stat().st_mtime_ns
-                except OSError:
+                except OSError as e:
+                    _logger.debug("Cannot stat SDK file %s: %s", so, e)
                     continue
                 if mt > max_mtime_ns:
                     max_mtime_ns = mt
