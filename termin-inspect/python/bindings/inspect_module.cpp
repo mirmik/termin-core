@@ -92,6 +92,7 @@ static void register_builtin_kind_handlers() {
                     size_t idx = 0;
                     mask = std::stoull(s, &idx, 0);
                 } catch (...) {
+                    tc::Log::debug("[Inspect] Failed to parse layer_mask hex string '%s', defaulting to 0", s.c_str());
                     mask = 0;
                 }
                 return nb::int_(mask);

@@ -5,8 +5,6 @@
 #include "inspect/tc_kind_python.hpp"
 #include <tcbase/tc_log.hpp>
 
-#include <iostream>
-
 namespace tc {
 
 void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::string& type_name,
@@ -193,8 +191,7 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
                 }
                 nb::setattr(target, parts.back().c_str(), py_value);
             } catch (const std::exception& e) {
-                std::cerr << "[Python setter error] path=" << path_copy
-                          << " error=" << e.what() << std::endl;
+                tc::Log::warn(e, "[Inspect] Python setter error for field '%s'", path_copy.c_str());
             }
         };
 
