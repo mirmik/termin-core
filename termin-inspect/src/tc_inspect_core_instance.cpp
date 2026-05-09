@@ -72,6 +72,17 @@ static void cpp_action(void* obj, const char* type_name, const char* path, void*
     InspectRegistry::instance().action_field(obj, type_name, path, inspect_context);
 }
 
+static tc_value cpp_get_type_metadata(const char* type_name, void* ctx) {
+    (void)ctx;
+    return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
+}
+
+static void cpp_set_type_metadata(const char* type_name, const tc_value* metadata, void* ctx) {
+    (void)ctx;
+    if (!type_name) return;
+    InspectRegistry::instance().set_type_metadata(type_name, metadata);
+}
+
 static bool g_cpp_vtable_initialized = false;
 
 void init_cpp_inspect_vtable() {
@@ -87,6 +98,8 @@ void init_cpp_inspect_vtable() {
         cpp_get,
         cpp_set,
         cpp_action,
+        cpp_get_type_metadata,
+        cpp_set_type_metadata,
         nullptr
     };
 

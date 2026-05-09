@@ -301,6 +301,19 @@ NB_MODULE(_inspect_native, m) {
         .def("get_type_parent", &InspectRegistry::get_type_parent,
              nb::arg("type_name"),
              "Get parent type name")
+        .def("get_type_metadata", [](InspectRegistry& self, const std::string& type_name) {
+            tc_value metadata = self.type_metadata(type_name);
+            nb::object result = tc::tc_value_to_nb(&metadata);
+            tc_value_free(&metadata);
+            return result;
+        }, nb::arg("type_name"),
+           "Get free-form type metadata dict")
+        .def("set_type_metadata", [](InspectRegistry& self, const std::string& type_name, nb::object metadata) {
+            tc_value value = tc::nb_to_tc_value(std::move(metadata));
+            self.set_type_metadata(type_name, &value);
+            tc_value_free(&value);
+        }, nb::arg("type_name"), nb::arg("metadata"),
+           "Set free-form type metadata dict")
 
         .def("get", [](InspectRegistry& self, nb::object obj, const std::string& field_path) {
             std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));

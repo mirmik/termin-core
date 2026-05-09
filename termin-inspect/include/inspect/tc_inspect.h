@@ -66,6 +66,8 @@ typedef bool (*tc_inspect_find_field_fn)(const char* type_name, const char* path
 typedef tc_value (*tc_inspect_getter_fn)(void* obj, const char* type_name, const char* path, void* ctx);
 typedef void (*tc_inspect_setter_fn)(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx);
 typedef void (*tc_inspect_action_fn)(void* obj, const char* type_name, const char* path, void* ctx);
+typedef tc_value (*tc_inspect_get_type_metadata_fn)(const char* type_name, void* ctx);
+typedef void (*tc_inspect_set_type_metadata_fn)(const char* type_name, const tc_value* metadata, void* ctx);
 
 typedef struct tc_inspect_lang_vtable {
     tc_inspect_has_type_fn has_type;
@@ -76,6 +78,8 @@ typedef struct tc_inspect_lang_vtable {
     tc_inspect_getter_fn get;
     tc_inspect_setter_fn set;
     tc_inspect_action_fn action;
+    tc_inspect_get_type_metadata_fn get_type_metadata;
+    tc_inspect_set_type_metadata_fn set_type_metadata;
     void* ctx;
 } tc_inspect_lang_vtable;
 
@@ -114,6 +118,11 @@ TC_API bool tc_inspect_get_field_info(const char* type_name, size_t index, tc_fi
 
 // Find field info by path (fills out, returns true if found)
 TC_API bool tc_inspect_find_field_info(const char* type_name, const char* path, tc_field_info* out);
+
+// Free-form type metadata. The inspect system stores opaque tc_value dicts and
+// does not interpret their contents; domain systems agree on their own keys.
+TC_API tc_value tc_inspect_get_type_metadata(const char* type_name);
+TC_API void tc_inspect_set_type_metadata(const char* type_name, const tc_value* metadata);
 
 // ============================================================================
 // Field access (dispatches to owning language)

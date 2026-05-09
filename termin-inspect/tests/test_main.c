@@ -91,6 +91,8 @@ static int test_inspect_dispatcher(void) {
         mock_get,
         mock_set,
         mock_action,
+        NULL,
+        NULL,
         NULL
     };
 

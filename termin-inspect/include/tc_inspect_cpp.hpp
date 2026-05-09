@@ -102,9 +102,16 @@ class TC_INSPECT_API InspectRegistry {
     std::unordered_map<std::string, std::vector<InspectFieldInfo>> _fields;
     std::unordered_map<std::string, TypeBackend> _type_backends;
     std::unordered_map<std::string, std::string> _type_parents;
+    std::unordered_map<std::string, tc_value> _type_metadata;
 
 public:
     static InspectRegistry& instance();
+
+    ~InspectRegistry() {
+        for (auto& [_, metadata] : _type_metadata) {
+            tc_value_free(&metadata);
+        }
+    }
 
     // ========================================================================
     // Type backend registration
@@ -141,6 +148,66 @@ public:
         _fields.erase(type_name);
         _type_backends.erase(type_name);
         _type_parents.erase(type_name);
+        auto meta_it = _type_metadata.find(type_name);
+        if (meta_it != _type_metadata.end()) {
+            tc_value_free(&meta_it->second);
+            _type_metadata.erase(meta_it);
+        }
+    }
+
+    void set_type_metadata(const std::string& type_name, const tc_value* metadata) {
+        auto it = _type_metadata.find(type_name);
+        if (it != _type_metadata.end()) {
+            tc_value_free(&it->second);
+            _type_metadata.erase(it);
+        }
+        _type_metadata[type_name] = metadata ? tc_value_copy(metadata) : tc_value_dict_new();
+        if (_type_backends.find(type_name) == _type_backends.end()) {
+            _type_backends[type_name] = TypeBackend::Cpp;
+        }
+    }
+
+    void set_type_metadata_key(const std::string& type_name, const std::string& key, const tc_value* value) {
+        auto it = _type_metadata.find(type_name);
+        if (it == _type_metadata.end() || it->second.type != TC_VALUE_DICT) {
+            if (it != _type_metadata.end()) {
+                tc_value_free(&it->second);
+                _type_metadata.erase(it);
+            }
+            _type_metadata[type_name] = tc_value_dict_new();
+        }
+        tc_value_dict_set(&_type_metadata[type_name], key.c_str(), value ? tc_value_copy(value) : tc_value_nil());
+        if (_type_backends.find(type_name) == _type_backends.end()) {
+            _type_backends[type_name] = TypeBackend::Cpp;
+        }
+    }
+
+    tc_value type_metadata(const std::string& type_name) const {
+        std::string parent = get_type_parent(type_name);
+        if (!parent.empty()) {
+            tc_value result = type_metadata(parent);
+            auto own_it = _type_metadata.find(type_name);
+            if (own_it != _type_metadata.end() && own_it->second.type == TC_VALUE_DICT && result.type == TC_VALUE_DICT) {
+                for (size_t i = 0; i < own_it->second.data.dict.count; i++) {
+                    const char* key = nullptr;
+                    tc_value* value = tc_value_dict_get_at(const_cast<tc_value*>(&own_it->second), i, &key);
+                    if (key && value) {
+                        tc_value_dict_set(&result, key, tc_value_copy(value));
+                    }
+                }
+                return result;
+            }
+            if (own_it != _type_metadata.end()) {
+                tc_value_free(&result);
+                return tc_value_copy(&own_it->second);
+            }
+            return result;
+        }
+        auto it = _type_metadata.find(type_name);
+        if (it != _type_metadata.end()) {
+            return tc_value_copy(&it->second);
+        }
+        return tc_value_dict_new();
     }
 
     // ========================================================================
@@ -607,6 +674,13 @@ struct InspectButtonRegistrar {
     }
 };
 
+struct InspectTypeMetadataRegistrar {
+    InspectTypeMetadataRegistrar(const char* type_name, const char* key, tc_value value) {
+        InspectRegistry::instance().set_type_metadata_key(type_name, key, &value);
+        tc_value_free(&value);
+    }
+};
+
 } // namespace tc
 
 // ============================================================================
@@ -642,6 +716,10 @@ struct InspectButtonRegistrar {
                 auto* self = static_cast<cls*>(obj); \
                 if (self) (self->*method)(); \
             }};
+
+#define INSPECT_TYPE_METADATA(cls, name, value_expr) \
+    inline static ::tc::InspectTypeMetadataRegistrar \
+        _inspect_meta_##cls##_##name{#cls, #name, (value_expr)};
 
 #ifdef _MSC_VER
 #pragma warning(pop)

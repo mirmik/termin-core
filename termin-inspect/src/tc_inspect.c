@@ -127,6 +127,27 @@ bool tc_inspect_find_field_info(const char* type_name, const char* path, tc_fiel
     return false;
 }
 
+tc_value tc_inspect_get_type_metadata(const char* type_name) {
+    tc_inspect_lang lang = tc_inspect_type_lang(type_name);
+    if (lang < TC_INSPECT_LANG_COUNT && g_vtables[lang].get_type_metadata) {
+        return g_vtables[lang].get_type_metadata(type_name, g_vtables[lang].ctx);
+    }
+    return tc_value_dict_new();
+}
+
+void tc_inspect_set_type_metadata(const char* type_name, const tc_value* metadata) {
+    tc_inspect_lang lang = tc_inspect_type_lang(type_name);
+    if (lang >= TC_INSPECT_LANG_COUNT) {
+        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set_type_metadata: type '%s' not found in any language vtable", type_name ? type_name : "null");
+        return;
+    }
+    if (!g_vtables[lang].set_type_metadata) {
+        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set_type_metadata: no metadata setter for type '%s' (lang=%d)", type_name ? type_name : "null", lang);
+        return;
+    }
+    g_vtables[lang].set_type_metadata(type_name, metadata, g_vtables[lang].ctx);
+}
+
 // ============================================================================
 // Field access
 // ============================================================================
