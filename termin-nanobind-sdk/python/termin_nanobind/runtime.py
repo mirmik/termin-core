@@ -23,8 +23,9 @@ def find_sdk():
 
     Checks in order:
       1. $TERMIN_SDK environment variable
-      2. /opt/termin (Linux/macOS)
-      3. %LOCALAPPDATA%/termin-sdk (Windows)
+      2. ./sdk from the current project checkout
+      3. /opt/termin (Linux/macOS)
+      4. %LOCALAPPDATA%/termin-sdk (Windows)
 
     Returns a Path, or None if no SDK is found.
     """
@@ -38,6 +39,18 @@ def find_sdk():
         if (p / "lib").is_dir():
             _sdk_root = p
             return p
+
+    cwd_sdk = Path.cwd() / "sdk"
+    if (cwd_sdk / "lib").is_dir():
+        _sdk_root = cwd_sdk
+        return cwd_sdk
+
+    module_path = Path(__file__).resolve()
+    for parent in module_path.parents:
+        checkout_sdk = parent / "sdk"
+        if (checkout_sdk / "lib").is_dir():
+            _sdk_root = checkout_sdk
+            return checkout_sdk
 
     if sys.platform == "win32":
         local = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
