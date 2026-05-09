@@ -22,6 +22,7 @@ class InspectField:
     is_inspectable  – при True поле показывается в инспекторе (default True)
     action    – для kind='button': callable, вызывается при нажатии (принимает объект)
     read_only – виджет будет только для чтения
+    metadata  – свободные UI/domain hints; inspect-core их не интерпретирует
     """
     path: str | None = None
     label: str | None = None
@@ -36,6 +37,7 @@ class InspectField:
     is_inspectable: bool = True
     action: Optional[Callable[[Any], None]] = None
     read_only: bool = False
+    metadata: dict[str, Any] | None = None
 
     def get_value(self, obj):
         if self.getter:
@@ -104,6 +106,7 @@ class InspectAttr:
         is_inspectable: bool = True,
         action: Optional[Callable[[Any], None]] = None,
         read_only: bool = False,
+        metadata: dict[str, Any] | None = None,
     ):
         self.default = default
         self._field = InspectField(
@@ -120,6 +123,7 @@ class InspectAttr:
             is_inspectable=is_inspectable,
             action=action,
             read_only=read_only,
+            metadata=metadata,
         )
         self._name: str | None = None
 
