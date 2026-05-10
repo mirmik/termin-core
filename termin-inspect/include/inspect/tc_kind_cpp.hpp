@@ -160,6 +160,28 @@ inline void register_builtin_cpp_kinds() {
         [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
         [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
     );
+
+    reg.register_kind("list[string]",
+        [](const std::any& v) -> tc_value {
+            const auto& strings = std::any_cast<const std::vector<std::string>&>(v);
+            tc_value list = tc_value_list_new();
+            for (const auto& item : strings) {
+                tc_value_list_push(&list, tc_value_string(item.c_str()));
+            }
+            return list;
+        },
+        [](const tc_value* v, void*) -> std::any {
+            std::vector<std::string> result;
+            if (v && v->type == TC_VALUE_LIST) {
+                result.reserve(v->data.list.count);
+                for (size_t i = 0; i < v->data.list.count; i++) {
+                    result.push_back(tc_value_to_string(&v->data.list.items[i]));
+                }
+            }
+            return result;
+        }
+    );
+
     reg.register_kind("clip_selector",
         [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
         [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
