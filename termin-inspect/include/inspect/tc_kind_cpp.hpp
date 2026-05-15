@@ -126,6 +126,11 @@ inline void register_builtin_cpp_kinds() {
         [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
         [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
     );
+    // navmesh_area is stored as an int; projects provide display names.
+    reg.register_kind("navmesh_area",
+        [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
+        [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
+    );
 
     // float
     reg.register_kind("float",
