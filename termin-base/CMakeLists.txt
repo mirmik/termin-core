@@ -14,6 +14,7 @@ add_library(termin_base SHARED
     src/tc_profiler.c
     src/tc_value.c
     src/tc_pool.c
+    src/tc_event.c
     src/tc_resource_map.c
     src/tgfx_intern_string.c
     src/trent/trent.cpp
