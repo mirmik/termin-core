@@ -104,6 +104,34 @@ void bind_general_pose3(nb::module_& m) {
         .def("inverse_transform_vector", [](const GeneralPose3& p, nb::object obj) {
             return p.inverse_transform_vector(py_to_vec3(obj));
         })
+        .def("point_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::point_to_global, nb::const_))
+        .def("point_to_global", [](const GeneralPose3& p, nb::object obj) {
+            return p.point_to_global(py_to_vec3(obj));
+        })
+        .def("vector_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::vector_to_global, nb::const_))
+        .def("vector_to_global", [](const GeneralPose3& p, nb::object obj) {
+            return p.vector_to_global(py_to_vec3(obj));
+        })
+        .def("point_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::point_to_local, nb::const_))
+        .def("point_to_local", [](const GeneralPose3& p, nb::object obj) {
+            return p.point_to_local(py_to_vec3(obj));
+        })
+        .def("vector_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::vector_to_local, nb::const_))
+        .def("vector_to_local", [](const GeneralPose3& p, nb::object obj) {
+            return p.vector_to_local(py_to_vec3(obj));
+        })
+        .def("forward_in_global", &GeneralPose3::forward_in_global, nb::arg("distance") = 1.0)
+        .def("backward_in_global", &GeneralPose3::backward_in_global, nb::arg("distance") = 1.0)
+        .def("up_in_global", &GeneralPose3::up_in_global, nb::arg("distance") = 1.0)
+        .def("down_in_global", &GeneralPose3::down_in_global, nb::arg("distance") = 1.0)
+        .def("right_in_global", &GeneralPose3::right_in_global, nb::arg("distance") = 1.0)
+        .def("left_in_global", &GeneralPose3::left_in_global, nb::arg("distance") = 1.0)
+        .def("global_forward_in_local", &GeneralPose3::global_forward_in_local, nb::arg("distance") = 1.0)
+        .def("global_backward_in_local", &GeneralPose3::global_backward_in_local, nb::arg("distance") = 1.0)
+        .def("global_up_in_local", &GeneralPose3::global_up_in_local, nb::arg("distance") = 1.0)
+        .def("global_down_in_local", &GeneralPose3::global_down_in_local, nb::arg("distance") = 1.0)
+        .def("global_right_in_local", &GeneralPose3::global_right_in_local, nb::arg("distance") = 1.0)
+        .def("global_left_in_local", &GeneralPose3::global_left_in_local, nb::arg("distance") = 1.0)
         .def("normalized", &GeneralPose3::normalized)
         .def("with_translation", nb::overload_cast<const Vec3&>(&GeneralPose3::with_translation, nb::const_))
         .def("with_rotation", &GeneralPose3::with_rotation)

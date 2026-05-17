@@ -113,6 +113,63 @@ struct GeneralPose3 {
         return rot;
     }
 
+    // Readable aliases for space conversion.
+    Vec3 point_to_global(const Vec3& p) const { return transform_point(p); }
+    Vec3 vector_to_global(const Vec3& v) const { return transform_vector(v); }
+    Vec3 point_to_local(const Vec3& p) const { return inverse_transform_point(p); }
+    Vec3 vector_to_local(const Vec3& v) const { return inverse_transform_vector(v); }
+
+    // Direction helpers. Termin uses Y-forward, Z-up convention.
+    // *_in_global returns a local basis axis expressed in global coordinates.
+    Vec3 forward_in_global(double distance = 1.0) const {
+        return transform_vector(Vec3{0.0, distance, 0.0});
+    }
+
+    Vec3 backward_in_global(double distance = 1.0) const {
+        return transform_vector(Vec3{0.0, -distance, 0.0});
+    }
+
+    Vec3 up_in_global(double distance = 1.0) const {
+        return transform_vector(Vec3{0.0, 0.0, distance});
+    }
+
+    Vec3 down_in_global(double distance = 1.0) const {
+        return transform_vector(Vec3{0.0, 0.0, -distance});
+    }
+
+    Vec3 right_in_global(double distance = 1.0) const {
+        return transform_vector(Vec3{distance, 0.0, 0.0});
+    }
+
+    Vec3 left_in_global(double distance = 1.0) const {
+        return transform_vector(Vec3{-distance, 0.0, 0.0});
+    }
+
+    // global_*_in_local returns a global basis axis expressed in local coordinates.
+    Vec3 global_forward_in_local(double distance = 1.0) const {
+        return inverse_transform_vector(Vec3{0.0, distance, 0.0});
+    }
+
+    Vec3 global_backward_in_local(double distance = 1.0) const {
+        return inverse_transform_vector(Vec3{0.0, -distance, 0.0});
+    }
+
+    Vec3 global_up_in_local(double distance = 1.0) const {
+        return inverse_transform_vector(Vec3{0.0, 0.0, distance});
+    }
+
+    Vec3 global_down_in_local(double distance = 1.0) const {
+        return inverse_transform_vector(Vec3{0.0, 0.0, -distance});
+    }
+
+    Vec3 global_right_in_local(double distance = 1.0) const {
+        return inverse_transform_vector(Vec3{distance, 0.0, 0.0});
+    }
+
+    Vec3 global_left_in_local(double distance = 1.0) const {
+        return inverse_transform_vector(Vec3{-distance, 0.0, 0.0});
+    }
+
     GeneralPose3 normalized() const {
         return {ang.normalized(), lin, scale};
     }
@@ -320,4 +377,3 @@ inline GeneralPose3 operator*(const Pose3& a, const GeneralPose3& b) {
 }
 
 } // namespace termin
-

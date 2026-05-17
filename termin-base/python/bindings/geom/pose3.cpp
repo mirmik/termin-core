@@ -85,6 +85,34 @@ void bind_pose3(nb::module_& m) {
         .def("inverse_transform_vector", [](const Pose3& p, nb::object obj) {
             return p.inverse_transform_vector(py_to_vec3(obj));
         })
+        .def("point_to_global", nb::overload_cast<const Vec3&>(&Pose3::point_to_global, nb::const_))
+        .def("point_to_global", [](const Pose3& p, nb::object obj) {
+            return p.point_to_global(py_to_vec3(obj));
+        })
+        .def("vector_to_global", nb::overload_cast<const Vec3&>(&Pose3::vector_to_global, nb::const_))
+        .def("vector_to_global", [](const Pose3& p, nb::object obj) {
+            return p.vector_to_global(py_to_vec3(obj));
+        })
+        .def("point_to_local", nb::overload_cast<const Vec3&>(&Pose3::point_to_local, nb::const_))
+        .def("point_to_local", [](const Pose3& p, nb::object obj) {
+            return p.point_to_local(py_to_vec3(obj));
+        })
+        .def("vector_to_local", nb::overload_cast<const Vec3&>(&Pose3::vector_to_local, nb::const_))
+        .def("vector_to_local", [](const Pose3& p, nb::object obj) {
+            return p.vector_to_local(py_to_vec3(obj));
+        })
+        .def("forward_in_global", &Pose3::forward_in_global, nb::arg("distance") = 1.0)
+        .def("backward_in_global", &Pose3::backward_in_global, nb::arg("distance") = 1.0)
+        .def("up_in_global", &Pose3::up_in_global, nb::arg("distance") = 1.0)
+        .def("down_in_global", &Pose3::down_in_global, nb::arg("distance") = 1.0)
+        .def("right_in_global", &Pose3::right_in_global, nb::arg("distance") = 1.0)
+        .def("left_in_global", &Pose3::left_in_global, nb::arg("distance") = 1.0)
+        .def("global_forward_in_local", &Pose3::global_forward_in_local, nb::arg("distance") = 1.0)
+        .def("global_backward_in_local", &Pose3::global_backward_in_local, nb::arg("distance") = 1.0)
+        .def("global_up_in_local", &Pose3::global_up_in_local, nb::arg("distance") = 1.0)
+        .def("global_down_in_local", &Pose3::global_down_in_local, nb::arg("distance") = 1.0)
+        .def("global_right_in_local", &Pose3::global_right_in_local, nb::arg("distance") = 1.0)
+        .def("global_left_in_local", &Pose3::global_left_in_local, nb::arg("distance") = 1.0)
         // rotate_vector is an alias for transform_vector (for Pose3 without scale, they are the same)
         .def("rotate_vector", nb::overload_cast<const Vec3&>(&Pose3::transform_vector, nb::const_))
         .def("rotate_vector", [](const Pose3& p, nb::object obj) {
