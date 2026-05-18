@@ -51,7 +51,7 @@ Root CMake-граф поддерживает несколько ускорите
 - Для новых build-dir shell-скрипты по умолчанию оставляют CMake default generator. `Ninja` включается явно через `--ninja`, `TERMIN_CMAKE_GENERATOR=Ninja` или `CMAKE_GENERATOR_NAME=Ninja`. Уже существующий build-dir не меняет генератор; для смены генератора нужен `--clean` или новый `BUILD_DIR`.
 - `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
 - `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
-- `--pch` включает precompiled headers для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию; уже существующие app-библиотеки (`entity_lib`, `render_lib`, `navmesh_lib`) сохраняют свой локальный PCH.
+- `--pch` включает precompiled headers для выбранных C++-тяжёлых целей и включён по умолчанию. Отключение: `--no-pch` или `-DTERMIN_ENABLE_PCH=OFF`. Уже существующие app-библиотеки (`entity_lib`, `render_lib`, `navmesh_lib`) сохраняют свой локальный PCH.
 - Глобальный CMake unity build (`-DCMAKE_UNITY_BUILD=ON`) поддерживается для root graph после cleanup внутренних helper/state имён. Vendored `Recast`/`Detour` targets явно собираются без unity.
 
 Примеры:
@@ -60,7 +60,7 @@ Root CMake-граф поддерживает несколько ускорите
 BUILD_JOBS=8 ./build-sdk-cpp.sh --no-vulkan --sdl
 BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --no-vulkan --sdl --ninja
 BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --no-vulkan --sdl --unity
-BUILD_DIR=build/Release-pch ./build-sdk-cpp.sh --no-vulkan --sdl --pch
+BUILD_DIR=build/Release-no-pch ./build-sdk-cpp.sh --no-vulkan --sdl --no-pch
 ```
 
 PowerShell SDK-скрипты на Windows используют тот же root CMake graph:
@@ -68,7 +68,7 @@ PowerShell SDK-скрипты на Windows используют тот же root
 ```powershell
 $env:BUILD_JOBS=8; .\build-sdk-cpp.ps1 --no-vulkan --sdl
 $env:BUILD_DIR="build\Release-unity"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --unity
-$env:BUILD_DIR="build\Release-pch"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --pch
+$env:BUILD_DIR="build\Release-no-pch"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --no-pch
 ```
 
 На Windows PowerShell-скрипты по умолчанию не выбирают Ninja автоматически и оставляют CMake default generator (обычно Visual Studio/MSVC). Ninja можно включить явно через `$env:TERMIN_CMAKE_GENERATOR="Ninja"`, но тогда CMake возьмёт компилятор из окружения/PATH; старый LLVM `clang-cl` может быть несовместим с текущим MSVC STL.
