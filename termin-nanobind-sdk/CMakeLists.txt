@@ -38,9 +38,14 @@ set_target_properties(nanobind PROPERTIES
 )
 
 install(TARGETS nanobind
+    EXPORT terminNanobindTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(EXPORT terminNanobindTargets
+    NAMESPACE nanobind::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/termin-nanobind
 )
 
 # Install the termin_nanobind Python helper package (runtime.py + __init__.py)
