@@ -83,11 +83,11 @@ static void cpp_set_type_metadata(const char* type_name, const tc_value* metadat
     InspectRegistry::instance().set_type_metadata(type_name, metadata);
 }
 
-static bool g_cpp_vtable_initialized = false;
+static bool g_cpp_inspect_vtable_initialized = false;
 
 void init_cpp_inspect_vtable() {
-    if (g_cpp_vtable_initialized) return;
-    g_cpp_vtable_initialized = true;
+    if (g_cpp_inspect_vtable_initialized) return;
+    g_cpp_inspect_vtable_initialized = true;
 
     static tc_inspect_lang_vtable cpp_vtable = {
         cpp_has_type,

@@ -51,6 +51,7 @@ Root CMake-граф поддерживает несколько ускорите
 - Для новых build-dir shell-скрипты по умолчанию выбирают `Ninja`, если он доступен. Уже существующий build-dir не меняет генератор; для перехода с `Unix Makefiles` нужен `--clean` или новый `BUILD_DIR`.
 - `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
 - `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
+- Глобальный CMake unity build (`-DCMAKE_UNITY_BUILD=ON`) поддерживается для root graph после cleanup внутренних helper/state имён. Vendored `Recast`/`Detour` targets явно собираются без unity.
 
 Примеры:
 
@@ -72,7 +73,7 @@ cmake -S . -B build/Release-unity -G Ninja \
 cmake --build build/Release-unity --parallel 8
 ```
 
-Unity build intentionally applies only to selected targets where it has been checked: `termin_graphics2`, `termin_render`, `trent`, `entity_lib`, `render_lib`. Большой объём C-кода пока остаётся в обычном режиме: в нём есть локальные `static` имена, которые корректны для обычных translation units, но конфликтуют при глобальном unity build.
+Script-level `--unity` intentionally applies only to selected targets where it has been checked for developer iteration: `termin_graphics2`, `termin_render`, `trent`, `entity_lib`, `render_lib`. For a full audit/experiment use direct CMake with `-DCMAKE_UNITY_BUILD=ON`.
 
 ---
 

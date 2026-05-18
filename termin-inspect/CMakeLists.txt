@@ -22,11 +22,6 @@ if(TI_BUILD_CPP)
         src/tc_inspect_core_instance.cpp
         src/tc_kind_cpp.cpp
     )
-    set_source_files_properties(
-        src/tc_inspect_core_instance.cpp
-        src/tc_kind_cpp.cpp
-        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
-    )
 endif()
 
 set(TI_PY_SOURCES

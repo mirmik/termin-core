@@ -64,11 +64,11 @@ static size_t cpp_list(const char** out_names, size_t max_count, void* ctx) {
     return kinds.size();
 }
 
-static bool g_cpp_vtable_initialized = false;
+static bool g_cpp_kind_vtable_initialized = false;
 
 static void init_cpp_lang_vtable() {
-    if (g_cpp_vtable_initialized) return;
-    g_cpp_vtable_initialized = true;
+    if (g_cpp_kind_vtable_initialized) return;
+    g_cpp_kind_vtable_initialized = true;
 
     static tc_kind_lang_registry cpp_registry = {
         cpp_has,
