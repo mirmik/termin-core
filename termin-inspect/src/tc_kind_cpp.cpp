@@ -20,6 +20,7 @@ static bool cpp_has(const char* kind_name, void* ctx) {
 }
 
 static tc_value cpp_serialize(const char* kind_name, const tc_value* input, void* ctx) {
+    (void)kind_name;
     (void)ctx;
     // For C++ kinds, actual serialization is done via KindRegistryCpp::serialize()
     // which works with std::any. This callback is pass-through since the value
@@ -54,13 +55,12 @@ static tc_value cpp_deserialize(const char* kind_name, const tc_value* input, vo
 }
 
 static size_t cpp_list(const char** out_names, size_t max_count, void* ctx) {
+    (void)out_names;
+    (void)max_count;
     (void)ctx;
     auto kinds = KindRegistryCpp::instance().kinds();
-    size_t count = std::min(kinds.size(), max_count);
-    if (out_names) {
-        // Note: returning pointers to temporary strings is unsafe for this API
-        // For now, we just return the count. Caller should use KindRegistryCpp::kinds() directly.
-    }
+    // Note: returning pointers to temporary strings is unsafe for this API.
+    // For now, we just return the count. Caller should use KindRegistryCpp::kinds() directly.
     return kinds.size();
 }
 
