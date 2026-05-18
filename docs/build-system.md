@@ -51,6 +51,7 @@ Root CMake-граф поддерживает несколько ускорите
 - Для новых build-dir shell-скрипты по умолчанию выбирают `Ninja`, если он доступен. Уже существующий build-dir не меняет генератор; для перехода с `Unix Makefiles` нужен `--clean` или новый `BUILD_DIR`.
 - `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
 - `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
+- `--pch` включает precompiled headers для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию; уже существующие app-библиотеки (`entity_lib`, `render_lib`, `navmesh_lib`) сохраняют свой локальный PCH.
 - Глобальный CMake unity build (`-DCMAKE_UNITY_BUILD=ON`) поддерживается для root graph после cleanup внутренних helper/state имён. Vendored `Recast`/`Detour` targets явно собираются без unity.
 
 Примеры:
@@ -59,6 +60,7 @@ Root CMake-граф поддерживает несколько ускорите
 BUILD_JOBS=8 ./build-sdk-cpp.sh --no-vulkan --sdl
 BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --no-vulkan --sdl
 BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --no-vulkan --sdl --unity
+BUILD_DIR=build/Release-pch ./build-sdk-cpp.sh --no-vulkan --sdl --pch
 ```
 
 Прямой CMake-вариант:
@@ -69,11 +71,14 @@ cmake -S . -B build/Release-unity -G Ninja \
   -DTERMIN_ENABLE_VULKAN=OFF \
   -DTERMIN_ENABLE_SDL=ON \
   -DTERMIN_USE_CCACHE=ON \
-  -DTERMIN_ENABLE_UNITY_BUILD=ON
+  -DTERMIN_ENABLE_UNITY_BUILD=ON \
+  -DTERMIN_ENABLE_PCH=ON
 cmake --build build/Release-unity --parallel 8
 ```
 
 Script-level `--unity` intentionally applies only to selected targets where it has been checked for developer iteration: `termin_graphics2`, `termin_render`, `trent`, `entity_lib`, `render_lib`. For a full audit/experiment use direct CMake with `-DCMAKE_UNITY_BUILD=ON`.
+
+Script-level `--pch` applies to selected C++ targets with broad STL-heavy include usage: `termin_graphics2`, `termin_render`, `termin_engine`, `trent`, `tcplot`. It deliberately avoids C-only libraries and third-party vendored targets.
 
 ---
 
