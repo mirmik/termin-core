@@ -63,6 +63,14 @@ BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --no-vulkan --sdl --unity
 BUILD_DIR=build/Release-pch ./build-sdk-cpp.sh --no-vulkan --sdl --pch
 ```
 
+PowerShell SDK-скрипты на Windows используют тот же root CMake graph:
+
+```powershell
+$env:BUILD_JOBS=8; .\build-sdk-cpp.ps1 --no-vulkan --sdl
+$env:BUILD_DIR="build\Release-unity"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --unity
+$env:BUILD_DIR="build\Release-pch"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --pch
+```
+
 Прямой CMake-вариант:
 
 ```bash
