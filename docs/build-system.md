@@ -2,14 +2,46 @@
 
 ## Обзор
 
-Проект — монорепозиторий из множества C/C++ библиотек с Python-биндингами. Каждая библиотека — отдельный CMake-проект со своим `CMakeLists.txt`. Библиотеки собираются последовательно и устанавливаются в общую SDK-директорию (`./sdk/`). Порядок сборки и зависимости описаны в `modules.conf`.
+Проект — монорепозиторий из множества C/C++ библиотек с Python-биндингами. Каждая библиотека остаётся отдельным CMake-проектом со своим `CMakeLists.txt`, но основной SDK workflow собирается через корневой CMake-граф с `add_subdirectory()`.
+
+Публичная точка входа для полной сборки — `./build-sdk.sh`. Скрипты стадий (`build-sdk-cpp.sh`, `build-sdk-bindings.sh`) конфигурируют один и тот же root build directory (`build/Release` для Release) и устанавливают результат в общую SDK-директорию (`./sdk/`). Это позволяет CMake параллелить независимые цели в рамках одного графа, а standalone-сборки отдельных модулей по-прежнему могут использовать установленные CMake package configs из `sdk/`.
 
 Сборка проходит в три стадии:
 1. **C/C++ библиотеки** — shared libraries, заголовки, CMake config
 2. **Python bindings** — nanobind-модули + Python-исходники
 3. **C# bindings** (опционально, требует SWIG)
 
-Каждый модуль собирается отдельным вызовом `cmake` с `CMAKE_INSTALL_PREFIX=sdk/` и `CMAKE_PREFIX_PATH=sdk/`. Это позволяет каждому следующему модулю находить уже установленные зависимости через `find_package()`.
+Внутри root build зависимости между модулями выражены CMake targets. Для standalone-сборок модулей остаётся путь через `find_package()` и `CMAKE_PREFIX_PATH=sdk/`.
+
+Типичная сборка SDK:
+
+```bash
+./build-sdk.sh --no-vulkan --sdl
+```
+
+Только C/C++ стадия:
+
+```bash
+./build-sdk-cpp.sh --no-vulkan --sdl
+```
+
+Только Python/nanobind bindings:
+
+```bash
+./build-sdk-bindings.sh --no-vulkan --sdl
+```
+
+Прямой CMake-вариант:
+
+```bash
+cmake -S . -B build/Release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DTERMIN_BUILD_PYTHON=ON \
+  -DTERMIN_ENABLE_VULKAN=OFF \
+  -DTERMIN_ENABLE_SDL=ON
+cmake --build build/Release --parallel
+cmake --install build/Release
+```
 
 ---
 
@@ -55,7 +87,7 @@ Python-пакет состоит из двух частей:
 - **Native-модуль** (`.pyd` на Windows, `.so` на Linux) — компилированный C++ код
 - **Python-исходники** (`.py`) — `__init__.py`, обёртки, утилиты
 
-Обе части устанавливаются в `lib/python/<package>/`:
+Обе части устанавливаются в `lib/python/<package>/` или `lib/python/termin/<package>/`:
 
 ```cmake
 # Native-модуль
@@ -124,13 +156,15 @@ C++ часть каждого модуля полностью самодоста
 
 ### Две стадии сборки
 
-Сборка разделена на две стадии (C++ → bindings) не потому что они конфликтуют, а для практического удобства: если Python или nanobind не установлены, хотя бы C++ часть соберётся. Технически можно собирать всё сразу с `-DTERMIN_BUILD_PYTHON=ON` — результат будет идентичным.
+Сборка разделена на две стадии (C++ → bindings) не потому что они конфликтуют, а для практического удобства: если Python или nanobind не установлены, хотя бы C++ часть соберётся. Технически можно собирать всё сразу с `-DTERMIN_BUILD_PYTHON=ON` — результат будет идентичным для SDK layout.
 
 Обе стадии используют один и тот же build directory (`build/Release`). Вторая стадия переконфигурирует cmake, но благодаря инкрементальности C++ часть не пересобирается.
 
 ### Структура модуля с биндингами
 
 Биндинги строятся через [nanobind](https://github.com/wjakob/nanobind). Каждый модуль может опционально собирать Python-расширение при `-DTERMIN_BUILD_PYTHON=ON`.
+
+В SDK build project-модули используют shared `libnanobind.so` (`NB_SHARED`), чтобы не собирать отдельный `nanobind-static` для каждого набора биндингов.
 
 ```
 mylib/
@@ -167,6 +201,24 @@ Launcher при запуске:
 
 ---
 
+## C/C++ тесты
+
+C/C++ тесты собираются через root CMake graph:
+
+```bash
+bash run-tests-cpp.sh --no-vulkan --sdl
+```
+
+Флаги:
+
+- `--vulkan` / `--no-vulkan` управляют `TERMIN_ENABLE_VULKAN`;
+- `--window-tests` / `--no-window-tests` управляют тестами, которым нужен windowing/video backend;
+- tgfx2 тесты подключены к CTest и являются частью основного C++ test workflow.
+
+Window tests настроены так, чтобы пропускаться в headless-окружении без usable video backend, а не валить весь прогон.
+
+---
+
 ## Портабельность
 
 Некоторые POSIX-функции (например `strdup`) считаются устаревшими в MSVC. Для них используются портабельные обёртки (`tc_strdup`), которые на Windows вызывают `_strdup`, а на Linux — оригинальный `strdup`.
@@ -182,4 +234,5 @@ MSVC-специфичные warnings (C4251 — STL-члены в dllexport-кл
 - [ ] MSVC: подавить C4251/C4275, добавить `_CRT_SECURE_NO_WARNINGS`
 - [ ] RPATH: использовать хелперы из `cmake/TerminRpath.cmake`
 - [ ] Python: установить и `.pyd`/`.so`, и `.py` файлы
-- [ ] Добавить в `modules.conf` в правильное место (порядок = порядок зависимостей)
+- [ ] Добавить в `modules.conf` в правильное место для pip/package workflow, если модуль имеет Python-пакет
+- [ ] Добавить модуль в корневой `CMakeLists.txt`, если он должен участвовать в SDK build graph
