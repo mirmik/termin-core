@@ -25,6 +25,9 @@ add_library(termin_base SHARED
     src/settings.cpp
     src/tc_value_trent.cpp
 )
+if(COMMAND termin_add_alias_if_missing)
+    termin_add_alias_if_missing(tcbase::termin_base termin_base)
+endif()
 
 target_include_directories(termin_base PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

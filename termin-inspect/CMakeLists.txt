@@ -43,7 +43,11 @@ set(TI_PY_HEADERS
     include/inspect/tc_inspect_python.hpp
 )
 
-find_package(termin_base REQUIRED)
+if(COMMAND termin_require_package)
+    termin_require_package(termin_base tcbase::termin_base)
+else()
+    find_package(termin_base REQUIRED)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
 include(TerminRpath)
