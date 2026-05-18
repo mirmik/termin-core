@@ -1,14 +1,14 @@
 find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
 find_package(nanobind CONFIG REQUIRED)
 
-nanobind_add_module(_tcbase_native
+nanobind_add_module(_tcbase_native NB_SHARED
     bindings/tcbase_module.cpp
     bindings/profiler.cpp
 )
 
 target_link_libraries(_tcbase_native PRIVATE termin_base)
 
-nanobind_add_module(_geom_native
+nanobind_add_module(_geom_native NB_SHARED
     bindings/geom/geom_module.cpp
     bindings/geom/vec3.cpp
     bindings/geom/vec4.cpp
