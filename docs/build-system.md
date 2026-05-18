@@ -43,6 +43,37 @@ cmake --build build/Release --parallel
 cmake --install build/Release
 ```
 
+### Ускорение C/C++ компиляции
+
+Root CMake-граф поддерживает несколько ускорителей сборки:
+
+- `ccache` включается автоматически, если бинарь найден в `PATH`. Отключение: `--no-ccache` или `-DTERMIN_USE_CCACHE=OFF`.
+- Для новых build-dir shell-скрипты по умолчанию выбирают `Ninja`, если он доступен. Уже существующий build-dir не меняет генератор; для перехода с `Unix Makefiles` нужен `--clean` или новый `BUILD_DIR`.
+- `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
+- `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
+
+Примеры:
+
+```bash
+BUILD_JOBS=8 ./build-sdk-cpp.sh --no-vulkan --sdl
+BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --no-vulkan --sdl
+BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --no-vulkan --sdl --unity
+```
+
+Прямой CMake-вариант:
+
+```bash
+cmake -S . -B build/Release-unity -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DTERMIN_ENABLE_VULKAN=OFF \
+  -DTERMIN_ENABLE_SDL=ON \
+  -DTERMIN_USE_CCACHE=ON \
+  -DTERMIN_ENABLE_UNITY_BUILD=ON
+cmake --build build/Release-unity --parallel 8
+```
+
+Unity build intentionally applies only to selected targets where it has been checked: `termin_graphics2`, `termin_render`, `trent`, `entity_lib`, `render_lib`. Большой объём C-кода пока остаётся в обычном режиме: в нём есть локальные `static` имена, которые корректны для обычных translation units, но конфликтуют при глобальном unity build.
+
 ---
 
 ## Структура SDK
