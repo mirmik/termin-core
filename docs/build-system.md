@@ -71,6 +71,8 @@ $env:BUILD_DIR="build\Release-unity"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --un
 $env:BUILD_DIR="build\Release-pch"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --pch
 ```
 
+На Windows PowerShell-скрипты по умолчанию не выбирают Ninja автоматически и оставляют CMake default generator (обычно Visual Studio/MSVC). Ninja можно включить явно через `$env:TERMIN_CMAKE_GENERATOR="Ninja"`, но тогда CMake возьмёт компилятор из окружения/PATH; старый LLVM `clang-cl` может быть несовместим с текущим MSVC STL.
+
 Прямой CMake-вариант:
 
 ```bash
