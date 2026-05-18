@@ -48,7 +48,7 @@ cmake --install build/Release
 Root CMake-граф поддерживает несколько ускорителей сборки:
 
 - `ccache` включается автоматически, если бинарь найден в `PATH`. Отключение: `--no-ccache` или `-DTERMIN_USE_CCACHE=OFF`.
-- Для новых build-dir shell-скрипты по умолчанию выбирают `Ninja`, если он доступен. Уже существующий build-dir не меняет генератор; для перехода с `Unix Makefiles` нужен `--clean` или новый `BUILD_DIR`.
+- Для новых build-dir shell-скрипты по умолчанию оставляют CMake default generator. `Ninja` включается явно через `--ninja`, `TERMIN_CMAKE_GENERATOR=Ninja` или `CMAKE_GENERATOR_NAME=Ninja`. Уже существующий build-dir не меняет генератор; для смены генератора нужен `--clean` или новый `BUILD_DIR`.
 - `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
 - `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
 - `--pch` включает precompiled headers для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию; уже существующие app-библиотеки (`entity_lib`, `render_lib`, `navmesh_lib`) сохраняют свой локальный PCH.
@@ -58,7 +58,7 @@ Root CMake-граф поддерживает несколько ускорите
 
 ```bash
 BUILD_JOBS=8 ./build-sdk-cpp.sh --no-vulkan --sdl
-BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --no-vulkan --sdl
+BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --no-vulkan --sdl --ninja
 BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --no-vulkan --sdl --unity
 BUILD_DIR=build/Release-pch ./build-sdk-cpp.sh --no-vulkan --sdl --pch
 ```
