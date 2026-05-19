@@ -23,8 +23,11 @@ setup(
     author="mirmik",
     author_email="mirmikns@yandex.ru",
     python_requires=">=3.8",
-    packages=["tcbase"],
-    package_dir={"tcbase": "python/tcbase"},
+    packages=["tcbase", "termin.geombase"],
+    package_dir={
+        "tcbase": "python/tcbase",
+        "termin.geombase": "python/termin/geombase",
+    },
     package_data={
         "tcbase": [
             "include/*.h",
@@ -38,7 +41,7 @@ setup(
             "lib/cmake/termin_base/*.cmake",
         ],
     },
-    install_requires=["termin-nanobind"],
+    install_requires=["termin-nanobind", "numpy"],
     ext_modules=[
         Extension("tcbase._tcbase_native", sources=[]),
         Extension("tcbase._geom_native", sources=[]),
