@@ -42,3 +42,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tcbase/
     PATTERN "include" EXCLUDE
     PATTERN "lib" EXCLUDE
 )
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/termin/geombase/
+    DESTINATION lib/python/termin/geombase
+    PATTERN "__pycache__" EXCLUDE
+    PATTERN "*.pyc" EXCLUDE
+)
