@@ -164,6 +164,9 @@ endif()
 if(TI_BUILD_TESTS)
     enable_testing()
     add_executable(termin_inspect_c_test tests/test_main.c)
+    target_include_directories(termin_inspect_c_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
     target_link_libraries(termin_inspect_c_test PRIVATE termin_inspect)
     add_test(NAME termin_inspect_c_test COMMAND termin_inspect_c_test)
     set_target_properties(termin_inspect_c_test PROPERTIES
@@ -171,6 +174,9 @@ if(TI_BUILD_TESTS)
     )
 
     add_executable(termin_inspect_cpp_test tests/test_cpp_inspect.cpp)
+    target_include_directories(termin_inspect_cpp_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
     target_link_libraries(termin_inspect_cpp_test PRIVATE termin_inspect)
     add_test(NAME termin_inspect_cpp_test COMMAND termin_inspect_cpp_test)
     set_target_properties(termin_inspect_cpp_test PROPERTIES

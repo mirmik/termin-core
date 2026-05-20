@@ -52,6 +52,9 @@ if(TERMIN_BASE_BUILD_TESTS)
 
     add_executable(termin_base_value_test tests/test_tc_value.c)
     set_target_properties(termin_base_value_test PROPERTIES LINKER_LANGUAGE CXX)
+    target_include_directories(termin_base_value_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
     target_link_libraries(termin_base_value_test PRIVATE termin_base)
     if(UNIX AND NOT APPLE)
         target_link_libraries(termin_base_value_test PRIVATE m)

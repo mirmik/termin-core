@@ -1,17 +1,9 @@
 #include "inspect/tc_inspect.h"
 #include "inspect/tc_kind.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#define TEST_ASSERT(cond, msg) \
-    do { \
-        if (!(cond)) { \
-            fprintf(stderr, "FAIL: %s\n", msg); \
-            return 1; \
-        } \
-    } while (0)
+#include "guard_c.h"
 
 typedef struct {
     int64_t value;
@@ -81,7 +73,7 @@ static void mock_action(void* obj, const char* type_name, const char* path, void
     ((mock_dispatch_obj*)obj)->action_called = 1;
 }
 
-static int test_inspect_dispatcher(void) {
+GUARD_C_TEST(test_inspect_dispatcher) {
     tc_inspect_lang_vtable vtable = {
         mock_has_type,
         mock_get_parent,
@@ -97,39 +89,39 @@ static int test_inspect_dispatcher(void) {
     };
 
     tc_inspect_set_lang_vtable(TC_INSPECT_LANG_C, &vtable);
-    TEST_ASSERT(tc_inspect_has_type("MockDispatchType"), "type lookup");
-    TEST_ASSERT(tc_inspect_field_count("MockDispatchType") == 1, "field count");
+    GUARD_C_CHECK(tc_inspect_has_type("MockDispatchType"));
+    GUARD_C_CHECK_EQ_SIZE(1, tc_inspect_field_count("MockDispatchType"));
 
     mock_dispatch_obj obj = {11, 0};
     tc_value v = tc_inspect_get(&obj, "MockDispatchType", "value");
-    TEST_ASSERT(v.type == TC_VALUE_INT && v.data.i == 11, "get");
+    GUARD_C_CHECK(v.type == TC_VALUE_INT && v.data.i == 11);
     tc_value_free(&v);
 
     tc_value set_v = tc_value_int(77);
     tc_inspect_set(&obj, "MockDispatchType", "value", set_v, NULL);
     tc_value_free(&set_v);
-    TEST_ASSERT(obj.value == 77, "set");
+    GUARD_C_CHECK(obj.value == 77);
 
     tc_inspect_action(&obj, "MockDispatchType", "value");
-    TEST_ASSERT(obj.action_called == 1, "action");
+    GUARD_C_CHECK_EQ_INT(1, obj.action_called);
 
     tc_inspect_cleanup();
     return 0;
 }
 
-static int test_kind_parse(void) {
+GUARD_C_TEST(test_kind_parse) {
     char container[32];
     char element[32];
     bool ok = tc_kind_parse("list[entity_handle]", container, sizeof(container), element, sizeof(element));
-    TEST_ASSERT(ok, "kind parse list");
-    TEST_ASSERT(strcmp(container, "list") == 0, "container");
-    TEST_ASSERT(strcmp(element, "entity_handle") == 0, "element");
+    GUARD_C_REQUIRE(ok);
+    GUARD_C_CHECK_STREQ("list", container);
+    GUARD_C_CHECK_STREQ("entity_handle", element);
     return 0;
 }
 
-int main(void) {
-    if (test_inspect_dispatcher()) return 1;
-    if (test_kind_parse()) return 1;
-    printf("termin-inspect smoke tests: PASS\n");
-    return 0;
+int main(int argc, char** argv) {
+    GUARD_C_BEGIN_ARGS(argc, argv);
+    GUARD_C_RUN(test_inspect_dispatcher);
+    GUARD_C_RUN(test_kind_parse);
+    return GUARD_C_END();
 }
