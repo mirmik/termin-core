@@ -33,6 +33,7 @@ set(TI_CORE_HEADERS
     include/tc_types.h
     include/tc_value.h
     include/tc_inspect_cpp.hpp
+    include/termin/inspect/tc_kind_cpp_ext.hpp
     include/inspect/tc_inspect.h
     include/inspect/tc_kind.h
     include/inspect/tc_kind_cpp.hpp
@@ -41,6 +42,7 @@ set(TI_CORE_HEADERS
 set(TI_PY_HEADERS
     include/inspect/tc_kind_python.hpp
     include/inspect/tc_inspect_python.hpp
+    include/termin/inspect/tc_kind.hpp
 )
 
 if(COMMAND termin_require_package)
