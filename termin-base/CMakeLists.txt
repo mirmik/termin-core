@@ -81,6 +81,10 @@ install(DIRECTORY include/termin
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
+install(DIRECTORY include/geom
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
 install(FILES
     include/tc_profiler.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
