@@ -34,6 +34,12 @@ void bind_vec3(nb::module_& m) {
         .def_static("unit_x", &Vec3::unit_x)
         .def_static("unit_y", &Vec3::unit_y)
         .def_static("unit_z", &Vec3::unit_z)
+        .def_static("right", &Vec3::right)
+        .def_static("left", &Vec3::left)
+        .def_static("forward", &Vec3::forward)
+        .def_static("backward", &Vec3::backward)
+        .def_static("up", &Vec3::up)
+        .def_static("down", &Vec3::down)
         .def_static("angle", &Vec3::angle,
             nb::arg("a"), nb::arg("b"),
             "Angle between two vectors in radians")

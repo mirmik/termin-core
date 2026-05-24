@@ -67,6 +67,12 @@ struct Vec3 {
     static Vec3 unit_x() { return {1, 0, 0}; }
     static Vec3 unit_y() { return {0, 1, 0}; }
     static Vec3 unit_z() { return {0, 0, 1}; }
+    static Vec3 right() { return unit_x(); }
+    static Vec3 left() { return {-1, 0, 0}; }
+    static Vec3 forward() { return unit_y(); }
+    static Vec3 backward() { return {0, -1, 0}; }
+    static Vec3 up() { return unit_z(); }
+    static Vec3 down() { return {0, 0, -1}; }
 };
 
 inline Vec3 operator*(double s, const Vec3& v) { return v * s; }
@@ -124,6 +130,12 @@ struct Vec3f {
     static Vec3f unit_x() { return {1, 0, 0}; }
     static Vec3f unit_y() { return {0, 1, 0}; }
     static Vec3f unit_z() { return {0, 0, 1}; }
+    static Vec3f right() { return unit_x(); }
+    static Vec3f left() { return {-1, 0, 0}; }
+    static Vec3f forward() { return unit_y(); }
+    static Vec3f backward() { return {0, -1, 0}; }
+    static Vec3f up() { return unit_z(); }
+    static Vec3f down() { return {0, 0, -1}; }
 };
 
 inline Vec3f operator*(float s, const Vec3f& v) { return v * s; }
@@ -173,6 +185,12 @@ struct Vec3i {
     static Vec3i unit_x() { return {1, 0, 0}; }
     static Vec3i unit_y() { return {0, 1, 0}; }
     static Vec3i unit_z() { return {0, 0, 1}; }
+    static Vec3i right() { return unit_x(); }
+    static Vec3i left() { return {-1, 0, 0}; }
+    static Vec3i forward() { return unit_y(); }
+    static Vec3i backward() { return {0, -1, 0}; }
+    static Vec3i up() { return unit_z(); }
+    static Vec3i down() { return {0, 0, -1}; }
 };
 
 inline Vec3i operator*(int s, const Vec3i& v) { return v * s; }

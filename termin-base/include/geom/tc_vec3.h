@@ -49,6 +49,24 @@ static inline tc_vec3 tc_vec3_unit_y(void) { return TC_VEC3(0, 1, 0); }
 /// Единичный вектор оси Z (0, 0, 1)
 static inline tc_vec3 tc_vec3_unit_z(void) { return TC_VEC3(0, 0, 1); }
 
+/// Направление вправо в Termin: +X (1, 0, 0)
+static inline tc_vec3 tc_vec3_right(void) { return tc_vec3_unit_x(); }
+
+/// Направление влево в Termin: -X (-1, 0, 0)
+static inline tc_vec3 tc_vec3_left(void) { return TC_VEC3(-1, 0, 0); }
+
+/// Направление вперёд в Termin: +Y (0, 1, 0)
+static inline tc_vec3 tc_vec3_forward(void) { return tc_vec3_unit_y(); }
+
+/// Направление назад в Termin: -Y (0, -1, 0)
+static inline tc_vec3 tc_vec3_backward(void) { return TC_VEC3(0, -1, 0); }
+
+/// Направление вверх в Termin: +Z (0, 0, 1)
+static inline tc_vec3 tc_vec3_up(void) { return tc_vec3_unit_z(); }
+
+/// Направление вниз в Termin: -Z (0, 0, -1)
+static inline tc_vec3 tc_vec3_down(void) { return TC_VEC3(0, 0, -1); }
+
 /// @}
 
 /// @name Арифметика
