@@ -16,6 +16,7 @@
 #include <functional>
 #include <any>
 #include <memory>
+#include <type_traits>
 
 #include "inspect/tc_kind_cpp.hpp"
 
@@ -661,10 +662,25 @@ struct InspectFieldChoicesRegistrar {
 
         info.getter = [member, kind_copy](void* obj) -> tc_value {
             T val = static_cast<C*>(obj)->*member;
+            if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+                if (kind_copy == "enum") {
+                    return tc_value_string(val.c_str());
+                }
+            }
             return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
         };
 
         info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+            if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+                if (kind_copy == "enum") {
+                    if (value.type == TC_VALUE_STRING) {
+                        static_cast<C*>(obj)->*member = tc_value_to_string(&value);
+                    } else {
+                        static_cast<C*>(obj)->*member = std::to_string(tc_value_to_int(&value));
+                    }
+                    return;
+                }
+            }
             std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
             if (val.has_value()) {
                 try {

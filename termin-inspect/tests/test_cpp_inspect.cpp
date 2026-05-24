@@ -16,6 +16,11 @@ struct CppDerivedComponent : public CppBaseComponent {
     std::string title = "rookie";
 };
 
+struct CppChoiceComponent {
+    int numeric_mode = 1;
+    std::string string_mode = "average";
+};
+
 void expect_near(float a, float b, float eps = 1e-6f) {
     CHECK(std::fabs(a - b) <= eps);
 }
@@ -81,6 +86,54 @@ TEST_CASE("C++ inspect registry roundtrips inherited fields") {
 
     tc_value_free(&input);
     tc_value_free(&serialized);
+}
+
+TEST_CASE("C++ inspect choices support string enum fields") {
+    tc::init_cpp_inspect_vtable();
+    (void)tc::KindRegistryCpp::instance();
+    tc::register_builtin_cpp_kinds();
+
+    auto& reg = tc::InspectRegistry::instance();
+    reg.unregister_type("CppChoiceComponent");
+
+    tc::InspectFieldChoicesRegistrar<CppChoiceComponent, int> numeric_reg{
+        &CppChoiceComponent::numeric_mode,
+        "CppChoiceComponent",
+        "numeric_mode",
+        "Numeric Mode",
+        "enum",
+        {{"0", "Zero"}, {"1", "One"}},
+    };
+    tc::InspectFieldChoicesRegistrar<CppChoiceComponent, std::string> string_reg{
+        &CppChoiceComponent::string_mode,
+        "CppChoiceComponent",
+        "string_mode",
+        "String Mode",
+        "enum",
+        {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}},
+    };
+
+    CppChoiceComponent obj;
+
+    tc_value numeric_value = reg.get_tc_value(&obj, "CppChoiceComponent", "numeric_mode");
+    CHECK(numeric_value.type == TC_VALUE_INT);
+    CHECK_EQ(numeric_value.data.i, 1);
+    tc_value_free(&numeric_value);
+
+    tc_value string_value = reg.get_tc_value(&obj, "CppChoiceComponent", "string_mode");
+    REQUIRE(string_value.type == TC_VALUE_STRING);
+    CHECK_EQ(std::string(string_value.data.s), std::string("average"));
+    tc_value_free(&string_value);
+
+    tc_value input = tc_value_dict_new();
+    tc_value_dict_set(&input, "numeric_mode", tc_value_int(0));
+    tc_value_dict_set(&input, "string_mode", tc_value_string("max"));
+    reg.deserialize_all(&obj, "CppChoiceComponent", &input, nullptr);
+
+    CHECK_EQ(obj.numeric_mode, 0);
+    CHECK_EQ(obj.string_mode, std::string("max"));
+
+    tc_value_free(&input);
 }
 
 GUARD_TEST_MAIN();
