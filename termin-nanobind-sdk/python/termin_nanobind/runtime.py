@@ -1,11 +1,13 @@
 """Runtime helpers for termin pip packages.
 
-Pip-path architecture: the termin SDK (shared libraries, headers, cmake configs)
-lives at a single filesystem location — either $TERMIN_SDK, /opt/termin, or
-%LOCALAPPDATA%/termin-sdk on Windows. Pip packages ship only Python wrappers
-and nanobind binding .so files; they do not bundle shared libraries. At import
-time, a pip package calls `preload_sdk_libs(...)` to make its C++ dependencies
-available to the dynamic linker before loading its own binding module.
+Termin packages can run in two layouts:
+
+1. Standalone pip install: a package may carry its native dependencies in a
+   local ``lib/`` directory next to the binding module.
+2. SDK install: shared libraries live in ``$TERMIN_SDK/lib``.
+
+At import time, packages call ``preload_sdk_libs(...)`` before importing their
+nanobind module so dependent shared libraries are visible to the dynamic linker.
 """
 
 import ctypes
@@ -16,6 +18,7 @@ from pathlib import Path
 _sdk_root = None
 _preloaded = set()
 _windows_dirs_registered = False
+_windows_local_dirs = set()
 
 
 def find_sdk():
@@ -76,18 +79,65 @@ def _require_sdk():
     return sdk
 
 
-def _register_windows_dll_dirs():
+def _caller_lib_dirs():
+    dirs = []
+    try:
+        frame = sys._getframe(2)
+    except ValueError:
+        return dirs
+    module_file = frame.f_globals.get("__file__")
+    if not module_file:
+        return dirs
+
+    start = Path(module_file).resolve().parent
+    for parent in (start, *start.parents):
+        lib_dir = parent / "lib"
+        if lib_dir.is_dir():
+            dirs.append(lib_dir)
+        if parent.name in {"site-packages", "dist-packages"}:
+            break
+    return dirs
+
+
+def _register_windows_dll_dirs(local_dirs):
     global _windows_dirs_registered
     if _windows_dirs_registered:
+        for d in local_dirs:
+            key = str(d)
+            if key not in _windows_local_dirs:
+                os.add_dll_directory(key)
+                _windows_local_dirs.add(key)
         return
     if not hasattr(os, "add_dll_directory"):
         return
-    sdk = _require_sdk()
+    for d in local_dirs:
+        os.add_dll_directory(str(d))
+        _windows_local_dirs.add(str(d))
+    sdk = find_sdk()
+    if sdk is None:
+        _windows_dirs_registered = True
+        return
     for sub in ("bin", "lib"):
         d = sdk / sub
         if d.is_dir():
             os.add_dll_directory(str(d))
     _windows_dirs_registered = True
+
+
+def _find_library(name, lib_dirs):
+    for lib_dir in lib_dirs:
+        candidates = [
+            lib_dir / f"lib{name}.so",
+            lib_dir / f"lib{name}.dylib",
+        ]
+        found = next((p for p in candidates if p.exists()), None)
+        if found is not None:
+            return found
+        versioned = sorted(lib_dir.glob(f"lib{name}.so.*")) \
+            or sorted(lib_dir.glob(f"lib{name}.*.dylib"))
+        if versioned:
+            return versioned[0]
+    return None
 
 
 def preload_sdk_libs(*lib_names):
@@ -106,30 +156,28 @@ def preload_sdk_libs(*lib_names):
     os.add_dll_directory. On Windows the loader searches those directories
     directly, so explicit CDLL preloading is unnecessary.
     """
+    local_lib_dirs = _caller_lib_dirs()
+
     if sys.platform == "win32":
-        _register_windows_dll_dirs()
+        _register_windows_dll_dirs(local_lib_dirs)
         return
 
-    sdk = _require_sdk()
-    lib_dir = sdk / "lib"
+    sdk = find_sdk()
+    sdk_lib_dir = sdk / "lib" if sdk is not None else None
+    lib_dirs = list(local_lib_dirs)
+    if sdk_lib_dir is not None and sdk_lib_dir.is_dir():
+        lib_dirs.append(sdk_lib_dir)
 
     for name in lib_names:
         if name in _preloaded:
             continue
-        candidates = [
-            lib_dir / f"lib{name}.so",
-            lib_dir / f"lib{name}.dylib",
-        ]
-        found = next((p for p in candidates if p.exists()), None)
+        found = _find_library(name, lib_dirs)
         if found is None:
-            versioned = sorted(lib_dir.glob(f"lib{name}.so.*")) \
-                or sorted(lib_dir.glob(f"lib{name}.*.dylib"))
-            if versioned:
-                found = versioned[0]
-        if found is None:
+            searched = ", ".join(str(p) for p in lib_dirs) or "<none>"
             raise ImportError(
-                f"Cannot find lib{name} in {lib_dir}. Rebuild the SDK or "
-                f"check TERMIN_SDK points to a valid installation."
+                f"Cannot find lib{name}. Searched: {searched}. "
+                f"Install a package with bundled native libraries, rebuild the "
+                f"SDK, or check TERMIN_SDK points to a valid installation."
             )
         ctypes.CDLL(str(found), mode=ctypes.RTLD_GLOBAL)
         _preloaded.add(name)
