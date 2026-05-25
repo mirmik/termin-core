@@ -18,6 +18,7 @@ nanobind_add_module(_geom_native NB_SHARED
     bindings/geom/general_pose3.cpp
     bindings/geom/screw3.cpp
     bindings/geom/aabb.cpp
+    bindings/geom/orbit_camera.cpp
 )
 
 target_link_libraries(_geom_native PRIVATE termin_base)

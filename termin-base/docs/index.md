@@ -20,12 +20,14 @@ Python-пакет: `tcbase`.
 - `Settings` - JSON-backed settings API, доступный из C++/Python.
 - `trent` - JSON/YAML/value tree utilities.
 - `termin/geom/*` - базовые геометрические типы: vectors, matrices, poses, quaternions, rays, AABB.
+- `termin/camera/orbit_camera.hpp` / `termin.geombase.OrbitCamera` - чистая математика orbit camera без ECS, UI и render backend.
 - `tc_profiler` / `tcbase.profiler` - base-level profiler без зависимости от `termin-app`.
 - input enums (`Action`, `MouseButton`, `Mods`, `Key`) для общего event vocabulary.
 
 ## Публичный API
 
-C/C++ headers лежат в `include/tcbase/`, `include/tc_profiler.h` и `include/termin/geom/`.
+C/C++ headers лежат в `include/tcbase/`, `include/tc_profiler.h`,
+`include/termin/geom/` и `include/termin/camera/`.
 
 Python API экспортируется из `tcbase`:
 

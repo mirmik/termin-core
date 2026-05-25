@@ -21,6 +21,7 @@ from ._geom_native import (
     GeneralPose3,
     Screw3,
     AABB,
+    OrbitCamera,
 )
 
 from .pose2 import Pose2
@@ -40,5 +41,6 @@ __all__ = [
     'Screw2',
     'Screw3',
     'AABB',
+    'OrbitCamera',
     'TransformAABB',
 ]
