@@ -12,6 +12,9 @@
 #include <unordered_map>
 #include <functional>
 #include <any>
+#include <cerrno>
+#include <cstdlib>
+#include <limits>
 
 extern "C" {
 #include "inspect/tc_inspect.h"
@@ -81,6 +84,17 @@ inline int tc_value_to_int(const tc_value* v) {
     if (v->type == TC_VALUE_INT) return static_cast<int>(v->data.i);
     if (v->type == TC_VALUE_DOUBLE) return static_cast<int>(v->data.d);
     if (v->type == TC_VALUE_FLOAT) return static_cast<int>(v->data.f);
+    if (v->type == TC_VALUE_STRING && v->data.s) {
+        char* end = nullptr;
+        errno = 0;
+        long parsed = std::strtol(v->data.s, &end, 10);
+        if (end != v->data.s && *end == '\0' && errno != ERANGE &&
+            parsed >= std::numeric_limits<int>::min() &&
+            parsed <= std::numeric_limits<int>::max()) {
+            return static_cast<int>(parsed);
+        }
+        tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to int", v->data.s);
+    }
     return 0;
 }
 
@@ -214,6 +228,40 @@ inline void register_builtin_cpp_kinds() {
                 result.x = tc_value_to_double(&v->data.list.items[0]);
                 result.y = tc_value_to_double(&v->data.list.items[1]);
                 result.z = tc_value_to_double(&v->data.list.items[2]);
+            }
+            return result;
+        }
+    );
+
+    reg.register_kind("list[vec3]",
+        [](const std::any& v) -> tc_value {
+            const auto& points = std::any_cast<const std::vector<tc_vec3>&>(v);
+            tc_value list = tc_value_list_new();
+            for (const tc_vec3& point : points) {
+                tc_value item = tc_value_list_new();
+                tc_value_list_push(&item, tc_value_double(point.x));
+                tc_value_list_push(&item, tc_value_double(point.y));
+                tc_value_list_push(&item, tc_value_double(point.z));
+                tc_value_list_push(&list, item);
+            }
+            return list;
+        },
+        [](const tc_value* v, void*) -> std::any {
+            std::vector<tc_vec3> result;
+            if (v && v->type == TC_VALUE_LIST) {
+                result.reserve(v->data.list.count);
+                for (size_t i = 0; i < v->data.list.count; i++) {
+                    const tc_value* item = &v->data.list.items[i];
+                    tc_vec3 point = {0, 0, 0};
+                    if (item->type == TC_VALUE_LIST && item->data.list.count >= 3) {
+                        point.x = tc_value_to_double(&item->data.list.items[0]);
+                        point.y = tc_value_to_double(&item->data.list.items[1]);
+                        point.z = tc_value_to_double(&item->data.list.items[2]);
+                    } else {
+                        tc_log(TC_LOG_ERROR, "[Inspect] list[vec3] item %zu is not a 3-component list", i);
+                    }
+                    result.push_back(point);
+                }
             }
             return result;
         }

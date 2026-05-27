@@ -18,6 +18,7 @@ struct CppDerivedComponent : public CppBaseComponent {
 
 struct CppChoiceComponent {
     int numeric_mode = 1;
+    int accessor_mode = 0;
     std::string string_mode = "average";
 };
 
@@ -112,6 +113,15 @@ TEST_CASE("C++ inspect choices support string enum fields") {
         "enum",
         {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}},
     };
+    tc::InspectAccessorFieldChoicesRegistrar<CppChoiceComponent, int> accessor_reg{
+        "CppChoiceComponent",
+        "accessor_mode",
+        "Accessor Mode",
+        "enum",
+        [](CppChoiceComponent* self) -> int { return self->accessor_mode; },
+        [](CppChoiceComponent* self, int value) { self->accessor_mode = value; },
+        {{"0", "Zero"}, {"2", "Two"}},
+    };
 
     CppChoiceComponent obj;
 
@@ -125,12 +135,20 @@ TEST_CASE("C++ inspect choices support string enum fields") {
     CHECK_EQ(std::string(string_value.data.s), std::string("average"));
     tc_value_free(&string_value);
 
+    const auto* accessor_field = reg.find_field("CppChoiceComponent", "accessor_mode");
+    REQUIRE(accessor_field != nullptr);
+    REQUIRE(accessor_field->choices.size() == 2u);
+    CHECK_EQ(accessor_field->choices[1].value, std::string("2"));
+    CHECK_EQ(accessor_field->choices[1].label, std::string("Two"));
+
     tc_value input = tc_value_dict_new();
     tc_value_dict_set(&input, "numeric_mode", tc_value_int(0));
+    tc_value_dict_set(&input, "accessor_mode", tc_value_string("2"));
     tc_value_dict_set(&input, "string_mode", tc_value_string("max"));
     reg.deserialize_all(&obj, "CppChoiceComponent", &input, nullptr);
 
     CHECK_EQ(obj.numeric_mode, 0);
+    CHECK_EQ(obj.accessor_mode, 2);
     CHECK_EQ(obj.string_mode, std::string("max"));
 
     tc_value_free(&input);

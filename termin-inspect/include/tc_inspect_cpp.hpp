@@ -634,6 +634,60 @@ struct InspectAccessorFieldRegistrar {
 };
 
 template<typename C, typename T>
+struct InspectAccessorFieldChoicesRegistrar {
+    InspectAccessorFieldChoicesRegistrar(
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind,
+        std::function<T(C*)> getter_fn,
+        std::function<void(C*, T)> setter_fn,
+        std::initializer_list<std::pair<const char*, const char*>> choices_list,
+        bool is_serializable = true,
+        bool is_inspectable = true
+    ) {
+        InspectFieldInfo info;
+        info.type_name = type_name;
+        info.path = path;
+        info.label = label;
+        info.kind = kind;
+        info.is_serializable = is_serializable;
+        info.is_inspectable = is_inspectable;
+
+        for (const auto& [value, choice_label] : choices_list) {
+            EnumChoice choice;
+            choice.value = value;
+            choice.label = choice_label;
+            info.choices.push_back(std::move(choice));
+        }
+
+        std::string kind_copy = kind;
+        std::string type_copy = type_name;
+        std::string path_copy = path;
+
+        info.getter = [getter_fn, kind_copy](void* obj) -> tc_value {
+            T val = getter_fn(static_cast<C*>(obj));
+            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+        };
+
+        info.setter = [setter_fn, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+            std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+            if (val.has_value()) {
+                try {
+                    setter_fn(static_cast<C*>(obj), std::any_cast<T>(val));
+                } catch (const std::bad_any_cast&) {
+                    tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
+                                   "Check that accessor type matches kind",
+                                   type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
+                }
+            }
+        };
+
+        InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+    }
+};
+
+template<typename C, typename T>
 struct InspectFieldChoicesRegistrar {
     InspectFieldChoicesRegistrar(
         T C::*member,
@@ -764,6 +818,10 @@ struct InspectTypeMetadataRegistrar {
 #define INSPECT_FIELD_ACCESSORS(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
     inline static ::tc::InspectAccessorFieldRegistrar<cls, type> \
         _inspect_reg_##cls##_##name{#cls, #name, label, kind, getter_fn, setter_fn, ##__VA_ARGS__};
+
+#define INSPECT_FIELD_ACCESSORS_CHOICES(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
+    inline static ::tc::InspectAccessorFieldChoicesRegistrar<cls, type> \
+        _inspect_reg_##cls##_##name{#cls, #name, label, kind, getter_fn, setter_fn, {__VA_ARGS__}};
 
 #define SERIALIZABLE_FIELD(cls, name, getter_expr, setter_expr) \
     inline static ::tc::SerializableFieldRegistrar<cls> \
