@@ -32,9 +32,26 @@ find_package(nanobind CONFIG REQUIRED)
 nanobind_build_library(nanobind)
 set_target_properties(nanobind PROPERTIES EXCLUDE_FROM_ALL FALSE)
 
+set(_nanobind_build_includes "${NANOBIND_PY_ROOT}/include")
+set(_nanobind_install_includes "${CMAKE_INSTALL_LIBDIR}/nanobind/include")
+list(APPEND _nanobind_build_includes ${Python_INCLUDE_DIRS})
+if(EXISTS "${NANOBIND_PY_ROOT}/ext/robin_map/include")
+    list(APPEND _nanobind_build_includes "${NANOBIND_PY_ROOT}/ext/robin_map/include")
+    list(APPEND _nanobind_install_includes "${CMAKE_INSTALL_LIBDIR}/nanobind/ext/robin_map/include")
+endif()
+
+set(_nanobind_interface_includes "")
+foreach(_include_dir IN LISTS _nanobind_build_includes)
+    list(APPEND _nanobind_interface_includes "$<BUILD_INTERFACE:${_include_dir}>")
+endforeach()
+foreach(_include_dir IN LISTS _nanobind_install_includes)
+    list(APPEND _nanobind_interface_includes "$<INSTALL_INTERFACE:${_include_dir}>")
+endforeach()
+
 set_target_properties(nanobind PROPERTIES
     BUILD_WITH_INSTALL_RPATH TRUE
     INSTALL_RPATH "$ORIGIN"
+    INTERFACE_INCLUDE_DIRECTORIES "${_nanobind_interface_includes}"
 )
 
 install(TARGETS nanobind
