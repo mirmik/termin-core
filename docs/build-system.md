@@ -17,26 +17,26 @@
 Типичная сборка SDK:
 
 ```bash
-./build-sdk.sh --no-vulkan --sdl
+./build-sdk.sh --sdl
 ```
 
 Если wheelhouse `sdk/wheels` не нужен для текущей итерации, его сборку можно
 отключить:
 
 ```bash
-./build-sdk.sh --no-vulkan --sdl --no-wheels
+./build-sdk.sh --sdl --no-wheels
 ```
 
 Только C/C++ стадия:
 
 ```bash
-./build-sdk-cpp.sh --no-vulkan --sdl
+./build-sdk-cpp.sh --sdl
 ```
 
 Только Python/nanobind bindings:
 
 ```bash
-./build-sdk-bindings.sh --no-vulkan --sdl
+./build-sdk-bindings.sh --sdl
 ```
 
 Прямой CMake-вариант:
@@ -45,7 +45,7 @@
 cmake -S . -B build/Release \
   -DCMAKE_BUILD_TYPE=Release \
   -DTERMIN_BUILD_PYTHON=ON \
-  -DTERMIN_ENABLE_VULKAN=OFF \
+  -DTERMIN_ENABLE_VULKAN=ON \
   -DTERMIN_ENABLE_SDL=ON
 cmake --build build/Release --parallel
 cmake --install build/Release
@@ -65,18 +65,18 @@ Root CMake-граф поддерживает несколько ускорите
 Примеры:
 
 ```bash
-BUILD_JOBS=8 ./build-sdk-cpp.sh --no-vulkan --sdl
-BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --no-vulkan --sdl --ninja
-BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --no-vulkan --sdl --unity
-BUILD_DIR=build/Release-no-pch ./build-sdk-cpp.sh --no-vulkan --sdl --no-pch
+BUILD_JOBS=8 ./build-sdk-cpp.sh --sdl
+BUILD_DIR=build/Release-ninja ./build-sdk-cpp.sh --sdl --ninja
+BUILD_DIR=build/Release-unity ./build-sdk-cpp.sh --sdl --unity
+BUILD_DIR=build/Release-no-pch ./build-sdk-cpp.sh --sdl --no-pch
 ```
 
 PowerShell SDK-скрипты на Windows используют тот же root CMake graph:
 
 ```powershell
-$env:BUILD_JOBS=8; .\build-sdk-cpp.ps1 --no-vulkan --sdl
-$env:BUILD_DIR="build\Release-unity"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --unity
-$env:BUILD_DIR="build\Release-no-pch"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --no-pch
+$env:BUILD_JOBS=8; .\build-sdk-cpp.ps1 --sdl
+$env:BUILD_DIR="build\Release-unity"; .\build-sdk-cpp.ps1 --sdl --unity
+$env:BUILD_DIR="build\Release-no-pch"; .\build-sdk-cpp.ps1 --sdl --no-pch
 ```
 
 На Windows PowerShell-скрипты по умолчанию не выбирают Ninja автоматически и оставляют CMake default generator (обычно Visual Studio/MSVC). Ninja можно включить явно через `$env:TERMIN_CMAKE_GENERATOR="Ninja"`, но тогда CMake возьмёт компилятор из окружения/PATH; старый LLVM `clang-cl` может быть несовместим с текущим MSVC STL.
@@ -86,7 +86,7 @@ $env:BUILD_DIR="build\Release-no-pch"; .\build-sdk-cpp.ps1 --no-vulkan --sdl --n
 ```bash
 cmake -S . -B build/Release-unity -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DTERMIN_ENABLE_VULKAN=OFF \
+  -DTERMIN_ENABLE_VULKAN=ON \
   -DTERMIN_ENABLE_SDL=ON \
   -DTERMIN_USE_CCACHE=ON \
   -DTERMIN_ENABLE_UNITY_BUILD=ON \
@@ -261,12 +261,13 @@ Launcher при запуске:
 C/C++ тесты собираются через root CMake graph:
 
 ```bash
-bash run-tests-cpp.sh --no-vulkan --sdl
+bash run-tests-cpp.sh --sdl
 ```
 
 Флаги:
 
-- `--vulkan` / `--no-vulkan` управляют `TERMIN_ENABLE_VULKAN`;
+- `--vulkan` / `--no-vulkan` управляют `TERMIN_ENABLE_VULKAN`; Vulkan
+  включён по умолчанию и является основным тестовым путём;
 - `--window-tests` / `--no-window-tests` управляют тестами, которым нужен windowing/video backend;
 - tgfx2 тесты подключены к CTest и являются частью основного C++ test workflow.
 
