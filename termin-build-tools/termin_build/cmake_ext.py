@@ -38,6 +38,7 @@ import subprocess
 import sys
 
 _logger = logging.getLogger(__name__)
+_CMAKE_CONFIG_DIRS = ("Release", "Debug", "RelWithDebInfo", "MinSizeRel")
 
 
 def _find_sdk():
@@ -59,6 +60,26 @@ def _find_sdk():
     if (default / "lib").is_dir():
         return default
     return None
+
+
+def _sdk_python_artifact_roots(sdk):
+    roots = []
+    if sys.platform == "win32":
+        roots.append(sdk / "python" / "Lib" / "site-packages")
+    else:
+        lib_dir = sdk / "lib"
+        if lib_dir.is_dir():
+            roots.extend(
+                sorted(lib_dir.glob("python*/site-packages"), reverse=True)
+            )
+    roots.append(sdk / "lib" / "python")
+    return roots
+
+
+def _cmake_artifact_roots(root):
+    yield root
+    for config in _CMAKE_CONFIG_DIRS:
+        yield root / config
 
 
 def _truthy_env(name, default=True):
@@ -108,7 +129,7 @@ class TerminCMakeBuildExt(build_ext):
             roots.append(Path(bindings_dir))
         sdk = _find_sdk()
         if sdk is not None:
-            roots.append(sdk / "lib" / "python")
+            roots.extend(_sdk_python_artifact_roots(sdk))
         source_dir = Path(cls.source_dir or Path.cwd())
         for parent in (source_dir, *source_dir.parents):
             roots.append(parent / "build" / "Release" / "bin")
@@ -153,7 +174,7 @@ class TerminCMakeBuildExt(build_ext):
 
         sdk = _find_sdk()
         if sdk is not None:
-            roots.append(sdk / "lib" / "python")
+            roots.extend(_sdk_python_artifact_roots(sdk))
 
         unique = []
         seen = set()
@@ -174,7 +195,10 @@ class TerminCMakeBuildExt(build_ext):
             if not root.is_dir():
                 searched.append(root)
                 continue
-            search_dirs = [root, root / pkg_fs_path]
+            search_dirs = []
+            for artifact_root in _cmake_artifact_roots(root):
+                search_dirs.append(artifact_root)
+                search_dirs.append(artifact_root / pkg_fs_path)
             for search_dir in search_dirs:
                 searched.append(search_dir)
                 if not search_dir.is_dir():
