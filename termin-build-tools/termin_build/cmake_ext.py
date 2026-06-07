@@ -28,6 +28,7 @@ longer runs CMake.
 """
 
 import logging
+import json
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build import build as _build
 from pathlib import Path
@@ -87,6 +88,16 @@ def _truthy_env(name, default=True):
     if value is None:
         return default
     return value.strip().lower() not in {"0", "false", "off", "no"}
+
+
+def _artifact_manifest_path():
+    sdk = _find_sdk()
+    if sdk is None:
+        return None
+    manifest = sdk / "termin-artifacts.json"
+    if manifest.is_file():
+        return manifest
+    return None
 
 
 class TerminCMakeBuild(_build):
@@ -188,6 +199,30 @@ class TerminCMakeBuildExt(build_ext):
 
     def _find_binding_module(self, pkg_dotted_path, module_name):
         """Locate a pre-built binding module."""
+        extension_name = f"{pkg_dotted_path}.{module_name}"
+        artifact_manifest = _artifact_manifest_path()
+        if artifact_manifest is not None:
+            try:
+                with artifact_manifest.open("r", encoding="utf-8") as f:
+                    artifact_data = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                raise RuntimeError(
+                    f"Cannot read Termin artifact manifest {artifact_manifest}: {e}"
+                ) from e
+            for artifact in artifact_data.get("artifacts", []):
+                if artifact.get("extension") != extension_name:
+                    continue
+                build_path = Path(artifact.get("build_path", ""))
+                if build_path.is_file():
+                    return build_path
+                _logger.warning(
+                    "Termin artifact manifest entry for %s points to missing "
+                    "file %s; falling back to legacy artifact search",
+                    extension_name,
+                    build_path,
+                )
+                break
+
         pkg_fs_path = pkg_dotted_path.replace(".", "/")
         patterns = [f"{module_name}.*.so", f"{module_name}.*.pyd", f"{module_name}.pyd"]
         searched = []

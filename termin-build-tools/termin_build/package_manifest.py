@@ -82,11 +82,15 @@ def package_paths(packages: Iterable[PackageEntry]) -> list[str]:
 
 
 def read_shell_package_list(repo_root: Path) -> list[str]:
+    source = repo_root / "scripts" / "termin-python-packages.sh"
+    text = source.read_text(encoding="utf-8")
+    if "termin_build.package_manifest" in text:
+        return package_paths(load_manifest(repo_root))
+
     bash = shutil.which("bash")
     if bash:
-        script = repo_root / "scripts" / "termin-python-packages.sh"
         command = (
-            f"source {str(script)!r}; "
+            f"source {str(source)!r}; "
             'printf "%s\\n" "${TERMIN_PYTHON_PACKAGES[@]}"'
         )
         result = subprocess.run(
@@ -100,8 +104,6 @@ def read_shell_package_list(repo_root: Path) -> list[str]:
         if result.returncode == 0:
             return [line for line in result.stdout.splitlines() if line]
 
-    source = repo_root / "scripts" / "termin-python-packages.sh"
-    text = source.read_text(encoding="utf-8")
     match = _PACKAGE_LIST_RE.search(text)
     if match is None:
         raise ValueError(f"Cannot find TERMIN_PYTHON_PACKAGES in {source}")
