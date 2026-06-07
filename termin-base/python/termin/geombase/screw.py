@@ -1,6 +1,7 @@
 import numpy
 import math
 from termin.geombase._geom_native import Pose3, Vec3
+from termin.geombase.pose2 import Pose2
 
 def _to_numpy(v):
     """Convert Vec3 or array-like to numpy array."""
@@ -61,23 +62,23 @@ class Screw2(Screw):
         """Return the vector part of the screw."""
         return self.lin
 
-    def kinematic_carry(self, arm: "Vector2") -> "Screw2":
+    def kinematic_carry(self, arm: numpy.ndarray) -> "Screw2":
         """Twist transform. Carry the screw by arm. For pair of angular and linear speeds."""
         return Screw2(
             lin=self.lin + cross2d(self.moment(), arm),
             ang=self.ang)
 
-    def force_carry(self, arm: "Vector2") -> "Screw2":
+    def force_carry(self, arm: numpy.ndarray) -> "Screw2":
         """Wrench transform. Carry the screw by arm. For pair of torques and forces."""
         return Screw2(
             ang=self.ang - numpy.array([cross2d_scalar(arm, self.lin)]),
             lin=self.lin)
 
-    def twist_carry(self, arm: "Vector2") -> "Screw2":
+    def twist_carry(self, arm: numpy.ndarray) -> "Screw2":
         """Alias for kinematic_carry."""
         return self.kinematic_carry(arm)
 
-    def wrench_carry(self, arm: "Vector2") -> "Screw2":
+    def wrench_carry(self, arm: numpy.ndarray) -> "Screw2":
         """Alias for force_carry."""
         return self.force_carry(arm)
 
@@ -186,23 +187,23 @@ class Screw3(Screw):
         """Return the vector part of the screw."""
         return self.lin
 
-    def kinematic_carry(self, arm: "Vector3") -> "Screw3":
+    def kinematic_carry(self, arm: numpy.ndarray) -> "Screw3":
         """Twist transform. Carry the screw by arm. For pair of angular and linear speeds."""
         return Screw3(
             lin=self.lin + numpy.cross(self.ang, arm),
             ang=self.ang)
 
-    def force_carry(self, arm: "Vector3") -> "Screw3":
+    def force_carry(self, arm: numpy.ndarray) -> "Screw3":
         """Wrench transform. Carry the screw by arm. For pair of torques and forces."""
         return Screw3(
             ang=self.ang - numpy.cross(arm, self.lin),
             lin=self.lin)
 
-    def twist_carry(self, arm: "Vector3") -> "Screw3":
+    def twist_carry(self, arm: numpy.ndarray) -> "Screw3":
         """Alias for kinematic_carry."""
         return self.kinematic_carry(arm)
 
-    def wrench_carry(self, arm: "Vector3") -> "Screw3":
+    def wrench_carry(self, arm: numpy.ndarray) -> "Screw3":
         """Alias for force_carry."""
         return self.force_carry(arm)
 

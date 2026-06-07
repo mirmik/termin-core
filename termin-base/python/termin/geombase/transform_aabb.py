@@ -12,7 +12,7 @@ class TransformAABB:
     __slots__ = ('_transform', '_my_aabb', '_my_world_aabb', '_compiled_aabb',
                  '_last_inspected_version', '_last_tree_inspected_version')
 
-    def __init__(self, transform: 'Transform', aabb: AABB):
+    def __init__(self, transform, aabb: AABB):
         self._transform = transform
         self._my_aabb = aabb
         self._my_world_aabb = None
