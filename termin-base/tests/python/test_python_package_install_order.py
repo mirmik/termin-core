@@ -1,11 +1,12 @@
 import ast
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PACKAGE_LIST = REPO_ROOT / "scripts" / "termin-python-packages.sh"
+PACKAGE_MANIFEST = REPO_ROOT / "build-system" / "packages.json"
 
 
 @dataclass(frozen=True)
@@ -27,17 +28,8 @@ def _requirement_name(requirement: str) -> str:
 
 
 def _read_shared_package_list() -> list[str]:
-    content = PACKAGE_LIST.read_text()
-    match = re.search(r"TERMIN_PYTHON_PACKAGES=\((.*?)\)", content, re.DOTALL)
-    assert match is not None, "TERMIN_PYTHON_PACKAGES array not found"
-
-    package_paths = []
-    for raw_line in match.group(1).splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        package_paths.append(line.strip("'\""))
-    return package_paths
+    content = json.loads(PACKAGE_MANIFEST.read_text())
+    return [package["path"] for package in content["packages"]]
 
 
 def _literal_string_list(node: ast.AST | None) -> tuple[str, ...]:
