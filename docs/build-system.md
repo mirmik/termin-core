@@ -6,10 +6,11 @@
 
 Публичная точка входа для полной сборки — `./build-sdk.sh`. Скрипты стадий (`build-sdk-cpp.sh`, `build-sdk-bindings.sh`) конфигурируют один и тот же root build directory (`build/Release` для Release) и устанавливают результат в общую SDK-директорию (`./sdk/`). Это позволяет CMake параллелить независимые цели в рамках одного графа, а standalone-сборки отдельных модулей по-прежнему могут использовать установленные CMake package configs из `sdk/`.
 
-Сборка проходит в три стадии:
-1. **C/C++ библиотеки** — shared libraries, заголовки, CMake config
-2. **Python bindings** — nanobind-модули + Python-исходники
-3. **C# bindings** (опционально, требует SWIG)
+Сборка через `./build-sdk.sh` проходит в четыре стадии:
+1. **C/C++ библиотеки + Python bindings** — shared libraries, заголовки, CMake config, nanobind-модули и Python-исходники
+2. **C# bindings** (опционально, требует SWIG)
+3. **Bundled Python site-packages** — установка Python-пакетов в bundled runtime SDK
+4. **SDK Python wheelhouse** — сборка `sdk/wheels` (отключается через `--no-wheels`)
 
 Внутри root build зависимости между модулями выражены CMake targets. Для standalone-сборок модулей остаётся путь через `find_package()` и `CMAKE_PREFIX_PATH=sdk/`.
 
@@ -17,6 +18,13 @@
 
 ```bash
 ./build-sdk.sh --no-vulkan --sdl
+```
+
+Если wheelhouse `sdk/wheels` не нужен для текущей итерации, его сборку можно
+отключить:
+
+```bash
+./build-sdk.sh --no-vulkan --sdl --no-wheels
 ```
 
 Только C/C++ стадия:
