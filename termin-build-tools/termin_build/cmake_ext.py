@@ -8,17 +8,14 @@ extension into ``<package>/lib`` so a venv install can run without an SDK.
 Usage in setup.py:
 
     from termin_build.cmake_ext import TerminCMakeBuild, TerminCMakeBuildExt
+    from termin_build.setup_helpers import native_extensions_for_source
 
     class BuildExt(TerminCMakeBuildExt):
-        module_names = ["_display_native", "_viewport_native"]
         source_dir = _DIR
 
     setup(
         ...
-        ext_modules=[
-            Extension("termin.display._display_native", sources=[]),
-            Extension("termin.viewport._viewport_native", sources=[]),
-        ],
+        ext_modules=native_extensions_for_source(_DIR),
         cmdclass={"build": TerminCMakeBuild, "build_ext": BuildExt},
     )
 
@@ -110,12 +107,9 @@ class TerminCMakeBuild(_build):
 class TerminCMakeBuildExt(build_ext):
     """Copy pre-built binding modules into the pip package.
 
-    Subclasses must set:
-        module_names: list of binding base names (e.g. ["_display_native"]).
-        source_dir: absolute path to the setup.py directory.
+    Subclasses should set source_dir to the absolute setup.py directory.
     """
 
-    module_names = []
     source_dir = None
     upstream_packages = {}
     bundle_libs = False

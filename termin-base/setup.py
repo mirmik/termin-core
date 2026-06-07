@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-from setuptools import setup, Extension
+from setuptools import setup
 from termin_build.cmake_ext import TerminCMakeBuild, TerminCMakeBuildExt
+from termin_build.setup_helpers import native_extensions_for_source
 
 
 import os
@@ -9,7 +10,6 @@ _DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 class BuildExt(TerminCMakeBuildExt):
-    module_names = ["_tcbase_native", "_geom_native"]
     upstream_packages = {"termin_nanobind": "libnanobind"}
     bundle_includes = True
     source_dir = _DIR
@@ -42,10 +42,7 @@ setup(
         ],
     },
     install_requires=["termin-nanobind", "numpy"],
-    ext_modules=[
-        Extension("tcbase._tcbase_native", sources=[]),
-        Extension("tcbase._geom_native", sources=[]),
-    ],
+    ext_modules=native_extensions_for_source(_DIR),
     cmdclass={"build": TerminCMakeBuild, "build_ext": BuildExt},
     zip_safe=False,
 )

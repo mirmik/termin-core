@@ -118,11 +118,31 @@ def read_shell_package_list(repo_root: Path) -> list[str]:
     return paths
 
 
-def setup_extensions(package_dir: Path) -> set[str]:
+def _uses_manifest_setup_helper(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "native_extensions_for_source":
+            return True
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == "native_extensions_for_source"
+        ):
+            return True
+    return False
+
+
+def setup_extensions(package_dir: Path, package: PackageEntry | None = None) -> set[str]:
     setup_py = package_dir / "setup.py"
     if not setup_py.is_file():
         return set()
     tree = ast.parse(setup_py.read_text(encoding="utf-8"), filename=str(setup_py))
+    if package is not None and _uses_manifest_setup_helper(tree):
+        return {
+            native_extension.extension
+            for native_extension in package.native_extensions
+        }
     extensions = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -167,7 +187,7 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(
                 f"package has neither setup.py nor pyproject.toml: {package.path}"
             )
-        setup_extension_names = setup_extensions(package_dir)
+        setup_extension_names = setup_extensions(package_dir, package)
         for native_extension in package.native_extensions:
             if native_extension.extension not in setup_extension_names:
                 errors.append(
