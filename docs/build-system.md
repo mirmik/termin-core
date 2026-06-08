@@ -248,6 +248,10 @@ Launcher при запуске:
 3. Добавляет `lib/python/` и `Lib/site-packages/` в `sys.path`
 4. Запускает Python-код приложения
 
+Текущий Stage 3 SDK build использует активный host Python и не полностью
+изолирован от его `site-packages`. Анализ риска и рекомендации по исправлению:
+`docs/analysis/2026-06-08-sdk-python-host-environment-leakage.md`.
+
 ---
 
 ## Компонентные библиотеки
