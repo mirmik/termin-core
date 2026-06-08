@@ -289,6 +289,18 @@ def _copy_tree_contents(source: Path, dest: Path, ignore_names: set[str]) -> Non
             shutil.copy2(child, target)
 
 
+def _remove_windows_python_home_dll_duplicates(sdk_prefix: Path) -> None:
+    if not _is_windows():
+        return
+    python_home = sdk_prefix / "python"
+    bin_dir = sdk_prefix / "bin"
+    if not python_home.is_dir() or not bin_dir.is_dir():
+        return
+    for dll in python_home.glob("python*.dll"):
+        if (bin_dir / dll.name).is_file():
+            dll.unlink()
+
+
 def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
     py_exec = _python_executable()
     info = _python_version_and_paths(py_exec)
@@ -316,7 +328,7 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
         python_prefix = Path(str(info.get("prefix", "")))
         for dll in python_prefix.glob("python*.dll"):
             shutil.copy2(dll, sdk_prefix / "bin" / dll.name)
-            shutil.copy2(dll, sdk_prefix / "python" / dll.name)
+        _remove_windows_python_home_dll_duplicates(sdk_prefix)
         for runtime_dir in ("DLLs", "tcl"):
             source = python_prefix / runtime_dir
             if source.is_dir():
@@ -587,6 +599,7 @@ def install_python_packages(
             file=sys.stderr,
         )
         return 1
+    _remove_windows_python_home_dll_duplicates(sdk_prefix)
 
     bundled_site_packages = bundled_py_dir / "site-packages"
     print(f"Bundled Python stdlib:        {bundled_py_dir}")
