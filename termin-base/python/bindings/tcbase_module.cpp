@@ -134,19 +134,19 @@ static void bind_log(nb::module_& m) {
 NB_MODULE(_tcbase_native, m) {
     m.doc() = "Base types shared between termin libraries";
 
-    nb::enum_<tcbase::MouseButton>(m, "MouseButton", "Mouse button constants")
+    nb::enum_<tcbase::MouseButton>(m, "MouseButton", nb::is_arithmetic(), "Mouse button constants")
         .value("LEFT", tcbase::MouseButton::LEFT)
         .value("RIGHT", tcbase::MouseButton::RIGHT)
         .value("MIDDLE", tcbase::MouseButton::MIDDLE)
         .export_values();
 
-    nb::enum_<tcbase::Action>(m, "Action", "Action constants")
+    nb::enum_<tcbase::Action>(m, "Action", nb::is_arithmetic(), "Action constants")
         .value("RELEASE", tcbase::Action::RELEASE)
         .value("PRESS", tcbase::Action::PRESS)
         .value("REPEAT", tcbase::Action::REPEAT)
         .export_values();
 
-    nb::enum_<tcbase::Mods>(m, "Mods", "Modifier key flags")
+    nb::enum_<tcbase::Mods>(m, "Mods", nb::is_arithmetic(), "Modifier key flags")
         .value("SHIFT", tcbase::Mods::SHIFT)
         .value("CTRL", tcbase::Mods::CTRL)
         .value("ALT", tcbase::Mods::ALT)
