@@ -962,10 +962,18 @@ def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
     path_text = _normalize_path(str(path))
     sdk_text = _normalize_path(str(sdk_prefix))
     android_prefix = _normalize_path(str(sdk_prefix / "android")) + "/"
+    lower_path = path_text.lower()
     return (
         path_text.startswith(android_prefix)
         or "/csharp/runtimes/" in path_text
         or "/site-packages/scipy/" in path_text
+        # The bundled Python keeps pysdl2-dll's extension DLLs available.
+        # Embedded hosts set PYSDL2_DLL_PATH with sdk/bin first, so PySDL2
+        # binds core SDL2 calls to the same SDK SDL2.dll as termin_display.
+        or (
+            _is_windows()
+            and lower_path.endswith("/site-packages/sdl2dll/dll/sdl2.dll")
+        )
         or not path_text.startswith(sdk_text)
     )
 
