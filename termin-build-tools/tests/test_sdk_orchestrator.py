@@ -1,3 +1,4 @@
+import importlib.metadata
 import json
 from pathlib import Path
 
@@ -87,6 +88,15 @@ def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
         "_run",
         lambda command, **_kwargs: commands.append(command) or 0,
     )
+    stale_pkg_a = target_dir / "pkg_a-0.1.0+old.dist-info"
+    stale_pkg_a.mkdir(parents=True)
+    (stale_pkg_a / "METADATA").write_text("Name: pkg-a\n", encoding="utf-8")
+    stale_pkg_b = target_dir / "pkg_b.egg-info"
+    stale_pkg_b.mkdir()
+    (stale_pkg_b / "PKG-INFO").write_text("Name: pkg-b\n", encoding="utf-8")
+    unrelated = target_dir / "unrelated-1.0.0.dist-info"
+    unrelated.mkdir()
+    (unrelated / "METADATA").write_text("Name: unrelated\n", encoding="utf-8")
 
     result = sdk.install_pip_packages(
         repo_root=repo_root,
@@ -112,6 +122,54 @@ def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     assert command.count("--no-deps") == 1
     assert str(repo_root / "pkg-a") in command
     assert str(repo_root / "pkg-b") in command
+    assert not stale_pkg_a.exists()
+    assert not stale_pkg_b.exists()
+    assert unrelated.is_dir()
+
+
+def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_path):
+    target_dir = tmp_path / "site-packages"
+    target_dir.mkdir()
+    old_metadata = target_dir / "termin_voxels-0.1.0+old.dist-info"
+    old_metadata.mkdir()
+    (old_metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\n"
+        "Name: termin-voxels\n"
+        "Version: 0.1.0+old\n",
+        encoding="utf-8",
+    )
+    package = PackageEntry("termin-voxels", "termin-voxels", (), ())
+
+    sdk._clear_target_python_package_metadata(target_dir, [package])
+
+    fresh_metadata = target_dir / "termin_voxels-0.1.0+fresh.dist-info"
+    fresh_metadata.mkdir()
+    (fresh_metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\n"
+        "Name: termin-voxels\n"
+        "Version: 0.1.0+fresh\n",
+        encoding="utf-8",
+    )
+    (fresh_metadata / "entry_points.txt").write_text(
+        "[termin.asset_import_plugins]\n"
+        "voxel_grid = termin.voxels.asset_plugin:create_import_plugin\n",
+        encoding="utf-8",
+    )
+
+    distributions = [
+        distribution
+        for distribution in importlib.metadata.distributions(path=[str(target_dir)])
+        if distribution.metadata["Name"] == "termin-voxels"
+    ]
+    entry_points = [
+        entry_point
+        for distribution in distributions
+        for entry_point in distribution.entry_points
+        if entry_point.group == "termin.asset_import_plugins"
+    ]
+
+    assert len(distributions) == 1
+    assert [entry_point.name for entry_point in entry_points] == ["voxel_grid"]
 
 
 def test_editable_install_is_sequential_and_no_deps(tmp_path, monkeypatch):

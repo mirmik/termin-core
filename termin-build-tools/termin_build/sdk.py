@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -709,6 +710,77 @@ def _clear_python_package_build_caches(repo_root: Path) -> None:
                 shutil.rmtree(egg_info, ignore_errors=True)
 
 
+_DISTRIBUTION_NORMALIZE_RE = re.compile(r"[-_.]+")
+
+
+def _normalized_distribution_name(name: str) -> str:
+    return _DISTRIBUTION_NORMALIZE_RE.sub("-", name).lower()
+
+
+def _metadata_distribution_name(metadata_path: Path) -> str | None:
+    for metadata_file_name in ("METADATA", "PKG-INFO"):
+        metadata_file = metadata_path / metadata_file_name
+        if not metadata_file.is_file():
+            continue
+        text = metadata_file.read_text(encoding="utf-8", errors="replace")
+        for line in text.splitlines():
+            if line.lower().startswith("name:"):
+                name = line.split(":", 1)[1].strip()
+                return name or None
+    return None
+
+
+def _fallback_distribution_name_from_metadata_dir(metadata_path: Path) -> str | None:
+    name = metadata_path.name
+    for suffix in (".dist-info", ".egg-info"):
+        if not name.endswith(suffix):
+            continue
+        stem = name[: -len(suffix)]
+        if suffix == ".dist-info" and "-" in stem:
+            return stem.rsplit("-", 1)[0]
+        return stem
+    return None
+
+
+def _distribution_name_from_metadata_dir(metadata_path: Path) -> str | None:
+    return (
+        _metadata_distribution_name(metadata_path)
+        or _fallback_distribution_name_from_metadata_dir(metadata_path)
+    )
+
+
+def _remove_metadata_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _clear_target_python_package_metadata(target_dir: Path, packages) -> None:
+    if not target_dir.is_dir():
+        return
+    package_names = {
+        _normalized_distribution_name(package.distribution)
+        for package in packages
+    }
+    removed = []
+    for child in target_dir.iterdir():
+        if not (child.name.endswith(".dist-info") or child.name.endswith(".egg-info")):
+            continue
+        distribution_name = _distribution_name_from_metadata_dir(child)
+        if distribution_name is None:
+            continue
+        if _normalized_distribution_name(distribution_name) not in package_names:
+            continue
+        _remove_metadata_path(child)
+        removed.append(child.name)
+    if removed:
+        print(
+            "Removed stale target package metadata: "
+            + ", ".join(sorted(removed))
+        )
+
+
 def _add_build_tools_pythonpath(env: dict[str, str], repo_root: Path) -> None:
     build_tools = str(repo_root / "termin-build-tools")
     current = env.get("PYTHONPATH")
@@ -797,6 +869,7 @@ def install_pip_packages(
     if target_dir is not None:
         target_dir.mkdir(parents=True, exist_ok=True)
         target_dir = target_dir.resolve()
+        _clear_target_python_package_metadata(target_dir, packages)
         print(f"Install mode: --target {target_dir} (single pip invocation, no-deps)")
         print("")
         print("========================================")
