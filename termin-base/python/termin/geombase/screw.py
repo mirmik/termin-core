@@ -167,7 +167,11 @@ class Screw3(Screw):
 
     __slots__ = ()
 
-    def __init__(self, ang: numpy.ndarray = numpy.array([0,0,0]), lin: numpy.ndarray = numpy.array([0,0,0])):
+    def __init__(self, ang: numpy.ndarray | None = None, lin: numpy.ndarray | None = None):
+        if ang is None:
+            ang = numpy.array([0, 0, 0])
+        if lin is None:
+            lin = numpy.array([0, 0, 0])
         super().__init__(ang=ang, lin=lin)
 
     @staticmethod

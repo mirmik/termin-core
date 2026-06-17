@@ -7,13 +7,15 @@ class Pose2:
 
     __slots__ = ('ang', 'lin', '_rot_matrix', '_mat')
 
-    def __init__(self, ang: float = 0.0, lin: numpy.ndarray = numpy.array([0.0, 0.0])):
+    def __init__(self, ang: float = 0.0, lin: numpy.ndarray | None = None):
         """
         Args:
             ang: Rotation angle in radians
             lin: Translation vector [x, y]
         """
         self.ang = ang
+        if lin is None:
+            lin = numpy.array([0.0, 0.0])
         self.lin = numpy.asarray(lin)
         if self.lin.shape != (2,):
             raise ValueError("lin must be a 2D vector")
