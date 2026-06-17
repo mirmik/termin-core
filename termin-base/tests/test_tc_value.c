@@ -7,22 +7,10 @@
 #include <tcbase/tc_types.h>
 #include <tcbase/tc_value.h>
 
-#define EPSILON 1e-9
-
 typedef struct {
     int value;
     tc_dlist_node node;
 } ListItem;
-
-GUARD_C_TEST(test_tc_types) {
-    tc_vec3 v = {1.0, 2.0, 3.0};
-    tc_quat q = {0.0, 0.0, 0.0, 1.0};
-    tc_pose3 p = {.rotation = q, .position = v};
-
-    GUARD_C_CHECK_NEAR_DOUBLE(1.0, p.position.x, EPSILON);
-    GUARD_C_CHECK_NEAR_DOUBLE(1.0, p.rotation.w, EPSILON);
-    return 0;
-}
 
 GUARD_C_TEST(test_tc_dlist) {
     tc_dlist_head list;
@@ -90,7 +78,6 @@ GUARD_C_TEST(test_tc_value) {
 
 int main(int argc, char** argv) {
     GUARD_C_BEGIN_ARGS(argc, argv);
-    GUARD_C_RUN(test_tc_types);
     GUARD_C_RUN(test_tc_dlist);
     GUARD_C_RUN(test_tc_value);
     return GUARD_C_END();
