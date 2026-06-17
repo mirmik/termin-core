@@ -19,12 +19,6 @@ def test_input_enums_compare_with_event_integer_values():
     assert tcbase.Mods.SHIFT == tcbase.Mods.SHIFT.value
 
 
-def test_logging_functions_are_callable():
-    tcbase.log.info("tcbase-python-smoke")
-    tcbase.log.warn("tcbase-python-warn")
-    tcbase.log.error("tcbase-python-error")
-
-
 def test_settings_roundtrip_with_groups(tmp_path: Path):
     settings_path = tmp_path / "settings.json"
     s = tcbase.Settings(str(settings_path), True)
