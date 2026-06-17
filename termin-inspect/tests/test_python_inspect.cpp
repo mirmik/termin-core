@@ -3,10 +3,22 @@
 #include <Python.h>
 #include <nanobind/nanobind.h>
 
-#include <cassert>
+#include <cstdio>
 #include <string>
 
 namespace nb = nanobind;
+
+namespace {
+
+bool require_check(bool condition, const char* message) {
+    if (!condition) {
+        std::fprintf(stderr, "test_python_inspect failed: %s\n", message);
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 int main() {
     tc::init_cpp_inspect_vtable();
@@ -57,7 +69,7 @@ obj = PyDerivedComponent()
 )PY";
 
         int run_rc = PyRun_SimpleString(script);
-        assert(run_rc == 0);
+        if (!require_check(run_rc == 0, "python setup script ran")) return 1;
 
         nb::module_ main = nb::module_::import_("__main__");
         nb::dict globals = main.attr("__dict__");
@@ -70,27 +82,37 @@ obj = PyDerivedComponent()
         tc::InspectRegistry_register_python_fields(reg, "PyDerivedComponent", std::move(derived_fields));
         reg.set_type_parent("PyDerivedComponent", "PyBaseComponent");
 
-        assert(reg.get_type_backend("PyBaseComponent") == tc::TypeBackend::Python);
-        assert(reg.get_type_backend("PyDerivedComponent") == tc::TypeBackend::Python);
-        assert(reg.all_fields_count("PyDerivedComponent") == 2);
-        assert(reg.find_field("PyDerivedComponent", "base_value") != nullptr);
-        assert(reg.find_field("PyDerivedComponent", "child_name") != nullptr);
+        if (!require_check(reg.get_type_backend("PyBaseComponent") == tc::TypeBackend::Python,
+                           "base component backend is Python")) return 1;
+        if (!require_check(reg.get_type_backend("PyDerivedComponent") == tc::TypeBackend::Python,
+                           "derived component backend is Python")) return 1;
+        if (!require_check(reg.all_fields_count("PyDerivedComponent") == 2,
+                           "derived component inherits two fields")) return 1;
+        if (!require_check(reg.find_field("PyDerivedComponent", "base_value") != nullptr,
+                           "derived component exposes inherited field")) return 1;
+        if (!require_check(reg.find_field("PyDerivedComponent", "child_name") != nullptr,
+                           "derived component exposes own field")) return 1;
 
         nb::object base_v = tc::InspectRegistry_get(reg, obj.ptr(), "PyDerivedComponent", "base_value");
-        assert(nb::cast<int>(base_v) == 10);
+        if (!require_check(nb::cast<int>(base_v) == 10, "initial inherited value reads through registry")) return 1;
 
         tc::InspectRegistry_set(reg, obj.ptr(), "PyDerivedComponent", "base_value", nb::int_(42), nullptr);
         tc::InspectRegistry_set(reg, obj.ptr(), "PyDerivedComponent", "child_name", nb::str("updated"), nullptr);
-        assert(nb::cast<int>(nb::getattr(obj, "base_value")) == 42);
-        assert(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "updated");
+        if (!require_check(nb::cast<int>(nb::getattr(obj, "base_value")) == 42,
+                           "inherited value writes through registry")) return 1;
+        if (!require_check(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "updated",
+                           "own string value writes through registry")) return 1;
 
         tc_value serialized = reg.serialize_all(obj.ptr(), "PyDerivedComponent");
-        assert(serialized.type == TC_VALUE_DICT);
+        if (!require_check(serialized.type == TC_VALUE_DICT, "serialize_all returns dict")) return 1;
         tc_value* base_field = tc_value_dict_get(&serialized, "base_value");
         tc_value* child_field = tc_value_dict_get(&serialized, "child_name");
-        assert(base_field && base_field->type == TC_VALUE_INT && base_field->data.i == 42);
-        assert(child_field && child_field->type == TC_VALUE_STRING);
-        assert(std::string(child_field->data.s) == "updated");
+        if (!require_check(base_field && base_field->type == TC_VALUE_INT && base_field->data.i == 42,
+                           "serialized inherited int field matches")) return 1;
+        if (!require_check(child_field && child_field->type == TC_VALUE_STRING,
+                           "serialized own string field exists")) return 1;
+        if (!require_check(std::string(child_field->data.s) == "updated",
+                           "serialized own string field matches")) return 1;
         tc_value_free(&serialized);
 
         nb::dict input;
@@ -98,8 +120,10 @@ obj = PyDerivedComponent()
         input["child_name"] = nb::str("restored");
         tc::InspectRegistry_deserialize_all_py(reg, obj.ptr(), "PyDerivedComponent", input, nullptr);
 
-        assert(nb::cast<int>(nb::getattr(obj, "base_value")) == 7);
-        assert(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "restored");
+        if (!require_check(nb::cast<int>(nb::getattr(obj, "base_value")) == 7,
+                           "deserialize_all updates inherited field")) return 1;
+        if (!require_check(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "restored",
+                           "deserialize_all updates own field")) return 1;
     }
 
     tc::KindRegistry::instance().clear_python();
