@@ -38,16 +38,15 @@ __try__:
         switch (c)
         {
         case '*':
-            while (true)
-            {
+        {
+            char prev = 0;
+            while (true) {
                 c = readnext();
-
-                if (c == '*')
-                    if ((c = readnext()) == '/')
-                    {
-                        goto __try__;
-                    }
+                if (prev == '*' && c == '/')
+                    goto __try__;
+                prev = c;
             }
+        }
 
         case '/':
 
