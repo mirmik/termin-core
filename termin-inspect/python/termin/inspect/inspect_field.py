@@ -137,7 +137,7 @@ class InspectAttr:
 
         if "inspect_fields" not in owner.__dict__:
             fields = {}
-            setattr(owner, "inspect_fields", fields)
+            owner.inspect_fields = fields
         else:
             fields = owner.__dict__["inspect_fields"]
         fields[name] = self._field
