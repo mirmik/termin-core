@@ -1,15 +1,15 @@
 include_guard(GLOBAL)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../nanobind/cmake/nanobind-config.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../termin-nanobind/terminNanobindTargets.cmake" OPTIONAL)
 
-if(NOT TARGET nanobind)
-    add_library(nanobind SHARED IMPORTED GLOBAL)
-
+if(NOT TARGET nanobind::nanobind)
     set(_nanobind_root "${CMAKE_CURRENT_LIST_DIR}/../../nanobind")
     set(_nanobind_lib_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
     if(WIN32)
-        set_target_properties(nanobind PROPERTIES
+        add_library(nanobind::nanobind SHARED IMPORTED GLOBAL)
+        set_target_properties(nanobind::nanobind PROPERTIES
             IMPORTED_LOCATION "${_nanobind_lib_dir}/nanobind.dll"
             IMPORTED_IMPLIB "${_nanobind_lib_dir}/nanobind.lib"
             INTERFACE_COMPILE_DEFINITIONS "NB_SHARED"
@@ -17,7 +17,8 @@ if(NOT TARGET nanobind)
             INTERFACE_LINK_LIBRARIES "Python::Module"
         )
     else()
-        set_target_properties(nanobind PROPERTIES
+        add_library(nanobind::nanobind SHARED IMPORTED GLOBAL)
+        set_target_properties(nanobind::nanobind PROPERTIES
             IMPORTED_LOCATION "${_nanobind_lib_dir}/libnanobind.so"
             INTERFACE_COMPILE_DEFINITIONS "NB_SHARED"
             INTERFACE_INCLUDE_DIRECTORIES "${_nanobind_root}/include;${_nanobind_root}/ext/robin_map/include"
@@ -25,3 +26,66 @@ if(NOT TARGET nanobind)
         )
     endif()
 endif()
+
+set_property(TARGET nanobind::nanobind APPEND PROPERTY
+    INTERFACE_LINK_LIBRARIES Python::Module
+)
+
+if(NOT TARGET nanobind)
+    add_library(nanobind INTERFACE IMPORTED GLOBAL)
+    set_target_properties(nanobind PROPERTIES
+        INTERFACE_LINK_LIBRARIES nanobind::nanobind
+    )
+endif()
+
+function(nanobind_build_library target_name)
+    if(TARGET ${target_name})
+        return()
+    endif()
+
+    if(NOT "${target_name}" STREQUAL "nanobind")
+        message(FATAL_ERROR
+            "termin-nanobind-sdk provides only the shared nanobind runtime "
+            "named 'nanobind'. Use nanobind_add_module(... NB_SHARED ...) "
+            "without NB_STATIC, STABLE_ABI, FREE_THREADED, or NB_DOMAIN.")
+    endif()
+
+    add_library(${target_name} INTERFACE IMPORTED GLOBAL)
+    set_target_properties(${target_name} PROPERTIES
+        INTERFACE_LINK_LIBRARIES nanobind::nanobind
+    )
+endfunction()
+
+function(nanobind_add_module name)
+    cmake_parse_arguments(PARSE_ARGV 1 ARG
+        "STABLE_ABI;FREE_THREADED;NB_STATIC;NB_SHARED;PROTECT_STACK;LTO;NOMINSIZE;NOSTRIP;MUSL_DYNAMIC_LIBCPP;NB_SUPPRESS_WARNINGS"
+        "NB_DOMAIN" "")
+
+    if(ARG_NB_STATIC OR NOT ARG_NB_SHARED OR ARG_STABLE_ABI OR ARG_FREE_THREADED OR ARG_NB_DOMAIN)
+        message(FATAL_ERROR
+            "termin-nanobind-sdk supports only plain NB_SHARED modules. "
+            "Use nanobind_add_module(${name} NB_SHARED ...).")
+    endif()
+
+    add_library(${name} MODULE ${ARG_UNPARSED_ARGUMENTS})
+
+    nanobind_compile_options(${name})
+    nanobind_link_options(${name})
+    set_target_properties(${name} PROPERTIES LINKER_LANGUAGE CXX)
+    nanobind_extension(${name})
+    target_link_libraries(${name} PRIVATE nanobind::nanobind)
+
+    if(NOT ARG_PROTECT_STACK)
+        nanobind_disable_stack_protector(${name})
+    endif()
+    if(NOT ARG_NOMINSIZE)
+        nanobind_opt_size(${name})
+    endif()
+    if(NOT ARG_NOSTRIP)
+        nanobind_strip(${name})
+    endif()
+    if(ARG_LTO)
+        nanobind_lto(${name})
+    endif()
+    nanobind_set_visibility(${name})
+endfunction()

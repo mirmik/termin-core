@@ -7,6 +7,7 @@
 - headers и исходники `nanobind`, которые нужны `nanobind_add_module(NB_SHARED)`
 
 Идея простая: `nanobind` собирается один раз как общий SDK-компонент, а остальные пакеты `termin-*` больше не вызывают `nanobind_build_library(...)` локально.
+Установленный CMake package намеренно поддерживает только обычные `NB_SHARED`-модули. `NB_STATIC`, `STABLE_ABI`, `FREE_THREADED` и domain-specific shared runtimes должны разбираться как отдельная работа SDK, а не порождать неявные локальные копии `nanobind`.
 
 ## Локальная сборка
 
