@@ -32,6 +32,24 @@ def _read_shared_package_list() -> list[str]:
     return [package["path"] for package in content["packages"]]
 
 
+def _read_shared_package_manifest() -> list[tuple[str, str]]:
+    content = json.loads(PACKAGE_MANIFEST.read_text())
+    return [
+        (package["path"], package["distribution"])
+        for package in content["packages"]
+    ]
+
+
+def _is_internal_requirement_name(name: str) -> bool:
+    return name.startswith("termin-") or name in {
+        "tcbase",
+        "tcgui",
+        "tcplot",
+        "tgfx",
+        "tmesh",
+    }
+
+
 def _literal_string_list(node: ast.AST | None) -> tuple[str, ...]:
     if node is None:
         return ()
@@ -136,3 +154,53 @@ def test_shared_python_package_list_is_topological():
                 )
 
     assert not violations, "Invalid TERMIN_PYTHON_PACKAGES order:\n" + "\n".join(violations)
+
+
+def test_shared_python_package_internal_dependencies_are_known_distributions():
+    manifest = _read_shared_package_manifest()
+    metadata_by_path = {}
+    for source_path, _distribution in manifest:
+        package_metadata = (
+            _read_setup_metadata(source_path)
+            or _read_pyproject_metadata(source_path)
+        )
+        assert package_metadata is not None, (
+            f"{source_path} is listed but has no setup.py or [project] metadata"
+        )
+        metadata_by_path[source_path] = package_metadata
+
+    known_distributions = {
+        _normalize_dist_name(distribution)
+        for _source_path, distribution in manifest
+    }
+
+    manifest_mismatches = []
+    for source_path, distribution in manifest:
+        package = metadata_by_path[source_path]
+        if _normalize_dist_name(package.dist_name) != _normalize_dist_name(distribution):
+            manifest_mismatches.append(
+                f"{source_path}: manifest distribution {distribution!r} "
+                f"does not match package metadata name {package.dist_name!r}"
+            )
+
+    unknown_internal_dependencies = []
+    for package in metadata_by_path.values():
+        for requirement in package.install_requires:
+            dependency_name = _requirement_name(requirement)
+            if (
+                _is_internal_requirement_name(dependency_name)
+                and dependency_name not in known_distributions
+            ):
+                unknown_internal_dependencies.append(
+                    f"{package.source_path} depends on unknown internal distribution "
+                    f"{dependency_name!r} from requirement {requirement!r}"
+                )
+
+    assert not manifest_mismatches, (
+        "Package manifest distribution names differ from package metadata:\n"
+        + "\n".join(manifest_mismatches)
+    )
+    assert not unknown_internal_dependencies, (
+        "Unknown internal Python package dependencies:\n"
+        + "\n".join(unknown_internal_dependencies)
+    )
