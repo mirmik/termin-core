@@ -50,6 +50,18 @@ static size_t python_list(const char** out_names, size_t max_count, void* ctx) {
 }
 
 static bool g_python_vtable_initialized = false;
+static bool g_python_cleanup_registered = false;
+
+static void ensure_python_cleanup_registered() {
+    if (g_python_cleanup_registered) return;
+    g_python_cleanup_registered = true;
+
+    nb::object atexit_mod = nb::module_::import_("atexit");
+    nb::object cleanup_fn = nb::cpp_function([]() {
+        KindRegistryPython::instance().clear();
+    });
+    atexit_mod.attr("register")(cleanup_fn);
+}
 
 void init_python_lang_vtable() {
     if (g_python_vtable_initialized) return;
@@ -76,6 +88,8 @@ KindRegistryPython& KindRegistryPython::instance() {
 }
 
 void KindRegistryPython::register_kind(const std::string& name, nb::object serialize, nb::object deserialize) {
+    ensure_python_cleanup_registered();
+
     KindPython kind;
     kind.name = name;
     kind.serialize = std::move(serialize);
@@ -123,6 +137,8 @@ nb::object KindRegistryPython::deserialize(const std::string& kind_name, nb::obj
 }
 
 void KindRegistryPython::register_type(nb::handle type, const std::string& kind_name) {
+    ensure_python_cleanup_registered();
+
     _type_to_kind.emplace_back(nb::borrow(type), kind_name);
 }
 
