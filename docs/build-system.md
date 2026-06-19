@@ -254,6 +254,51 @@ Launcher при запуске:
 
 ---
 
+## Project build profiles и runtime package gate
+
+`termin_builder` является тонкой CLI-точкой входа для project build: он находит
+project root, читает `project_settings/build_profiles.json`, выбирает профиль и
+передает сборку в Python backend `termin.project_build.profile_build`.
+Target-specific логика живет в Python wrapper-ах для `desktop`, `android` и
+`quest_openxr`.
+
+Build profile schema version сейчас `1`. Профиль обязан задавать:
+
+- `target`: `desktop`, `android` или `quest_openxr`;
+- `entry_scene`: путь к `.scene` внутри project root;
+- `output_dir`: директорию результата сборки.
+
+Дополнительные нормализованные policy-поля:
+
+- `configuration`: `dev`, `debug`, `release`; default `dev`;
+- `resource_policy`: `strict`, `dev`, `dev_smoke`; default `strict`.
+
+`resource_policy: strict` является default contract для packaged build.
+Отсутствующие mesh/material resources становятся build diagnostics уровня
+`error`; exporter не пишет placeholder artifacts и не добавляет synthetic
+resource entries в manifest. Placeholder/fallback artifacts разрешены только
+при явном `resource_policy: dev_smoke` и сопровождаются diagnostics уровня
+`warning`.
+
+Единый Python pipeline выполняет:
+
+```text
+project preflight
+-> target preflight
+-> output preparation
+-> runtime package export
+-> runtime package validation
+-> target packaging
+```
+
+Runtime package validation является gate перед target packaging. Если export
+или validation вернули diagnostic с `level == "error"`, target packaging не
+запускается: desktop bundle/APK не должны создаваться из заведомо битого
+runtime package. CLI backend печатает diagnostics и возвращает non-zero exit
+code при `error` diagnostics.
+
+---
+
 ## Компонентные библиотеки
 
 Для однотипных компонентных модулей есть cmake-хелпер `TerminModule.cmake` с макросом `termin_add_module()`. Он автоматизирует создание shared library, настройку экспортов, RPATH и install-правил.
