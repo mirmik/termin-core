@@ -59,7 +59,7 @@ Root CMake-граф поддерживает несколько ускорите
 - Для новых build-dir shell-скрипты по умолчанию оставляют CMake default generator. `Ninja` включается явно через `--ninja`, `TERMIN_CMAKE_GENERATOR=Ninja` или `CMAKE_GENERATOR_NAME=Ninja`. Уже существующий build-dir не меняет генератор; для смены генератора нужен `--clean` или новый `BUILD_DIR`.
 - `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
 - `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
-- `--pch` включает precompiled headers для выбранных C++-тяжёлых целей и включён по умолчанию. Отключение: `--no-pch` или `-DTERMIN_ENABLE_PCH=OFF`. C++-тяжёлые runtime-библиотеки (`entity_lib`, `render_lib`, `termin_navmesh_components`) сохраняют свой локальный PCH.
+- `--pch` включает precompiled headers для выбранных C++-тяжёлых целей и включён по умолчанию. Отключение: `--no-pch` или `-DTERMIN_ENABLE_PCH=OFF`. C++-тяжёлые runtime-библиотеки (`entity_lib`, `termin_navmesh_components`) сохраняют свой локальный PCH.
 - Глобальный CMake unity build (`-DCMAKE_UNITY_BUILD=ON`) поддерживается для root graph после cleanup внутренних helper/state имён. Vendored `Recast`/`Detour` targets явно собираются без unity.
 
 Примеры:
@@ -94,7 +94,7 @@ cmake -S . -B build/Release-unity -G Ninja \
 cmake --build build/Release-unity --parallel 8
 ```
 
-Script-level `--unity` intentionally applies only to selected targets where it has been checked for developer iteration: `termin_graphics2`, `termin_render`, `trent`, `entity_lib`, `render_lib`. For a full audit/experiment use direct CMake with `-DCMAKE_UNITY_BUILD=ON`.
+Script-level `--unity` intentionally applies only to selected targets where it has been checked for developer iteration: `termin_graphics2`, `termin_render`, `trent`, `entity_lib`. For a full audit/experiment use direct CMake with `-DCMAKE_UNITY_BUILD=ON`.
 
 Script-level `--pch` applies to selected C++ targets with broad STL-heavy include usage: `termin_graphics2`, `termin_render`, `termin_engine`, `trent`, `tcplot`. It deliberately avoids C-only libraries and third-party vendored targets.
 
