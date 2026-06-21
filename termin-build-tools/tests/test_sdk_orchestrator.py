@@ -468,22 +468,33 @@ def test_verify_duplicate_libraries_ignores_scoped_sdk_duplicates(
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
 
-def test_windows_python_runtime_dll_cleanup_keeps_single_bin_copy(
+def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     tmp_path,
     monkeypatch,
 ):
     sdk_prefix = tmp_path / "sdk"
-    (sdk_prefix / "bin").mkdir(parents=True)
-    (sdk_prefix / "python").mkdir(parents=True)
-    (sdk_prefix / "bin" / "python312.dll").write_text("dll", encoding="utf-8")
-    (sdk_prefix / "python" / "python312.dll").write_text("dll", encoding="utf-8")
+    host_python = tmp_path / "host-python"
+    host_python.mkdir()
+    (host_python / "python.exe").write_text("exe", encoding="utf-8")
+    (host_python / "pythonw.exe").write_text("exe", encoding="utf-8")
+    (host_python / "python312.dll").write_text("dll", encoding="utf-8")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
 
-    sdk._remove_windows_python_home_dll_duplicates(sdk_prefix)
+    sdk._copy_windows_python_runtime_executables(
+        sdk_prefix,
+        {
+            "base_prefix": str(host_python),
+            "prefix": str(host_python),
+            "base_executable": str(host_python / "python.exe"),
+            "executable": str(host_python / "python.exe"),
+        },
+    )
 
     assert (sdk_prefix / "bin" / "python312.dll").is_file()
-    assert not (sdk_prefix / "python" / "python312.dll").exists()
+    assert (sdk_prefix / "python" / "python.exe").is_file()
+    assert (sdk_prefix / "python" / "pythonw.exe").is_file()
+    assert (sdk_prefix / "python" / "python312.dll").is_file()
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
 

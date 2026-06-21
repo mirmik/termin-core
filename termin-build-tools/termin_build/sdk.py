@@ -254,6 +254,9 @@ def _python_version_and_paths(py_exec: str) -> dict[str, object]:
         "print(json.dumps({"
         "'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
         "'prefix': sys.prefix, "
+        "'base_prefix': sys.base_prefix, "
+        "'executable': sys.executable, "
+        "'base_executable': sys._base_executable, "
         "'stdlib': sysconfig.get_paths()['stdlib'], "
         "'libdir': sysconfig.get_config_var('LIBDIR') or '', "
         "'ldlibrary': sysconfig.get_config_var('LDLIBRARY') or '', "
@@ -290,16 +293,52 @@ def _copy_tree_contents(source: Path, dest: Path, ignore_names: set[str]) -> Non
             shutil.copy2(child, target)
 
 
-def _remove_windows_python_home_dll_duplicates(sdk_prefix: Path) -> None:
+def _copy_windows_python_runtime_executables(sdk_prefix: Path, info: dict[str, object]) -> None:
     if not _is_windows():
         return
+
     python_home = sdk_prefix / "python"
     bin_dir = sdk_prefix / "bin"
-    if not python_home.is_dir() or not bin_dir.is_dir():
+    python_home.mkdir(parents=True, exist_ok=True)
+    bin_dir.mkdir(parents=True, exist_ok=True)
+
+    executable = Path(str(info.get("base_executable") or info.get("executable") or ""))
+    if executable.is_file():
+        shutil.copy2(executable, python_home / "python.exe")
+        pythonw = executable.with_name("pythonw.exe")
+        if pythonw.is_file():
+            shutil.copy2(pythonw, python_home / "pythonw.exe")
+
+    dll_roots = []
+    for key in ("base_prefix", "prefix"):
+        value = str(info.get(key) or "")
+        if value:
+            dll_roots.append(Path(value))
+    if executable.is_file():
+        dll_roots.append(executable.parent)
+
+    seen: set[Path] = set()
+    for root in dll_roots:
+        if not root.is_dir():
+            continue
+        for dll in root.glob("python*.dll"):
+            source = dll.resolve()
+            if source in seen:
+                continue
+            seen.add(source)
+            # sdk/bin keeps embedded hosts linked to Python::Python working.
+            # sdk/python keeps the bundled command-line python.exe self-contained.
+            shutil.copy2(dll, bin_dir / dll.name)
+            shutil.copy2(dll, python_home / dll.name)
+
+
+def ensure_bundled_python_cli(sdk_prefix: Path) -> None:
+    if not _is_windows():
         return
-    for dll in python_home.glob("python*.dll"):
-        if (bin_dir / dll.name).is_file():
-            dll.unlink()
+    _copy_windows_python_runtime_executables(
+        sdk_prefix,
+        _python_version_and_paths(_python_executable()),
+    )
 
 
 def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
@@ -326,10 +365,8 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
     bundled_site_packages.mkdir(parents=True, exist_ok=True)
 
     if _is_windows():
-        python_prefix = Path(str(info.get("prefix", "")))
-        for dll in python_prefix.glob("python*.dll"):
-            shutil.copy2(dll, sdk_prefix / "bin" / dll.name)
-        _remove_windows_python_home_dll_duplicates(sdk_prefix)
+        _copy_windows_python_runtime_executables(sdk_prefix, info)
+        python_prefix = Path(str(info.get("base_prefix") or info.get("prefix", "")))
         for runtime_dir in ("DLLs", "tcl"):
             source = python_prefix / runtime_dir
             if source.is_dir():
@@ -352,7 +389,6 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
             "idle_test",
             "turtledemo",
             "lib2to3",
-            "ensurepip",
             "site-packages",
         },
     )
@@ -588,11 +624,9 @@ def install_python_packages(
     build_dir: Path,
 ) -> int:
     bundled_py_dir = _find_bundled_python_dir(sdk_prefix)
-    if bundled_py_dir is None:
-        print(
-            f"Bundled Python stdlib not found under {sdk_prefix / 'lib'}/python3.*; "
-            "creating it from host Python."
-        )
+    if bundled_py_dir is None or not (bundled_py_dir / "ensurepip").is_dir():
+        reason = "not found" if bundled_py_dir is None else "missing ensurepip"
+        print(f"Bundled Python stdlib {reason}; syncing it from host Python.")
         bundled_py_dir = ensure_bundled_python_runtime(sdk_prefix)
     if bundled_py_dir is None:
         print(
@@ -600,7 +634,7 @@ def install_python_packages(
             file=sys.stderr,
         )
         return 1
-    _remove_windows_python_home_dll_duplicates(sdk_prefix)
+    ensure_bundled_python_cli(sdk_prefix)
 
     bundled_site_packages = bundled_py_dir / "site-packages"
     print(f"Bundled Python stdlib:        {bundled_py_dir}")
@@ -1046,6 +1080,12 @@ def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
         or (
             _is_windows()
             and lower_path.endswith("/site-packages/sdl2dll/dll/sdl2.dll")
+        )
+        or (
+            _is_windows()
+            and lower_path.startswith(_normalize_path(str(sdk_prefix / "python")).lower() + "/")
+            and Path(lower_path).name.startswith("python")
+            and Path(lower_path).suffix == ".dll"
         )
         or not path_text.startswith(sdk_text)
     )
