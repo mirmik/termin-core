@@ -18,6 +18,8 @@
 
 namespace tc {
 
+thread_local std::string InspectRegistry::_current_registration_owner;
+
 InspectRegistry& InspectRegistry::instance() {
     static InspectRegistry reg;
     return reg;
