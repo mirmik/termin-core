@@ -2,9 +2,21 @@ import importlib.metadata
 import json
 from pathlib import Path
 
+from setuptools import Distribution
+from setuptools.config.pyprojecttoml import apply_configuration
+
 from termin_build import sdk
 from termin_build.package_manifest import NativeExtension, PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
+
+
+def test_build_tools_package_config_excludes_generated_build_tree():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    distribution = Distribution()
+
+    apply_configuration(distribution, repo_root / "termin-build-tools" / "pyproject.toml")
+
+    assert distribution.packages == ["termin_build"]
 
 
 def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
