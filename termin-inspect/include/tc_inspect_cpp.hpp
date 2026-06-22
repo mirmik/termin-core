@@ -105,7 +105,7 @@ class TC_INSPECT_API InspectRegistry {
     std::unordered_map<std::string, std::string> _type_parents;
     std::unordered_map<std::string, tc_value> _type_metadata;
     std::unordered_map<std::string, std::string> _type_owners;
-    static thread_local std::string _current_registration_owner;
+    std::string _current_registration_owner;
 
     void assign_current_owner(const std::string& type_name) {
         if (!_current_registration_owner.empty()) {
