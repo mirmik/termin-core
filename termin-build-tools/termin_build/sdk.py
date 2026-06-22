@@ -449,9 +449,10 @@ def _profile_submodules(profile: DoctorProfile, vulkan: str) -> list[str]:
 
 
 def _artifact_roots(build_dir: Path) -> list[Path]:
-    roots = [build_dir / "bin"]
+    roots = []
     for config in ("Release", "Debug", "RelWithDebInfo", "MinSizeRel"):
         roots.append(build_dir / "bin" / config)
+    roots.append(build_dir / "bin")
     return roots
 
 

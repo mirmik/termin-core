@@ -477,6 +477,57 @@ def test_write_artifacts_supports_windows_pyd_layout(tmp_path, monkeypatch):
     assert artifact["runtime_dependencies"] == []
 
 
+def test_write_artifacts_prefers_windows_config_pyd_over_stale_bin_copy(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    build_dir = tmp_path / "build"
+    sdk_prefix = tmp_path / "sdk"
+    stale_bin = build_dir / "bin"
+    build_bin = stale_bin / "Release"
+    install_pkg = sdk_prefix / "python" / "Lib" / "site-packages" / "termin" / "voxels"
+    build_bin.mkdir(parents=True)
+    install_pkg.mkdir(parents=True)
+
+    stale_artifact = stale_bin / "_voxels_native.cp312-win_amd64.pyd"
+    build_artifact = build_bin / "_voxels_native.cp312-win_amd64.pyd"
+    install_artifact = install_pkg / build_artifact.name
+    stale_artifact.write_text("stale", encoding="utf-8")
+    build_artifact.write_text("fresh", encoding="utf-8")
+    install_artifact.write_text("fresh", encoding="utf-8")
+
+    packages = [
+        PackageEntry(
+            path="termin-voxels",
+            distribution="termin-voxels",
+            features=(),
+            native_extensions=(
+                NativeExtension(
+                    extension="termin.voxels._voxels_native",
+                    target="_voxels_native",
+                    optional=False,
+                    features=(),
+                ),
+            ),
+        )
+    ]
+    monkeypatch.setattr(sdk, "load_manifest", lambda _repo_root: packages)
+    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+
+    result = sdk.write_artifacts(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        sdk_prefix=sdk_prefix,
+    )
+
+    assert result == 0
+    data = json.loads((sdk_prefix / "termin-artifacts.json").read_text())
+    artifact = data["artifacts"][0]
+    assert artifact["build_path"] == str(build_artifact.resolve())
+    assert artifact["install_path"] == str(install_artifact.resolve())
+
+
 def test_verify_duplicate_libraries_reports_windows_duplicates(
     tmp_path,
     monkeypatch,
