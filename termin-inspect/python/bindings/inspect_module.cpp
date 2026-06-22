@@ -298,6 +298,9 @@ NB_MODULE(_inspect_native, m) {
         .def("set_type_parent", &InspectRegistry::set_type_parent,
              nb::arg("type_name"), nb::arg("parent_name"),
              "Set parent type for field inheritance")
+        .def("unregister_type", &InspectRegistry::unregister_type,
+             nb::arg("type_name"),
+             "Unregister fields, metadata and parent/backend information for a type")
         .def("get_type_parent", &InspectRegistry::get_type_parent,
              nb::arg("type_name"),
              "Get parent type name")

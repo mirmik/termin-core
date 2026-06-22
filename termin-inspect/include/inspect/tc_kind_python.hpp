@@ -52,8 +52,14 @@ public:
     // Register Python handler
     void register_kind(const std::string& name, nb::object serialize, nb::object deserialize);
 
+    // Unregister Python handler
+    void unregister_kind(const std::string& name);
+
     // Register Python type → kind name mapping
     void register_type(nb::handle type, const std::string& kind_name);
+
+    // Remove Python type → kind name mappings for a kind
+    void unregister_type_mappings_for_kind(const std::string& kind_name);
 
     // Find kind name for a Python object by its type (returns "" if not found)
     std::string kind_for_object(nb::handle obj) const;
@@ -103,6 +109,9 @@ public:
     // Register Python handler (delegates to KindRegistryPython)
     void register_python(const std::string& name, nb::object serialize, nb::object deserialize);
 
+    // Unregister Python handler and type mappings
+    void unregister_python(const std::string& name);
+
     // Register Python type → kind name mapping
     void register_type(nb::handle type, const std::string& kind_name);
 
@@ -141,6 +150,8 @@ inline void bind_kind_registry(nb::module_& m) {
         .def("has_python", &KindRegistry::has_python, nb::arg("name"))
         .def("register_python", &KindRegistry::register_python,
              nb::arg("name"), nb::arg("serialize"), nb::arg("deserialize"))
+        .def("unregister_python", &KindRegistry::unregister_python,
+             nb::arg("name"))
         .def("register_type", [](KindRegistry& self, nb::handle type, const std::string& kind_name) {
             self.register_type(type, kind_name);
         }, nb::arg("type"), nb::arg("kind_name"))

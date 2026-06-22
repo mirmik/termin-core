@@ -1,6 +1,8 @@
 // tc_kind_python_instance.cpp - KindRegistryPython and KindRegistry singleton implementation
 // Compiled into entity_lib to ensure single instance across all modules
 
+#include <algorithm>
+
 #include "inspect/tc_kind_python.hpp"
 
 extern "C" {
@@ -97,6 +99,17 @@ void KindRegistryPython::register_kind(const std::string& name, nb::object seria
     _kinds[name] = std::move(kind);
 }
 
+void KindRegistryPython::unregister_kind(const std::string& name) {
+    auto it = _kinds.find(name);
+    if (it == _kinds.end()) {
+        return;
+    }
+
+    it->second.serialize = nb::object();
+    it->second.deserialize = nb::object();
+    _kinds.erase(it);
+}
+
 KindPython* KindRegistryPython::get(const std::string& name) {
     auto it = _kinds.find(name);
     return it != _kinds.end() ? &it->second : nullptr;
@@ -140,6 +153,19 @@ void KindRegistryPython::register_type(nb::handle type, const std::string& kind_
     ensure_python_cleanup_registered();
 
     _type_to_kind.emplace_back(nb::borrow(type), kind_name);
+}
+
+void KindRegistryPython::unregister_type_mappings_for_kind(const std::string& kind_name) {
+    _type_to_kind.erase(
+        std::remove_if(
+            _type_to_kind.begin(),
+            _type_to_kind.end(),
+            [&kind_name](const auto& item) {
+                return item.second == kind_name;
+            }
+        ),
+        _type_to_kind.end()
+    );
 }
 
 std::string KindRegistryPython::kind_for_object(nb::handle obj) const {
@@ -211,6 +237,11 @@ void KindRegistry::register_cpp(
 
 void KindRegistry::register_python(const std::string& name, nb::object serialize, nb::object deserialize) {
     KindRegistryPython::instance().register_kind(name, serialize, deserialize);
+}
+
+void KindRegistry::unregister_python(const std::string& name) {
+    KindRegistryPython::instance().unregister_kind(name);
+    KindRegistryPython::instance().unregister_type_mappings_for_kind(name);
 }
 
 tc_value KindRegistry::serialize_cpp(const std::string& kind_name, const std::any& value) const {
