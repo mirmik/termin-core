@@ -644,24 +644,13 @@ def install_python_packages(
         bundled_site_packages.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    if _is_windows():
-        result = _run(
-            [
-                _python_executable(),
-                "-m",
-                "pip",
-                "install",
-                "--upgrade",
-                "--target",
-                str(bundled_site_packages),
-                "-r",
-                str(repo_root / "termin-app" / "requirements.txt"),
-            ],
-            cwd=repo_root,
-            env=env,
-        )
-        if result != 0:
-            return result
+    result = _install_bundled_runtime_requirements(
+        repo_root=repo_root,
+        bundled_site_packages=bundled_site_packages,
+        env=env,
+    )
+    if result != 0:
+        return result
     return install_pip_packages(
         repo_root=repo_root,
         sdk_prefix=sdk_prefix,
@@ -669,6 +658,29 @@ def install_python_packages(
         target_dir=bundled_site_packages,
         editable=False,
         force=True,
+    )
+
+
+def _install_bundled_runtime_requirements(
+    repo_root: Path,
+    bundled_site_packages: Path,
+    env: dict[str, str],
+) -> int:
+    requirements = repo_root / "termin-app" / "requirements.txt"
+    return _run(
+        [
+            _python_executable(),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--target",
+            str(bundled_site_packages),
+            "-r",
+            str(requirements),
+        ],
+        cwd=repo_root,
+        env=env,
     )
 
 
@@ -1080,6 +1092,16 @@ def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
         or (
             _is_windows()
             and lower_path.endswith("/site-packages/sdl2dll/dll/sdl2.dll")
+        )
+        # PyGLFW ships backend-specific copies with the same basename.
+        # They are selected by the Python package from distinct x11/wayland
+        # directories and are not linked by Termin's native libraries.
+        or (
+            not _is_windows()
+            and (
+                lower_path.endswith("/site-packages/glfw/x11/libglfw.so")
+                or lower_path.endswith("/site-packages/glfw/wayland/libglfw.so")
+            )
         )
         or (
             _is_windows()

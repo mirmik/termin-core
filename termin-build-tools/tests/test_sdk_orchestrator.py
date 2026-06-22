@@ -216,6 +216,68 @@ def test_editable_install_is_sequential_and_no_deps(tmp_path, monkeypatch):
         assert "-e" in command
 
 
+def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    build_dir = repo_root / "build" / "Release"
+    bundled_py_dir = sdk_prefix / "lib" / "python3.10"
+    site_packages = bundled_py_dir / "site-packages"
+    requirements = repo_root / "termin-app" / "requirements.txt"
+    (bundled_py_dir / "ensurepip").mkdir(parents=True)
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("watchdog>=3.0\n", encoding="utf-8")
+
+    calls = []
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk, "ensure_bundled_python_cli", lambda _sdk_prefix: None)
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: calls.append(("run", command)) or 0,
+    )
+
+    def fake_install_pip_packages(**kwargs):
+        calls.append(("install_pip_packages", kwargs))
+        return 0
+
+    monkeypatch.setattr(sdk, "install_pip_packages", fake_install_pip_packages)
+
+    result = sdk.install_python_packages(
+        repo_root=repo_root,
+        sdk_prefix=sdk_prefix,
+        build_dir=build_dir,
+    )
+
+    assert result == 0
+    assert calls[0] == (
+        "run",
+        [
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--target",
+            str(site_packages),
+            "-r",
+            str(requirements),
+        ],
+    )
+    install_call = calls[1]
+    assert install_call[0] == "install_pip_packages"
+    assert install_call[1]["repo_root"] == repo_root
+    assert install_call[1]["sdk_prefix"] == sdk_prefix
+    assert install_call[1]["build_dir"] == build_dir
+    assert install_call[1]["target_dir"] == site_packages
+    assert install_call[1]["editable"] is False
+    assert install_call[1]["force"] is True
+
+
 def test_install_packages_rejects_unknown_options(capsys):
     result = sdk.main(
         [
@@ -510,5 +572,24 @@ def test_verify_duplicate_libraries_allows_pysdl2_core_sdl_duplicate(
     (sdl2dll_dir / "SDL2.dll").write_text("pysdl2-sdl", encoding="utf-8")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+
+    assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
+
+
+def test_verify_duplicate_libraries_allows_pyglfw_backend_libraries(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    (sdk_prefix / "bin").mkdir(parents=True)
+    glfw_dir = sdk_prefix / "lib" / "python3.10" / "site-packages" / "glfw"
+    x11_dir = glfw_dir / "x11"
+    wayland_dir = glfw_dir / "wayland"
+    x11_dir.mkdir(parents=True)
+    wayland_dir.mkdir(parents=True)
+    (x11_dir / "libglfw.so").write_text("x11", encoding="utf-8")
+    (wayland_dir / "libglfw.so").write_text("wayland", encoding="utf-8")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
 
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
