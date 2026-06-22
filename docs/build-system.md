@@ -331,6 +331,28 @@ bash run-tests-cpp.sh --sdl
 
 Window tests настроены так, чтобы пропускаться в headless-окружении без usable video backend, а не валить весь прогон.
 
+## Общий тестовый цикл
+
+Центральная точка проверки репозитория:
+
+```bash
+./run-tests.sh
+```
+
+Она запускает C/C++ tests, Python tests, затем editor-process smoke tests для
+hot reload модулей:
+
+- `scripts/smoke-python-module-hot-reload`
+- `scripts/smoke-cpp-module-cascade-hot-reload`
+
+На headless Linux smoke-скрипты используют `xvfb-run`, если display не
+настроен. Для окружений без собранного editor SDK или без возможности открыть
+editor MCP стадию можно пропустить:
+
+```bash
+./run-tests.sh --no-editor-smoke
+```
+
 ---
 
 ## Портабельность
