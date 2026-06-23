@@ -94,6 +94,7 @@ EXTERNAL_PYTHON_PACKAGES = (
     "scipy",
     "glfw",
     "OpenGL",
+    "packaging",
     "pyassimp",
     "pyopengl",
     "sdl2",
