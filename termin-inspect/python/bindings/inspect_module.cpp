@@ -212,6 +212,9 @@ NB_MODULE(_inspect_native, m) {
     // Set lazy list handler
     tc::set_ensure_list_handler(ensure_list_handler_impl);
 
+    // Unified Python/C++ kind registry facade.
+    tc::bind_kind_registry(m);
+
     // Diagnostics
     m.def("inspect_registry_address", []() -> uintptr_t {
         return reinterpret_cast<uintptr_t>(&InspectRegistry::instance());
