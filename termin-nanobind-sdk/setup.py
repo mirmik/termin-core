@@ -19,6 +19,5 @@ setup(
     python_requires=">=3.8",
     packages=["termin_nanobind"],
     package_dir={"termin_nanobind": "python/termin_nanobind"},
-    install_requires=["nanobind"],
     zip_safe=False,
 )
