@@ -1,5 +1,5 @@
 // tc_kind_cpp.cpp - KindRegistryCpp singleton and C++ language vtable registration
-// Compiled into entity_lib to ensure single instance across all modules
+// Compiled into termin_inspect to ensure a single instance across modules.
 
 #include "inspect/tc_kind_cpp.hpp"
 #include <cstring>

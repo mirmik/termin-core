@@ -39,7 +39,7 @@ my_domain_kinds_init();        // регистрация domain kinds (tc_mesh, 
 
 Ожидаемая схема интеграции:
 
-1. `termin-core` и `entity_lib` линкуются с `termin_inspect::termin_inspect`.
+1. Consumer-библиотеки линкуются с `termin_inspect::termin_inspect`.
 2. Inspect adapters (component/pass) остаются в consumer-слое.
 3. Domain kinds (`tc_mesh`, `tc_material`) регистрируются в consumer, не в core.
 4. Consumer вызывает core init и свои adapter init в нужном порядке.

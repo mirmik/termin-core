@@ -1,5 +1,5 @@
 // tc_kind_python_instance.cpp - KindRegistryPython and KindRegistry singleton implementation
-// Compiled into entity_lib to ensure single instance across all modules
+// Compiled into termin_inspect_python to ensure a single instance across Python modules.
 
 #include <algorithm>
 
