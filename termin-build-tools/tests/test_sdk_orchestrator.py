@@ -139,6 +139,62 @@ def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     assert unrelated.is_dir()
 
 
+def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    requirements = repo_root / "termin-app" / "requirements.txt"
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text(
+        "numpy\n"
+        "Pillow>=9.0\n"
+        "# comment\n"
+        "PyYAML>=6.0\n",
+        encoding="utf-8",
+    )
+    target_dir = tmp_path / "sdk" / "lib" / "python3.10" / "site-packages"
+    target_dir.mkdir(parents=True)
+    stale_numpy = target_dir / "numpy-1.26.4.dist-info"
+    stale_numpy.mkdir()
+    (stale_numpy / "METADATA").write_text("Name: numpy\n", encoding="utf-8")
+    stale_pillow = target_dir / "Pillow-8.0.0.dist-info"
+    stale_pillow.mkdir()
+    (stale_pillow / "METADATA").write_text("Name: Pillow\n", encoding="utf-8")
+    unrelated = target_dir / "unrelated-1.0.0.dist-info"
+    unrelated.mkdir()
+    (unrelated / "METADATA").write_text("Name: unrelated\n", encoding="utf-8")
+    commands = []
+
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+
+    result = sdk._install_bundled_runtime_requirements(
+        repo_root=repo_root,
+        bundled_site_packages=target_dir,
+        env={},
+    )
+
+    assert result == 0
+    assert not stale_numpy.exists()
+    assert not stale_pillow.exists()
+    assert unrelated.is_dir()
+    assert commands == [
+        [
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--target",
+            str(target_dir),
+            "-r",
+            str(requirements),
+        ]
+    ]
+
+
 def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_path):
     target_dir = tmp_path / "site-packages"
     target_dir.mkdir()

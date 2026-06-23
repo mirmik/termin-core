@@ -669,6 +669,11 @@ def _install_bundled_runtime_requirements(
     env: dict[str, str],
 ) -> int:
     requirements = repo_root / "termin-app" / "requirements.txt"
+    bundled_site_packages.mkdir(parents=True, exist_ok=True)
+    _clear_target_distribution_metadata(
+        bundled_site_packages,
+        _requirement_distribution_names(requirements),
+    )
     return _run(
         [
             _python_executable(),
@@ -797,6 +802,23 @@ def _distribution_name_from_metadata_dir(metadata_path: Path) -> str | None:
     )
 
 
+_REQUIREMENT_NAME_RE = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9_.-]*)")
+
+
+def _requirement_distribution_names(requirements_path: Path) -> set[str]:
+    names: set[str] = set()
+    if not requirements_path.is_file():
+        return names
+    for line in requirements_path.read_text(encoding="utf-8").splitlines():
+        requirement = line.split("#", 1)[0].strip()
+        if not requirement or requirement.startswith(("-", ".")):
+            continue
+        match = _REQUIREMENT_NAME_RE.match(requirement)
+        if match is not None:
+            names.add(match.group(1))
+    return names
+
+
 def _remove_metadata_path(path: Path) -> None:
     if path.is_dir():
         shutil.rmtree(path)
@@ -804,12 +826,12 @@ def _remove_metadata_path(path: Path) -> None:
         path.unlink()
 
 
-def _clear_target_python_package_metadata(target_dir: Path, packages) -> None:
-    if not target_dir.is_dir():
+def _clear_target_distribution_metadata(target_dir: Path, distribution_names: set[str]) -> None:
+    if not target_dir.is_dir() or not distribution_names:
         return
-    package_names = {
-        _normalized_distribution_name(package.distribution)
-        for package in packages
+    normalized_names = {
+        _normalized_distribution_name(name)
+        for name in distribution_names
     }
     removed = []
     for child in target_dir.iterdir():
@@ -818,7 +840,7 @@ def _clear_target_python_package_metadata(target_dir: Path, packages) -> None:
         distribution_name = _distribution_name_from_metadata_dir(child)
         if distribution_name is None:
             continue
-        if _normalized_distribution_name(distribution_name) not in package_names:
+        if _normalized_distribution_name(distribution_name) not in normalized_names:
             continue
         _remove_metadata_path(child)
         removed.append(child.name)
@@ -827,6 +849,14 @@ def _clear_target_python_package_metadata(target_dir: Path, packages) -> None:
             "Removed stale target package metadata: "
             + ", ".join(sorted(removed))
         )
+
+
+def _clear_target_python_package_metadata(target_dir: Path, packages) -> None:
+    package_names = {
+        package.distribution
+        for package in packages
+    }
+    _clear_target_distribution_metadata(target_dir, package_names)
 
 
 def _add_build_tools_pythonpath(env: dict[str, str], repo_root: Path) -> None:
