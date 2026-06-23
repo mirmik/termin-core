@@ -34,6 +34,7 @@ set(TI_CORE_HEADERS
     include/tc_value.h
     include/tc_inspect_cpp.hpp
     include/termin/inspect/tc_kind_cpp_ext.hpp
+    include/inspect/tc_inspect_init.h
     include/inspect/tc_inspect.h
     include/inspect/tc_kind.h
     include/inspect/tc_kind_cpp.hpp
