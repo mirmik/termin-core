@@ -62,4 +62,5 @@ register_python_kind("my_type",
 
 - Python runtime должен быть инициализирован до вызова `init_python_lang_vtable()`.
 - Nanobind и Python dev headers должны быть доступны при сборке.
-- Биндинги `termin._native` (module wiring) остаются в consumer-слое, не в core.
+- Python module wiring remains in consumer/domain packages, not in
+  `termin-inspect` core.
