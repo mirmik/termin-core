@@ -24,6 +24,8 @@ namespace nb = nanobind;
 
 namespace tc {
 
+TC_INSPECT_PYTHON_API void init_python_inspect_vtable();
+
 // ============================================================================
 // nb::object <-> tc_value conversion
 // ============================================================================

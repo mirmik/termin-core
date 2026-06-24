@@ -203,9 +203,6 @@ static nb::object tc_value_to_py(const tc_value* v) {
 NB_MODULE(_inspect_native, m) {
     m.doc() = "Inspect native module (InspectRegistry, Kind system)";
 
-    // Initialize Python language vtable
-    tc::init_python_lang_vtable();
-
     // Register builtin kind handlers
     register_builtin_kind_handlers();
 

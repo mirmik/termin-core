@@ -7,6 +7,110 @@
 
 namespace tc {
 
+static bool python_inspect_has_type(const char* type_name, void* ctx) {
+    (void)ctx;
+    if (!type_name) return false;
+    InspectRegistry& reg = InspectRegistry::instance();
+    return reg.has_type(type_name) && reg.get_type_backend(type_name) == TypeBackend::Python;
+}
+
+static const char* python_inspect_get_parent(const char* type_name, void* ctx) {
+    (void)ctx;
+    static std::string parent;
+    parent = InspectRegistry::instance().get_type_parent(type_name ? type_name : "");
+    return parent.empty() ? nullptr : parent.c_str();
+}
+
+static size_t python_inspect_field_count(const char* type_name, void* ctx) {
+    (void)ctx;
+    return InspectRegistry::instance().all_fields_count(type_name ? type_name : "");
+}
+
+static bool python_inspect_get_field(const char* type_name, size_t index, tc_field_info* out, void* ctx) {
+    (void)ctx;
+    const InspectFieldInfo* info = InspectRegistry::instance().get_field_by_index(type_name ? type_name : "", index);
+    if (!info) return false;
+    info->fill_c_info(out);
+    return true;
+}
+
+static bool python_inspect_find_field(const char* type_name, const char* path, tc_field_info* out, void* ctx) {
+    (void)ctx;
+    const InspectFieldInfo* info = InspectRegistry::instance().find_field(type_name ? type_name : "", path ? path : "");
+    if (!info) return false;
+    info->fill_c_info(out);
+    return true;
+}
+
+static tc_value python_inspect_get(void* obj, const char* type_name, const char* path, void* ctx) {
+    (void)ctx;
+    nb::gil_scoped_acquire gil;
+    try {
+        return InspectRegistry::instance().get_tc_value(obj, type_name ? type_name : "", path ? path : "");
+    } catch (const std::exception& e) {
+        tc::Log::error(e, "[Inspect] Python get failed for type '%s' field '%s'",
+                       type_name ? type_name : "", path ? path : "");
+    }
+    return tc_value_nil();
+}
+
+static void python_inspect_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
+    (void)ctx;
+    nb::gil_scoped_acquire gil;
+    try {
+        InspectRegistry::instance().set_tc_value(obj, type_name ? type_name : "", path ? path : "", value, context);
+    } catch (const std::exception& e) {
+        tc::Log::error(e, "[Inspect] Python set failed for type '%s' field '%s'",
+                       type_name ? type_name : "", path ? path : "");
+    }
+}
+
+static void python_inspect_action(void* obj, const char* type_name, const char* path, void* ctx) {
+    (void)ctx;
+    nb::gil_scoped_acquire gil;
+    try {
+        InspectContext inspect_context;
+        InspectRegistry::instance().action_field(obj, type_name ? type_name : "", path ? path : "", inspect_context);
+    } catch (const std::exception& e) {
+        tc::Log::error(e, "[Inspect] Python action failed for type '%s' field '%s'",
+                       type_name ? type_name : "", path ? path : "");
+    }
+}
+
+static tc_value python_inspect_get_type_metadata(const char* type_name, void* ctx) {
+    (void)ctx;
+    return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
+}
+
+static void python_inspect_set_type_metadata(const char* type_name, const tc_value* metadata, void* ctx) {
+    (void)ctx;
+    if (!type_name) return;
+    InspectRegistry::instance().set_type_metadata(type_name, metadata);
+}
+
+static bool g_python_inspect_vtable_initialized = false;
+
+void init_python_inspect_vtable() {
+    if (g_python_inspect_vtable_initialized) return;
+    g_python_inspect_vtable_initialized = true;
+
+    static tc_inspect_lang_vtable python_vtable = {
+        python_inspect_has_type,
+        python_inspect_get_parent,
+        python_inspect_field_count,
+        python_inspect_get_field,
+        python_inspect_find_field,
+        python_inspect_get,
+        python_inspect_set,
+        python_inspect_action,
+        python_inspect_get_type_metadata,
+        python_inspect_set_type_metadata,
+        nullptr
+    };
+
+    tc_inspect_set_lang_vtable(TC_INSPECT_LANG_PYTHON, &python_vtable);
+}
+
 void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::string& type_name,
                                           const std::string& path, const std::string& label,
                                           nb::object action) {

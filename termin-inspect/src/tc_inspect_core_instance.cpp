@@ -25,7 +25,9 @@ InspectRegistry& InspectRegistry::instance() {
 
 static bool cpp_has_type(const char* type_name, void* ctx) {
     (void)ctx;
-    return InspectRegistry::instance().has_type(type_name);
+    if (!type_name) return false;
+    InspectRegistry& reg = InspectRegistry::instance();
+    return reg.has_type(type_name) && reg.get_type_backend(type_name) == TypeBackend::Cpp;
 }
 
 static const char* cpp_get_parent(const char* type_name, void* ctx) {
