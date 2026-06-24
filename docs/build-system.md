@@ -370,6 +370,9 @@ editor MCP стадию можно пропустить:
 ./run-tests.sh --no-editor-smoke
 ```
 
+Повторяемая матрица targeted smoke-checks для render/shader/backend/runtime
+изменений описана в [Smoke Checks](smoke-checks.md).
+
 ---
 
 ## Портабельность
