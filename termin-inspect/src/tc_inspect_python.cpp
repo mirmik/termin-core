@@ -18,9 +18,8 @@ void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::strin
     info.is_serializable = false;
     info.is_inspectable = true;
 
-    // Wrap Python callable into unified action: PyObject* → callable
+    // The lambda capture owns the nb::object reference while the field lives.
     nb::object py_action = std::move(action);
-    py_action.inc_ref();  // prevent GC
     info.action = [py_action](void* obj, const InspectContext&) {
         if (!obj) return;
         nb::object py_obj = nb::borrow<nb::object>(
@@ -105,7 +104,6 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
         // Action for button — wrap Python callable into unified action
         if (nb::hasattr(field_obj, "action") && !field_obj.attr("action").is_none()) {
             nb::object py_action = field_obj.attr("action");
-            py_action.inc_ref();  // prevent GC
             info.action = [py_action](void* obj, const InspectContext&) {
                 if (!obj) return;
                 nb::object py_obj = nb::borrow<nb::object>(

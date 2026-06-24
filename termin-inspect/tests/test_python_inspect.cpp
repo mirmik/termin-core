@@ -124,6 +124,37 @@ obj = PyDerivedComponent()
                            "deserialize_all updates inherited field")) return 1;
         if (!require_check(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "restored",
                            "deserialize_all updates own field")) return 1;
+
+        const char* action_script = R"PY(
+action_calls = []
+def inspect_action(obj):
+    action_calls.append(obj)
+
+action_fields = {
+    "run": InspectField(kind="button", label="Run", action=inspect_action, is_serializable=False)
+}
+)PY";
+        run_rc = PyRun_SimpleString(action_script);
+        if (!require_check(run_rc == 0, "python action setup script ran")) return 1;
+
+        globals = main.attr("__dict__");
+        nb::object inspect_action = nb::borrow<nb::object>(globals["inspect_action"]);
+        Py_ssize_t action_refcount = Py_REFCNT(inspect_action.ptr());
+
+        nb::dict action_fields = nb::cast<nb::dict>(globals["action_fields"]);
+        tc::InspectRegistry_register_python_fields(reg, "PyActionComponent", std::move(action_fields));
+        if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount + 1,
+                           "registered action field owns one callable reference")) return 1;
+        reg.unregister_type("PyActionComponent");
+        if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount,
+                           "unregister_type releases action field callable reference")) return 1;
+
+        tc::InspectRegistry_add_button(reg, "PyButtonComponent", "run", "Run", inspect_action);
+        if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount + 1,
+                           "add_button owns one callable reference")) return 1;
+        reg.unregister_type("PyButtonComponent");
+        if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount,
+                           "unregister_type releases add_button callable reference")) return 1;
     }
 
     tc::KindRegistry::instance().clear_python();
