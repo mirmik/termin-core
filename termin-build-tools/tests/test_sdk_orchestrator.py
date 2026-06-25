@@ -284,6 +284,43 @@ def test_editable_install_is_sequential_and_no_deps(tmp_path, monkeypatch):
         assert "-e" in command
 
 
+def test_editable_install_removes_legacy_source_native_artifacts(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    legacy_dir = repo_root / "termin-app" / "termin"
+    legacy_dir.mkdir(parents=True)
+    (sdk_prefix / "lib").mkdir(parents=True)
+    stale_artifact = legacy_dir / "_native.cp312-win_amd64.pyd"
+    stale_artifact.write_text("old binding", encoding="utf-8")
+    keep_artifact = legacy_dir / "_editor_native.cp312-win_amd64.pyd"
+    keep_artifact.write_text("current binding", encoding="utf-8")
+
+    packages = [PackageEntry("termin-app", "termin-app", (), ())]
+    commands = []
+
+    monkeypatch.setattr(sdk, "load_manifest", lambda _repo_root: packages)
+    monkeypatch.setattr(sdk, "_python_bin", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+
+    result = sdk.install_pip_packages(
+        repo_root=repo_root,
+        sdk_prefix=sdk_prefix,
+        build_dir=repo_root / "build" / "Release",
+        target_dir=None,
+        editable=True,
+        force=False,
+    )
+
+    assert result == 0
+    assert not stale_artifact.exists()
+    assert keep_artifact.is_file()
+    assert len(commands) == 1
+
+
 def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
     tmp_path,
     monkeypatch,

@@ -102,6 +102,13 @@ EXTERNAL_PYTHON_PACKAGES = (
     "watchdog",
 )
 
+LEGACY_SOURCE_NATIVE_ARTIFACTS = {
+    # termin-app used to own the monolithic termin._native binding. Editable
+    # installs import from the source tree, so stale local artifacts must be
+    # removed after the binding was split into package-owned modules.
+    "termin-app": ("termin/_native",),
+}
+
 
 def _normalize_path(path: str) -> str:
     return path.replace("\\", "/")
@@ -763,6 +770,33 @@ def _clear_python_package_build_caches(repo_root: Path) -> None:
                 shutil.rmtree(egg_info, ignore_errors=True)
 
 
+def _clear_legacy_source_native_artifacts(repo_root: Path) -> None:
+    removed = []
+    suffixes = ("so", "pyd", "dylib")
+    for package_path, module_stems in LEGACY_SOURCE_NATIVE_ARTIFACTS.items():
+        package_dir = repo_root / package_path
+        for module_stem in module_stems:
+            module_path = package_dir / module_stem
+            patterns = [
+                f"{module_path.name}.{suffix}"
+                for suffix in suffixes
+            ] + [
+                f"{module_path.name}.*.{suffix}"
+                for suffix in suffixes
+            ]
+            for pattern in patterns:
+                for artifact in module_path.parent.glob(pattern):
+                    if not artifact.is_file():
+                        continue
+                    artifact.unlink()
+                    removed.append(artifact.relative_to(repo_root).as_posix())
+    if removed:
+        print(
+            "Removed legacy source native artifacts: "
+            + ", ".join(sorted(removed))
+        )
+
+
 _DISTRIBUTION_NORMALIZE_RE = re.compile(r"[-_.]+")
 
 
@@ -944,6 +978,9 @@ def install_pip_packages(
         force_flags = ["--force-reinstall", "--no-cache-dir"]
 
     packages = load_manifest(repo_root)
+    if editable:
+        _clear_legacy_source_native_artifacts(repo_root)
+
     if target_dir is not None:
         target_dir.mkdir(parents=True, exist_ok=True)
         target_dir = target_dir.resolve()
