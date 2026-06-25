@@ -1,7 +1,7 @@
 # termin.inspect - inspection and field metadata
 from termin_nanobind.runtime import preload_sdk_libs
 
-preload_sdk_libs("termin_inspect")
+preload_sdk_libs("termin_base", "termin_inspect")
 
 from termin.inspect.inspect_field import InspectAttr, InspectField, inspect
 from termin.inspect.kind import KindRegistry, register_kind
