@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_MANIFEST = REPO_ROOT / "build-system" / "packages.json"
+PACKAGE_NAMING_DOC = REPO_ROOT / "docs" / "python-package-naming.md"
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,16 @@ def _read_shared_package_manifest() -> list[tuple[str, str]]:
         (package["path"], package["distribution"])
         for package in content["packages"]
     ]
+
+
+def _read_documented_package_manifest() -> list[tuple[str, str]]:
+    rows = []
+    pattern = re.compile(r"^\| `([^`]+)` \| `([^`]+)` \|")
+    for line in PACKAGE_NAMING_DOC.read_text(encoding="utf-8").splitlines():
+        match = pattern.match(line)
+        if match is not None:
+            rows.append((match.group(1), match.group(2)))
+    return rows
 
 
 def _is_internal_requirement_name(name: str) -> bool:
@@ -204,3 +215,7 @@ def test_shared_python_package_internal_dependencies_are_known_distributions():
         "Unknown internal Python package dependencies:\n"
         + "\n".join(unknown_internal_dependencies)
     )
+
+
+def test_python_package_naming_doc_matches_manifest():
+    assert _read_documented_package_manifest() == _read_shared_package_manifest()
