@@ -72,12 +72,17 @@ public:
     // Get all registered kind names
     std::vector<std::string> kinds() const;
 
+    // Clear registered C++ handlers.
+    void clear();
+
     // Serialize value (caller owns returned tc_value)
     tc_value serialize(const std::string& kind_name, const std::any& value) const;
 
     // Deserialize value
     std::any deserialize(const std::string& kind_name, const tc_value* data, void* context = nullptr) const;
 };
+
+TC_KIND_CPP_API void reset_kind_registry_cpp();
 
 // Helper to get int from tc_value (handles both INT and DOUBLE)
 inline int tc_value_to_int(const tc_value* v) {

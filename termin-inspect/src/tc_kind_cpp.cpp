@@ -65,6 +65,7 @@ static size_t cpp_list(const char** out_names, size_t max_count, void* ctx) {
 }
 
 static bool g_cpp_kind_vtable_initialized = false;
+static bool g_cpp_kind_builtins_registered = false;
 
 static void init_cpp_lang_vtable() {
     if (g_cpp_kind_vtable_initialized) return;
@@ -91,9 +92,8 @@ KindRegistryCpp& KindRegistryCpp::instance() {
     init_cpp_lang_vtable();
 
     // Register builtin kinds on first access
-    static bool builtins_registered = false;
-    if (!builtins_registered) {
-        builtins_registered = true;
+    if (!g_cpp_kind_builtins_registered) {
+        g_cpp_kind_builtins_registered = true;
         register_builtin_cpp_kinds();
     }
 
@@ -137,6 +137,16 @@ std::vector<std::string> KindRegistryCpp::kinds() const {
         result.push_back(name);
     }
     return result;
+}
+
+void KindRegistryCpp::clear() {
+    _kinds.clear();
+}
+
+void reset_kind_registry_cpp() {
+    KindRegistryCpp::instance().clear();
+    g_cpp_kind_vtable_initialized = false;
+    g_cpp_kind_builtins_registered = false;
 }
 
 tc_value KindRegistryCpp::serialize(const std::string& kind_name, const std::any& value) const {

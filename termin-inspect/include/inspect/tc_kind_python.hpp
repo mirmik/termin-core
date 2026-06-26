@@ -166,6 +166,7 @@ inline void bind_kind_registry(nb::module_& m) {
 // Initialize Python language vtable in C dispatcher
 // Called from inspect_bindings.cpp at module init
 TC_KIND_PYTHON_API void init_python_lang_vtable();
+TC_KIND_PYTHON_API void reset_kind_registry_python();
 
 // Callback type for lazy list handler creation
 using EnsureListHandlerFn = bool(*)(const std::string&);

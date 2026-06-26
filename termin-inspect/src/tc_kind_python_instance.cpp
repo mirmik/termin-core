@@ -80,6 +80,11 @@ void init_python_lang_vtable() {
     tc_kind_set_lang_registry(TC_KIND_LANG_PYTHON, &python_registry);
 }
 
+void reset_kind_registry_python() {
+    KindRegistryPython::instance().clear();
+    g_python_vtable_initialized = false;
+}
+
 // ============================================================================
 // KindRegistryPython methods
 // ============================================================================
