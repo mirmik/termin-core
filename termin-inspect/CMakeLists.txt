@@ -10,6 +10,12 @@ option(TI_BUILD_SHARED "Build shared library" ON)
 option(TI_BUILD_TESTS "Build tests" ON)
 option(TI_BUILD_CPP "Build C++ inspect/kind core runtime" ON)
 option(TERMIN_BUILD_PYTHON "Build Python/nanobind inspect bridge" OFF)
+option(TI_BUILD_PYTHON_TESTS "Build C++ tests for the Python inspect bridge" ${TI_BUILD_TESTS})
+
+set(TI_BUILD_PYTHON_BRIDGE OFF)
+if(TERMIN_BUILD_PYTHON OR (TI_BUILD_TESTS AND TI_BUILD_PYTHON_TESTS))
+    set(TI_BUILD_PYTHON_BRIDGE ON)
+endif()
 
 set(TI_SOURCES
     src/tc_inspect.c
@@ -55,7 +61,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
 include(TerminRpath)
 
-if(TERMIN_BUILD_PYTHON)
+if(TI_BUILD_PYTHON_BRIDGE)
     if(NOT Python_EXECUTABLE)
         if(WIN32)
             set(Python_EXECUTABLE "python")
@@ -94,7 +100,7 @@ target_include_directories(termin_inspect
 )
 target_link_libraries(termin_inspect PUBLIC tcbase::termin_base)
 
-if(TERMIN_BUILD_PYTHON)
+if(TI_BUILD_PYTHON_BRIDGE)
     if(TI_BUILD_SHARED)
         add_library(termin_inspect_python SHARED ${TI_PY_SOURCES} ${TI_PY_HEADERS})
         target_compile_definitions(termin_inspect_python PRIVATE TC_EXPORTS TERMIN_INSPECT_PYTHON_EXPORTS)
@@ -186,7 +192,7 @@ if(TI_BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
 
-    if(TERMIN_BUILD_PYTHON)
+    if(TI_BUILD_PYTHON_BRIDGE)
         add_executable(termin_inspect_python_test tests/test_python_inspect.cpp)
         target_link_libraries(termin_inspect_python_test PRIVATE termin_inspect_python Python::Python nanobind)
         target_include_directories(termin_inspect_python_test PRIVATE ${NB_DIR}/include)
