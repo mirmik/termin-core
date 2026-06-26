@@ -17,6 +17,9 @@ add_library(termin_base SHARED
     src/tc_event.c
     src/tc_resource_map.c
     src/tgfx_intern_string.c
+    src/tc_string.c
+    src/tc_uuid.c
+    src/tc_version.c
     src/trent/trent.cpp
     src/trent/trent_path.cpp
     src/trent/string_ext.cpp

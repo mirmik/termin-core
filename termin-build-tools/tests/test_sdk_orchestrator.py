@@ -641,13 +641,13 @@ def test_verify_duplicate_libraries_reports_windows_duplicates(
     sdk_prefix = tmp_path / "sdk"
     (sdk_prefix / "bin").mkdir(parents=True)
     (sdk_prefix / "python" / "Lib" / "site-packages").mkdir(parents=True)
-    (sdk_prefix / "bin" / "termin_core.dll").write_text("dll", encoding="utf-8")
+    (sdk_prefix / "bin" / "termin_bootstrap.dll").write_text("dll", encoding="utf-8")
     (
         sdk_prefix
         / "python"
         / "Lib"
         / "site-packages"
-        / "termin_core.dll"
+        / "termin_bootstrap.dll"
     ).write_text("dll", encoding="utf-8")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
@@ -656,7 +656,7 @@ def test_verify_duplicate_libraries_reports_windows_duplicates(
 
     captured = capsys.readouterr()
     assert result == 1
-    assert "DUPLICATE: termin_core.dll" in captured.out
+    assert "DUPLICATE: termin_bootstrap.dll" in captured.out
 
 
 def test_verify_duplicate_libraries_ignores_scoped_sdk_duplicates(
@@ -667,8 +667,8 @@ def test_verify_duplicate_libraries_ignores_scoped_sdk_duplicates(
     (sdk_prefix / "bin").mkdir(parents=True)
     (sdk_prefix / "android" / "arm64-v8a").mkdir(parents=True)
     (sdk_prefix / "csharp" / "runtimes" / "win-x64" / "native").mkdir(parents=True)
-    (sdk_prefix / "bin" / "termin_core.dll").write_text("dll", encoding="utf-8")
-    (sdk_prefix / "android" / "arm64-v8a" / "termin_core.dll").write_text(
+    (sdk_prefix / "bin" / "termin_bootstrap.dll").write_text("dll", encoding="utf-8")
+    (sdk_prefix / "android" / "arm64-v8a" / "termin_bootstrap.dll").write_text(
         "dll",
         encoding="utf-8",
     )
@@ -678,7 +678,7 @@ def test_verify_duplicate_libraries_ignores_scoped_sdk_duplicates(
         / "runtimes"
         / "win-x64"
         / "native"
-        / "termin_core.dll"
+        / "termin_bootstrap.dll"
     ).write_text("dll", encoding="utf-8")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
