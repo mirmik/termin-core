@@ -321,6 +321,59 @@ def test_editable_install_removes_legacy_source_native_artifacts(tmp_path, monke
     assert len(commands) == 1
 
 
+def test_editable_install_failure_reports_windows_native_lock_context(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    package_root = repo_root / "termin-input"
+    native_dir = package_root / "python" / "termin" / "input"
+    native_dir.mkdir(parents=True)
+    (sdk_prefix / "lib").mkdir(parents=True)
+    native_artifact = native_dir / "_input_native.cp310-win_amd64.pyd"
+    native_artifact.write_text("native", encoding="utf-8")
+
+    packages = [PackageEntry("termin-input", "termin-input", (), ())]
+
+    monkeypatch.setattr(sdk, "load_manifest", lambda _repo_root: packages)
+    monkeypatch.setattr(sdk, "_python_bin", lambda: "python")
+    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda _command, **_kwargs: 1,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_windows_module_users",
+        lambda module_name: [f"python.exe 123 Console 1 100 K {module_name}"],
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_windows_python_processes",
+        lambda: ["python.exe 123 Console 1 100 K"],
+    )
+
+    result = sdk.install_pip_packages(
+        repo_root=repo_root,
+        sdk_prefix=sdk_prefix,
+        build_dir=repo_root / "build" / "Release",
+        target_dir=None,
+        editable=True,
+        force=False,
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "pip install failed for termin-input (1/1)" in captured.err
+    assert "Python package sync stopped" in captured.err
+    assert str(native_artifact) in captured.err
+    assert "python.exe 123" in captured.err
+    assert "install-pip-packages.ps1 --editable --force" in captured.err
+
+
 def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
     tmp_path,
     monkeypatch,

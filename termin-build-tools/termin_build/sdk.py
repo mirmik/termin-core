@@ -928,6 +928,101 @@ def _pip_temp_env(repo_root: Path, env: dict[str, str]) -> Path | None:
     return pip_temp_dir
 
 
+def _run_windows_tasklist(args: list[str]) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["tasklist", *args],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    return [
+        line.rstrip()
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+
+
+def _windows_module_users(module_name: str) -> list[str]:
+    return _run_windows_tasklist(["/m", module_name])
+
+
+def _windows_python_processes() -> list[str]:
+    lines: list[str] = []
+    for image_name in ("python.exe", "pythonw.exe", "py.exe", "pytest.exe", "termin_editor.exe", "termin_player.exe"):
+        process_lines = _run_windows_tasklist(["/fi", f"imagename eq {image_name}"])
+        if process_lines:
+            lines.extend(process_lines)
+    return lines
+
+
+def _native_artifacts_for_lock_diagnostics(repo_root: Path, package: PackageEntry) -> list[Path]:
+    package_root = repo_root / package.path
+    if not package_root.is_dir():
+        return []
+    artifacts: list[Path] = []
+    for pattern in ("*.pyd", "*.dll"):
+        artifacts.extend(path for path in package_root.rglob(pattern) if path.is_file())
+    return sorted(artifacts)[:50]
+
+
+def _print_install_failure_summary(
+    package: PackageEntry,
+    package_index: int,
+    package_count: int,
+    repo_root: Path,
+    editable: bool,
+) -> None:
+    print(
+        f"ERROR: pip install failed for {package.path} "
+        f"({package_index}/{package_count}); Python package sync stopped.",
+        file=sys.stderr,
+    )
+    print(
+        "ERROR: packages after this point were not installed; rerun the install after fixing the cause.",
+        file=sys.stderr,
+    )
+
+    if not editable or not _is_windows():
+        return
+
+    artifacts = _native_artifacts_for_lock_diagnostics(repo_root, package)
+    print(
+        "Windows editable install note: native .pyd/.dll files cannot be replaced while "
+        "another process has them loaded.",
+        file=sys.stderr,
+    )
+    if artifacts:
+        print("Checked native artifacts for loaded-module owners:", file=sys.stderr)
+        found_owner = False
+        for artifact in artifacts:
+            print(f"  - {artifact}", file=sys.stderr)
+            for line in _windows_module_users(artifact.name):
+                found_owner = True
+                print(f"      {line}", file=sys.stderr)
+        if not found_owner:
+            print("  No loaded-module owner was reported by tasklist /m.", file=sys.stderr)
+    else:
+        print(f"No native artifacts found under {repo_root / package.path} yet.", file=sys.stderr)
+
+    python_processes = _windows_python_processes()
+    if python_processes:
+        print("Running Python/Termin processes that may hold native modules:", file=sys.stderr)
+        for line in python_processes:
+            print(f"  {line}", file=sys.stderr)
+
+    print(
+        "Close Termin editor/player, pytest, Python REPLs, and stale venv processes, "
+        "then rerun install-pip-packages.ps1 --editable --force.",
+        file=sys.stderr,
+    )
+
+
 def install_pip_packages(
     repo_root: Path,
     sdk_prefix: Path,
@@ -1007,7 +1102,8 @@ def install_pip_packages(
     print("Install mode: current pip environment (sequential pip install)")
     editable_flag = ["-e"] if editable else []
     nodeps_flag = ["--no-deps"] if editable or force else []
-    for package in packages:
+    package_count = len(packages)
+    for package_index, package in enumerate(packages, start=1):
         mode = " (editable)" if editable else ""
         print("")
         print("========================================")
@@ -1028,6 +1124,13 @@ def install_pip_packages(
             env=env,
         )
         if result != 0:
+            _print_install_failure_summary(
+                package=package,
+                package_index=package_index,
+                package_count=package_count,
+                repo_root=repo_root,
+                editable=editable,
+            )
             return result
 
     print("")
