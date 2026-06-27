@@ -158,14 +158,6 @@ class TerminCMakeBuildExt(build_ext):
     def _get_source_dir(self):
         return Path(self.source_dir) if self.source_dir else Path.cwd()
 
-    def _sdk(self):
-        sdk = _find_sdk()
-        if sdk is None:
-            raise RuntimeError(
-                "termin SDK not found. Set TERMIN_SDK or install to /opt/termin."
-            )
-        return sdk
-
     def _candidate_binding_roots(self):
         roots = []
         bindings_dir = os.environ.get("TERMIN_BINDINGS_DIR")
