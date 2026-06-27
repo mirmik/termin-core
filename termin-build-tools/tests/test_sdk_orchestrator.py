@@ -79,6 +79,20 @@ def test_native_extensions_for_source_reads_manifest():
     ]
 
 
+def test_repo_installs_umbrella_termin_cmake_package():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
+    package_config = (repo_root / "cmake" / "terminConfig.cmake.in").read_text(
+        encoding="utf-8"
+    )
+
+    assert "cmake/terminConfig.cmake.in" in root_cmake
+    assert "DESTINATION lib/cmake/termin" in root_cmake
+    assert "find_dependency(termin_base CONFIG REQUIRED)" in package_config
+    assert "add_library(termin::termin INTERFACE IMPORTED)" in package_config
+    assert "INTERFACE_LINK_LIBRARIES tcbase::termin_base" in package_config
+
+
 def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     sdk_prefix = repo_root / "sdk"
