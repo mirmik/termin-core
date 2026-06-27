@@ -220,7 +220,7 @@ def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_p
     )
     (fresh_metadata / "entry_points.txt").write_text(
         "[termin.asset_import_plugins]\n"
-        "voxel_grid = termin.voxels.asset_plugin:create_import_plugin\n",
+        "voxel_grid = termin.default_assets.voxels.asset_plugin:create_import_plugin\n",
         encoding="utf-8",
     )
 
