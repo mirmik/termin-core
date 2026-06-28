@@ -74,11 +74,11 @@ void register_cpp_handle_kind(const std::string& kind_name) {
             }
             return result;
         },
-        [](const tc_value* v, void*) -> std::any {
+        [](const tc_value* v, void* context) -> std::any {
             std::vector<H> vec;
             if (v && v->type == TC_VALUE_LIST) {
                 for (size_t i = 0; i < v->data.list.count; i++) {
-                    H h = deserialize_handle_value<H>(&v->data.list.items[i], nullptr);
+                    H h = deserialize_handle_value<H>(&v->data.list.items[i], context);
                     vec.push_back(h);
                 }
             }
