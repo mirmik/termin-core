@@ -4,8 +4,23 @@
 #include "guard_c.h"
 
 #include <tcbase/tc_dlist.h>
+#include <tcbase/tc_log.h>
+#include <tcbase/tc_resource.h>
 #include <tcbase/tc_types.h>
 #include <tcbase/tc_value.h>
+
+static tc_log_level g_last_log_level = TC_LOG_DEBUG;
+static char g_last_log_message[256];
+
+static void capture_log_callback(tc_log_level level, const char* message) {
+    g_last_log_level = level;
+    if (!message) {
+        g_last_log_message[0] = '\0';
+        return;
+    }
+    strncpy(g_last_log_message, message, sizeof(g_last_log_message) - 1);
+    g_last_log_message[sizeof(g_last_log_message) - 1] = '\0';
+}
 
 typedef struct {
     int value;
@@ -76,9 +91,30 @@ GUARD_C_TEST(test_tc_value) {
     return 0;
 }
 
+GUARD_C_TEST(test_tc_resource_header_warns_on_truncated_uuid) {
+    tc_resource_header header;
+    memset(&header, 0, sizeof(header));
+    g_last_log_message[0] = '\0';
+    g_last_log_level = TC_LOG_DEBUG;
+
+    tc_log_set_callback(capture_log_callback);
+    tc_log_set_level(TC_LOG_DEBUG);
+
+    const char* long_uuid = "1234567890123456789012345678901234567890-extra";
+    tc_resource_header_init(&header, long_uuid);
+
+    GUARD_C_CHECK_EQ_SIZE(TC_UUID_SIZE - 1, strlen(header.uuid));
+    GUARD_C_CHECK(strstr(g_last_log_message, "truncating") != NULL);
+    GUARD_C_CHECK(g_last_log_level == TC_LOG_WARN);
+
+    tc_log_set_callback(NULL);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     GUARD_C_BEGIN_ARGS(argc, argv);
     GUARD_C_RUN(test_tc_dlist);
     GUARD_C_RUN(test_tc_value);
+    GUARD_C_RUN(test_tc_resource_header_warns_on_truncated_uuid);
     return GUARD_C_END();
 }

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include "tc_log.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,15 +43,44 @@ typedef struct tc_resource_header {
 // ============================================================================
 
 // Initialize resource header with UUID
-static inline void tc_resource_header_init(tc_resource_header* header, const char* uuid) {
+static inline void tc_resource_copy_uuid(
+    char* dst,
+    size_t dst_size,
+    const char* uuid,
+    const char* context
+) {
+    if (!dst || dst_size == 0) return;
     if (uuid && uuid[0] != '\0') {
         size_t len = strlen(uuid);
-        if (len >= TC_UUID_SIZE) len = TC_UUID_SIZE - 1;
-        memcpy(header->uuid, uuid, len);
-        header->uuid[len] = '\0';
+        if (len >= dst_size) {
+            tc_log_warn(
+                "%s: UUID '%s' is too long (%zu bytes), truncating to %u bytes",
+                context && context[0] ? context : "tc_resource_copy_uuid",
+                uuid,
+                len,
+                (unsigned)(dst_size - 1)
+            );
+            len = dst_size - 1;
+        }
+        memcpy(dst, uuid, len);
+        dst[len] = '\0';
     } else {
-        header->uuid[0] = '\0';
+        dst[0] = '\0';
     }
+}
+
+static inline void tc_resource_header_set_uuid(
+    tc_resource_header* header,
+    const char* uuid,
+    const char* context
+) {
+    if (!header) return;
+    tc_resource_copy_uuid(header->uuid, sizeof(header->uuid), uuid, context);
+}
+
+// Initialize resource header with UUID
+static inline void tc_resource_header_init(tc_resource_header* header, const char* uuid) {
+    tc_resource_header_set_uuid(header, uuid, "tc_resource_header_init");
     header->name = NULL;
     header->version = 1;
     header->ref_count = 0;
