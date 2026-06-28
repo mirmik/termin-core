@@ -131,12 +131,23 @@ void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::strin
         py_action(py_obj);
     };
 
-    reg._fields[type_name].push_back(std::move(info));
+    reg.register_field(type_name, std::move(info), false, "python button registration");
 }
 
 void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, const std::string& type_name,
                                                        nb::dict fields_dict) {
-    reg._fields.erase(type_name);
+    const bool existed_before = reg.type_exists(type_name);
+    const bool adopt_unowned_shell =
+        existed_before &&
+        tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
+        reg.can_adopt_unowned_shell(type_name, "python field registration");
+    if (!reg.can_register_type_data(type_name, existed_before, "python field registration")) {
+        return;
+    }
+
+    tc_runtime_type_registry_ensure_type(type_name.c_str());
+    auto& payload = reg.ensure_inspect_facet(type_name);
+    payload.fields.clear();
 
     for (auto item : fields_dict) {
         std::string field_name = nb::cast<std::string>(item.first);
@@ -297,10 +308,12 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
             }
         };
 
-        reg._fields[type_name].push_back(std::move(info));
+        payload.fields.push_back(std::move(info));
     }
 
-    reg._type_backends[type_name] = TypeBackend::Python;
+    payload.backend = TypeBackend::Python;
+    payload.has_backend = true;
+    reg.assign_current_owner(type_name, existed_before, adopt_unowned_shell);
 }
 
 nb::object InspectRegistryPythonExt::get(InspectRegistry& reg, void* obj,

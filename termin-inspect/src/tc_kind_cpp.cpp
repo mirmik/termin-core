@@ -2,6 +2,7 @@
 // Compiled into termin_inspect to ensure a single instance across modules.
 
 #include "inspect/tc_kind_cpp.hpp"
+#include <any>
 #include <cstring>
 
 extern "C" {
@@ -151,9 +152,24 @@ void reset_kind_registry_cpp() {
 
 tc_value KindRegistryCpp::serialize(const std::string& kind_name, const std::any& value) const {
     auto* kind = get(kind_name);
-    if (kind && kind->serialize) {
-        return kind->serialize(value);
+    if (!kind) {
+        tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' not registered in KindRegistryCpp", kind_name.c_str());
+        return tc_value_nil();
     }
+    if (kind->serialize) {
+        try {
+            return kind->serialize(value);
+        } catch (const std::bad_any_cast& e) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[Inspect] Kind '%s' cannot serialize C++ value type '%s': %s",
+                kind_name.c_str(),
+                value.has_value() ? value.type().name() : "<empty>",
+                e.what());
+            return tc_value_nil();
+        }
+    }
+    tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' has no serialize handler", kind_name.c_str());
     return tc_value_nil();
 }
 
@@ -167,7 +183,16 @@ std::any KindRegistryCpp::deserialize(const std::string& kind_name, const tc_val
         tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' has no deserialize handler", kind_name.c_str());
         return std::any{};
     }
-    return kind->deserialize(data, context);
+    try {
+        return kind->deserialize(data, context);
+    } catch (const std::bad_any_cast& e) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[Inspect] Kind '%s' produced incompatible C++ value during deserialize: %s",
+            kind_name.c_str(),
+            e.what());
+        return std::any{};
+    }
 }
 
 } // namespace tc

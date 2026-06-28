@@ -20,6 +20,7 @@ endif()
 set(TI_SOURCES
     src/tc_inspect.c
     src/tc_kind.c
+    src/tc_runtime_type_registry.c
 )
 
 set(TI_CPP_SOURCES)
@@ -42,6 +43,7 @@ set(TI_CORE_HEADERS
     include/termin/inspect/tc_kind_cpp_ext.hpp
     include/inspect/tc_inspect_init.h
     include/inspect/tc_inspect.h
+    include/inspect/tc_runtime_type_registry.h
     include/inspect/tc_kind.h
     include/inspect/tc_kind_cpp.hpp
 )

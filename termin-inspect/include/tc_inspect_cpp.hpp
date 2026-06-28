@@ -17,10 +17,16 @@
 #include <any>
 #include <memory>
 #include <type_traits>
+#include <cstring>
+#include <algorithm>
+#include <utility>
 
 #include "inspect/tc_kind_cpp.hpp"
+#include "inspect/tc_runtime_type_registry.h"
 
 namespace tc {
+
+inline constexpr const char* TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS = "termin.inspect.fields";
 
 // ============================================================================
 // TypeBackend - language/runtime that implements the type
@@ -100,75 +106,287 @@ struct InspectFieldInfo {
 class TC_INSPECT_API InspectRegistry {
     friend class InspectRegistryPythonExt;
 
-    std::unordered_map<std::string, std::vector<InspectFieldInfo>> _fields;
-    std::unordered_map<std::string, TypeBackend> _type_backends;
-    std::unordered_map<std::string, std::string> _type_parents;
-    std::unordered_map<std::string, tc_value> _type_metadata;
-    std::unordered_map<std::string, std::string> _type_owners;
+    struct InspectFacetPayload {
+        std::string type_name;
+        std::vector<InspectFieldInfo> fields;
+        TypeBackend backend = TypeBackend::Cpp;
+        bool has_backend = false;
+        tc_value metadata;
+        bool has_metadata = false;
+
+        explicit InspectFacetPayload(std::string type_name_)
+            : type_name(std::move(type_name_))
+            , metadata(tc_value_nil()) {}
+
+        ~InspectFacetPayload() {
+            if (has_metadata) {
+                tc_value_free(&metadata);
+            }
+        }
+    };
+
     std::string _current_registration_owner;
 
-    void assign_current_owner(const std::string& type_name) {
-        if (!_current_registration_owner.empty()) {
-            _type_owners[type_name] = _current_registration_owner;
+    bool type_exists(const std::string& type_name) const {
+        return tc_runtime_type_registry_has_type(type_name.c_str());
+    }
+
+    InspectFacetPayload* inspect_facet(const std::string& type_name) const {
+        return static_cast<InspectFacetPayload*>(
+            tc_runtime_type_registry_get_facet(
+                type_name.c_str(),
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)
+        );
+    }
+
+    bool type_has_own_fields(const std::string& type_name) const {
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        return payload && !payload->fields.empty();
+    }
+
+    bool operation_can_adopt_unowned_shell(const char* operation) const {
+        return operation &&
+            (strcmp(operation, "field registration") == 0 ||
+             strcmp(operation, "serializable field registration") == 0 ||
+             strcmp(operation, "button registration") == 0 ||
+             strcmp(operation, "python field registration") == 0);
+    }
+
+    bool can_adopt_unowned_shell(const std::string& type_name, const char* operation) const {
+        if (!operation_can_adopt_unowned_shell(operation)) {
+            return false;
         }
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        return !payload || (payload->fields.empty() && !payload->has_metadata);
+    }
+
+    bool can_register_type_data(
+        const std::string& type_name,
+        bool type_existed_before,
+        const char* operation
+    ) const {
+        if (_current_registration_owner.empty()) {
+            return true;
+        }
+
+        const char* owner_c = tc_runtime_type_registry_get_owner(type_name.c_str());
+        std::string owner = owner_c ? owner_c : "";
+        if (!owner.empty()) {
+            if (owner == _current_registration_owner) {
+                return true;
+            }
+            tc_log(
+                TC_LOG_WARN,
+                "[Inspect] Ignoring %s for type '%s' from owner '%s': type is owned by '%s'",
+                operation,
+                type_name.c_str(),
+                _current_registration_owner.c_str(),
+                owner.c_str()
+            );
+            return false;
+        }
+
+        if (type_existed_before) {
+            if (can_adopt_unowned_shell(type_name, operation)) {
+                tc_log(
+                    TC_LOG_WARN,
+                    "[Inspect] Adopting empty unowned type shell '%s' for %s from owner '%s'",
+                    type_name.c_str(),
+                    operation,
+                    _current_registration_owner.c_str()
+                );
+                return true;
+            }
+            tc_log(
+                TC_LOG_WARN,
+                "[Inspect] Ignoring %s for existing unowned type '%s' from owner '%s'",
+                operation,
+                type_name.c_str(),
+                _current_registration_owner.c_str()
+            );
+            return false;
+        }
+
+        return true;
+    }
+
+    void assign_current_owner(
+        const std::string& type_name,
+        bool type_existed_before,
+        bool allow_adopt_unowned_existing
+    ) {
+        if (_current_registration_owner.empty()) {
+            return;
+        }
+
+        const char* owner_c = tc_runtime_type_registry_get_owner(type_name.c_str());
+        std::string owner = owner_c ? owner_c : "";
+        if (!owner.empty()) {
+            if (owner != _current_registration_owner) {
+                tc_log(
+                    TC_LOG_WARN,
+                    "[Inspect] Keeping owner '%s' for type '%s'; current registration owner is '%s'",
+                    owner.c_str(),
+                    type_name.c_str(),
+                    _current_registration_owner.c_str()
+                );
+            }
+            return;
+        }
+
+        if (type_existed_before && !allow_adopt_unowned_existing) {
+            return;
+        }
+
+        tc_runtime_type_registry_set_owner(
+            type_name.c_str(),
+            _current_registration_owner.c_str(),
+            true
+        );
+    }
+
+    static void destroy_inspect_facet(void* payload) {
+        delete static_cast<InspectFacetPayload*>(payload);
+    }
+
+    InspectFacetPayload& ensure_inspect_facet(const std::string& type_name) {
+        if (InspectFacetPayload* existing = inspect_facet(type_name)) {
+            return *existing;
+        }
+
+        auto* payload = new InspectFacetPayload(type_name);
+        if (!tc_runtime_type_registry_set_facet(
+                type_name.c_str(),
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+                payload,
+                destroy_inspect_facet,
+                1)) {
+            delete payload;
+            static InspectFacetPayload fallback("");
+            return fallback;
+        }
+        return *payload;
+    }
+
+    void upsert_field(InspectFacetPayload& payload, InspectFieldInfo&& info) {
+        for (InspectFieldInfo& existing : payload.fields) {
+            if (existing.path == info.path) {
+                existing = std::move(info);
+                return;
+            }
+        }
+        payload.fields.push_back(std::move(info));
+    }
+
+    void register_field(
+        const std::string& type_name,
+        InspectFieldInfo&& info,
+        bool mark_cpp_backend,
+        const char* operation
+    ) {
+        const bool existed_before = type_exists(type_name);
+        const bool adopt_unowned_shell =
+            existed_before &&
+            tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
+            can_adopt_unowned_shell(type_name, operation);
+        if (!can_register_type_data(type_name, existed_before, operation)) {
+            return;
+        }
+
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
+        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
+        if (_current_registration_owner.empty()) {
+            for (const InspectFieldInfo& existing : payload.fields) {
+                if (existing.path == info.path) {
+                    tc_log(
+                        TC_LOG_DEBUG,
+                        "[Inspect] Ignoring unowned %s for existing field '%s.%s'",
+                        operation,
+                        type_name.c_str(),
+                        info.path.c_str()
+                    );
+                    return;
+                }
+            }
+        }
+        upsert_field(payload, std::move(info));
+        if (mark_cpp_backend) {
+            payload.backend = TypeBackend::Cpp;
+            payload.has_backend = true;
+        }
+        assign_current_owner(type_name, existed_before, adopt_unowned_shell);
     }
 
 public:
     static InspectRegistry& instance();
 
-    ~InspectRegistry() {
-        for (auto& [_, metadata] : _type_metadata) {
-            tc_value_free(&metadata);
-        }
-    }
+    ~InspectRegistry() = default;
 
     // ========================================================================
     // Type backend registration
     // ========================================================================
 
     void set_type_backend(const std::string& type_name, TypeBackend backend) {
-        _type_backends[type_name] = backend;
-        assign_current_owner(type_name);
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, "backend registration")) {
+            return;
+        }
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
+        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
+        payload.backend = backend;
+        payload.has_backend = true;
+        assign_current_owner(type_name, existed_before, false);
     }
 
     TypeBackend get_type_backend(const std::string& type_name) const {
-        auto it = _type_backends.find(type_name);
-        return it != _type_backends.end() ? it->second : TypeBackend::Cpp;
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        return payload && payload->has_backend ? payload->backend : TypeBackend::Cpp;
     }
 
     bool has_type(const std::string& type_name) const {
-        return _type_backends.find(type_name) != _type_backends.end();
+        return tc_runtime_type_registry_has_facet(
+            type_name.c_str(),
+            TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
     }
 
     void set_type_parent(const std::string& type_name, const std::string& parent_name) {
         if (!parent_name.empty()) {
-            _type_parents[type_name] = parent_name;
-            if (_type_backends.find(type_name) == _type_backends.end()) {
-                _type_backends[type_name] = TypeBackend::Cpp;
+            const bool existed_before = type_exists(type_name);
+            if (!can_register_type_data(type_name, existed_before, "parent registration")) {
+                return;
             }
-            assign_current_owner(type_name);
+            tc_runtime_type_registry_set_parent(type_name.c_str(), parent_name.c_str());
+            InspectFacetPayload& payload = ensure_inspect_facet(type_name);
+            if (!payload.has_backend) {
+                payload.backend = TypeBackend::Cpp;
+                payload.has_backend = true;
+            }
+            assign_current_owner(type_name, existed_before, false);
         }
     }
 
     std::string get_type_parent(const std::string& type_name) const {
-        auto it = _type_parents.find(type_name);
-        return it != _type_parents.end() ? it->second : "";
+        const char* parent = tc_runtime_type_registry_get_parent(type_name.c_str());
+        return parent ? std::string(parent) : std::string();
     }
 
     void unregister_type(const std::string& type_name) {
-        _fields.erase(type_name);
-        _type_backends.erase(type_name);
-        _type_parents.erase(type_name);
-        _type_owners.erase(type_name);
-        auto meta_it = _type_metadata.find(type_name);
-        if (meta_it != _type_metadata.end()) {
-            tc_value_free(&meta_it->second);
-            _type_metadata.erase(meta_it);
+        if (tc_runtime_type_registry_has_facet(
+                type_name.c_str(),
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)) {
+            tc_runtime_type_registry_remove_facet(
+                type_name.c_str(),
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
+        } else {
+            if (tc_runtime_type_registry_facet_count(type_name.c_str()) == 0) {
+                tc_runtime_type_registry_unregister_type(type_name.c_str());
+            }
         }
     }
 
     void set_registration_owner(const std::string& owner) {
         _current_registration_owner = owner;
+        tc_runtime_type_registry_set_registration_owner(owner.c_str());
     }
 
     std::string registration_owner() const {
@@ -176,81 +394,82 @@ public:
     }
 
     std::string owner_of(const std::string& type_name) const {
-        auto it = _type_owners.find(type_name);
-        return it != _type_owners.end() ? it->second : "";
+        const char* owner = tc_runtime_type_registry_get_owner(type_name.c_str());
+        return owner ? std::string(owner) : std::string();
     }
 
     size_t unregister_owner(const std::string& owner) {
         if (owner.empty()) {
             return 0;
         }
-
-        std::vector<std::string> pending;
-        for (const auto& [type_name, type_owner] : _type_owners) {
-            if (type_owner == owner) {
-                pending.push_back(type_name);
-            }
-        }
-
-        for (const std::string& type_name : pending) {
-            unregister_type(type_name);
-        }
-        return pending.size();
+        return tc_runtime_type_registry_unregister_owner(owner.c_str());
     }
 
     void set_type_metadata(const std::string& type_name, const tc_value* metadata) {
-        auto it = _type_metadata.find(type_name);
-        if (it != _type_metadata.end()) {
-            tc_value_free(&it->second);
-            _type_metadata.erase(it);
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
+            return;
         }
-        _type_metadata[type_name] = metadata ? tc_value_copy(metadata) : tc_value_dict_new();
-        if (_type_backends.find(type_name) == _type_backends.end()) {
-            _type_backends[type_name] = TypeBackend::Cpp;
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
+        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
+        if (payload.has_metadata) {
+            tc_value_free(&payload.metadata);
         }
-        assign_current_owner(type_name);
+        payload.metadata = metadata ? tc_value_copy(metadata) : tc_value_dict_new();
+        payload.has_metadata = true;
+        if (!payload.has_backend) {
+            payload.backend = TypeBackend::Cpp;
+            payload.has_backend = true;
+        }
+        assign_current_owner(type_name, existed_before, false);
     }
 
     void set_type_metadata_key(const std::string& type_name, const std::string& key, const tc_value* value) {
-        auto it = _type_metadata.find(type_name);
-        if (it == _type_metadata.end() || it->second.type != TC_VALUE_DICT) {
-            if (it != _type_metadata.end()) {
-                tc_value_free(&it->second);
-                _type_metadata.erase(it);
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
+            return;
+        }
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
+        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
+        if (!payload.has_metadata || payload.metadata.type != TC_VALUE_DICT) {
+            if (payload.has_metadata) {
+                tc_value_free(&payload.metadata);
             }
-            _type_metadata[type_name] = tc_value_dict_new();
+            payload.metadata = tc_value_dict_new();
+            payload.has_metadata = true;
         }
-        tc_value_dict_set(&_type_metadata[type_name], key.c_str(), value ? tc_value_copy(value) : tc_value_nil());
-        if (_type_backends.find(type_name) == _type_backends.end()) {
-            _type_backends[type_name] = TypeBackend::Cpp;
+        tc_value_dict_set(&payload.metadata, key.c_str(), value ? tc_value_copy(value) : tc_value_nil());
+        if (!payload.has_backend) {
+            payload.backend = TypeBackend::Cpp;
+            payload.has_backend = true;
         }
-        assign_current_owner(type_name);
+        assign_current_owner(type_name, existed_before, false);
     }
 
     tc_value type_metadata(const std::string& type_name) const {
         std::string parent = get_type_parent(type_name);
         if (!parent.empty()) {
             tc_value result = type_metadata(parent);
-            auto own_it = _type_metadata.find(type_name);
-            if (own_it != _type_metadata.end() && own_it->second.type == TC_VALUE_DICT && result.type == TC_VALUE_DICT) {
-                for (size_t i = 0; i < own_it->second.data.dict.count; i++) {
+            const InspectFacetPayload* payload = inspect_facet(type_name);
+            if (payload && payload->has_metadata && payload->metadata.type == TC_VALUE_DICT && result.type == TC_VALUE_DICT) {
+                for (size_t i = 0; i < payload->metadata.data.dict.count; i++) {
                     const char* key = nullptr;
-                    tc_value* value = tc_value_dict_get_at(const_cast<tc_value*>(&own_it->second), i, &key);
+                    tc_value* value = tc_value_dict_get_at(const_cast<tc_value*>(&payload->metadata), i, &key);
                     if (key && value) {
                         tc_value_dict_set(&result, key, tc_value_copy(value));
                     }
                 }
                 return result;
             }
-            if (own_it != _type_metadata.end()) {
+            if (payload && payload->has_metadata) {
                 tc_value_free(&result);
-                return tc_value_copy(&own_it->second);
+                return tc_value_copy(&payload->metadata);
             }
             return result;
         }
-        auto it = _type_metadata.find(type_name);
-        if (it != _type_metadata.end()) {
-            return tc_value_copy(&it->second);
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        if (payload && payload->has_metadata) {
+            return tc_value_copy(&payload->metadata);
         }
         return tc_value_dict_new();
     }
@@ -304,9 +523,7 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     template<typename C, typename T>
@@ -353,9 +570,7 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     template<typename C, typename T>
@@ -395,9 +610,7 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     template<typename C, typename H>
@@ -433,20 +646,15 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     void add_serializable_field(const std::string& type_name, InspectFieldInfo&& info) {
-        _fields[type_name].push_back(std::move(info));
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), false, "serializable field registration");
     }
 
     void add_field_with_choices(const std::string& type_name, InspectFieldInfo&& info) {
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     void add_button(const std::string& type_name, const std::string& path,
@@ -460,8 +668,7 @@ public:
         info.is_inspectable = true;
         info.action = std::move(action_fn);
 
-        _fields[type_name].push_back(std::move(info));
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), false, "button registration");
     }
 
     // ========================================================================
@@ -470,8 +677,8 @@ public:
 
     const std::vector<InspectFieldInfo>& fields(const std::string& type_name) const {
         static std::vector<InspectFieldInfo> empty;
-        auto it = _fields.find(type_name);
-        return it != _fields.end() ? it->second : empty;
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        return payload ? payload->fields : empty;
     }
 
     std::vector<InspectFieldInfo> all_fields(const std::string& type_name) const {
@@ -481,9 +688,9 @@ public:
             auto parent_fields = all_fields(parent);
             result.insert(result.end(), parent_fields.begin(), parent_fields.end());
         }
-        auto it = _fields.find(type_name);
-        if (it != _fields.end()) {
-            result.insert(result.end(), it->second.begin(), it->second.end());
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        if (payload) {
+            result.insert(result.end(), payload->fields.begin(), payload->fields.end());
         }
         return result;
     }
@@ -494,9 +701,9 @@ public:
         if (!parent.empty()) {
             count += all_fields_count(parent);
         }
-        auto it = _fields.find(type_name);
-        if (it != _fields.end()) {
-            count += it->second.size();
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        if (payload) {
+            count += payload->fields.size();
         }
         return count;
     }
@@ -510,17 +717,17 @@ public:
             }
             index -= parent_count;
         }
-        auto it = _fields.find(type_name);
-        if (it != _fields.end() && index < it->second.size()) {
-            return &it->second[index];
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        if (payload && index < payload->fields.size()) {
+            return &payload->fields[index];
         }
         return nullptr;
     }
 
     const InspectFieldInfo* find_field(const std::string& type_name, const std::string& path) const {
-        auto it = _fields.find(type_name);
-        if (it != _fields.end()) {
-            for (const auto& f : it->second) {
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        if (payload) {
+            for (const auto& f : payload->fields) {
                 if (f.path == path) return &f;
             }
         }
@@ -533,9 +740,14 @@ public:
 
     std::vector<std::string> types() const {
         std::vector<std::string> result;
-        for (const auto& [name, _] : _fields) {
-            result.push_back(name);
-        }
+        tc_runtime_type_registry_foreach_type_with_facet(
+            TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+            [](const char* type_name, void* user_data) -> bool {
+                static_cast<std::vector<std::string>*>(user_data)->emplace_back(type_name);
+                return true;
+            },
+            &result);
+        std::sort(result.begin(), result.end());
         return result;
     }
 
@@ -611,11 +823,125 @@ TC_INSPECT_API void init_cpp_inspect_vtable();
 // ============================================================================
 
 template<typename C, typename T>
+void register_inspect_field(
+    T C::*member,
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind,
+    double min = -1e9,
+    double max = 1e9,
+    double step = 0.01
+) {
+    InspectRegistry::instance().add<C, T>(
+        type_name,
+        member,
+        path,
+        label,
+        kind,
+        min,
+        max,
+        step
+    );
+}
+
+template<typename C, typename T>
+void register_inspect_field_choices(
+    T C::*member,
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind_str,
+    std::initializer_list<std::pair<const char*, const char*>> choices_list
+) {
+    InspectFieldInfo info;
+    info.type_name = type_name;
+    info.path = path;
+    info.label = label;
+    info.kind = kind_str;
+
+    for (const auto& [value, choice_label] : choices_list) {
+        EnumChoice choice;
+        choice.value = value;
+        choice.label = choice_label;
+        info.choices.push_back(std::move(choice));
+    }
+
+    std::string kind_copy = kind_str;
+    std::string type_copy = type_name;
+    std::string path_copy = path;
+
+    info.getter = [member, kind_copy](void* obj) -> tc_value {
+        T val = static_cast<C*>(obj)->*member;
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+            if (kind_copy == "enum") {
+                return tc_value_string(val.c_str());
+            }
+        }
+        return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+    };
+
+    info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+            if (kind_copy == "enum") {
+                if (value.type == TC_VALUE_STRING) {
+                    static_cast<C*>(obj)->*member = tc_value_to_string(&value);
+                } else {
+                    static_cast<C*>(obj)->*member = std::to_string(tc_value_to_int(&value));
+                }
+                return;
+            }
+        }
+        std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+        if (val.has_value()) {
+            try {
+                static_cast<C*>(obj)->*member = std::any_cast<T>(val);
+            } catch (const std::bad_any_cast&) {
+                tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
+                               "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
+                               type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
+            }
+        }
+    };
+
+    InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+}
+
+template<typename C>
+void register_inspect_button_method(
+    const char* type_name,
+    const char* path,
+    const char* label,
+    void (C::*method)()
+) {
+    InspectRegistry::instance().add_button(
+        type_name,
+        path,
+        label,
+        [method](void* obj, const ::tc::InspectContext&) {
+            auto* self = static_cast<C*>(obj);
+            if (self) {
+                (self->*method)();
+            }
+        }
+    );
+}
+
+template<typename C, typename T>
 struct InspectFieldRegistrar {
     InspectFieldRegistrar(T C::*member, const char* type_name,
                           const char* path, const char* label, const char* kind,
                           double min = -1e9, double max = 1e9, double step = 0.01) {
-        InspectRegistry::instance().add<C, T>(type_name, member, path, label, kind, min, max, step);
+        register_inspect_field<C, T>(
+            member,
+            type_name,
+            path,
+            label,
+            kind,
+            min,
+            max,
+            step
+        );
     }
 };
 
@@ -748,57 +1074,14 @@ struct InspectFieldChoicesRegistrar {
         const char* kind_str,
         std::initializer_list<std::pair<const char*, const char*>> choices_list
     ) {
-        InspectFieldInfo info;
-        info.type_name = type_name;
-        info.path = path;
-        info.label = label;
-        info.kind = kind_str;
-
-        for (const auto& [value, choice_label] : choices_list) {
-            EnumChoice choice;
-            choice.value = value;
-            choice.label = choice_label;
-            info.choices.push_back(std::move(choice));
-        }
-
-        std::string kind_copy = kind_str;
-        std::string type_copy = type_name;
-        std::string path_copy = path;
-
-        info.getter = [member, kind_copy](void* obj) -> tc_value {
-            T val = static_cast<C*>(obj)->*member;
-            if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
-                if (kind_copy == "enum") {
-                    return tc_value_string(val.c_str());
-                }
-            }
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
-        };
-
-        info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
-            if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
-                if (kind_copy == "enum") {
-                    if (value.type == TC_VALUE_STRING) {
-                        static_cast<C*>(obj)->*member = tc_value_to_string(&value);
-                    } else {
-                        static_cast<C*>(obj)->*member = std::to_string(tc_value_to_int(&value));
-                    }
-                    return;
-                }
-            }
-            std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
-            if (val.has_value()) {
-                try {
-                    static_cast<C*>(obj)->*member = std::any_cast<T>(val);
-                } catch (const std::bad_any_cast&) {
-                    tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
-                                   "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
-                                   type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
-                }
-            }
-        };
-
-        InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+        register_inspect_field_choices<C, T>(
+            member,
+            type_name,
+            path,
+            label,
+            kind_str,
+            choices_list
+        );
     }
 };
 
@@ -883,6 +1166,17 @@ struct InspectTypeMetadataRegistrar {
 #define INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
     inline static ::tc::InspectFieldChoicesRegistrar<cls, decltype(cls::field)> \
         _inspect_reg_##cls##_##field{&cls::field, #cls, #field, label, kind, {__VA_ARGS__}};
+
+#define TC_MODULE_INSPECT_FIELD(cls, field, label, kind, ...) \
+    ::tc::register_inspect_field<cls, decltype(cls::field)>( \
+        &cls::field, #cls, #field, label, kind, ##__VA_ARGS__)
+
+#define TC_MODULE_INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
+    ::tc::register_inspect_field_choices<cls, decltype(cls::field)>( \
+        &cls::field, #cls, #field, label, kind, {__VA_ARGS__})
+
+#define TC_MODULE_INSPECT_BUTTON(cls, name, label, method) \
+    ::tc::register_inspect_button_method<cls>(#cls, #name, label, method)
 
 #define INSPECT_BUTTON(cls, name, label, method) \
     inline static ::tc::InspectButtonRegistrar \

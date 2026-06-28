@@ -219,6 +219,41 @@ NB_MODULE(_inspect_native, m) {
     m.def("kind_registry_cpp_address", []() -> uintptr_t {
         return reinterpret_cast<uintptr_t>(&tc::KindRegistryCpp::instance());
     });
+    m.def("runtime_type_registry_snapshot", []() {
+        nb::list result;
+        tc_runtime_type_registry_foreach_type(
+            [](const char* type_name, void* user_data) -> bool {
+                auto* result = static_cast<nb::list*>(user_data);
+                tc_runtime_type_record_info info;
+                if (!tc_runtime_type_registry_get_info(type_name, &info)) {
+                    return true;
+                }
+                nb::dict item;
+                item["name"] = info.name ? info.name : "";
+                item["owner"] = info.owner ? info.owner : "";
+                item["parent"] = info.parent ? info.parent : "";
+                item["generation"] = info.generation;
+                item["instance_count"] = info.instance_count;
+                item["tombstoned"] = info.tombstoned;
+                nb::list facets;
+                tc_runtime_type_registry_foreach_facet(
+                    type_name,
+                    [](const char* facet_id, void* facet_user_data) -> bool {
+                        static_cast<nb::list*>(facet_user_data)->append(facet_id ? facet_id : "");
+                        return true;
+                    },
+                    &facets);
+                item["facets"] = facets;
+                result->append(item);
+                return true;
+            },
+            &result);
+        return result;
+    }, "Return runtime type records with owner, parent, generation and facet ids");
+    m.def("unregister_runtime_type_owner", [](const std::string& owner) {
+        return tc_runtime_type_registry_unregister_owner(owner.c_str());
+    }, nb::arg("owner"),
+       "Remove runtime type records owned by a module and invoke facet cleanup callbacks");
 
     // Register pointer extractor (for domain types)
     m.def("register_ptr_extractor", [](nb::object fn) {
@@ -317,6 +352,14 @@ NB_MODULE(_inspect_native, m) {
             tc_value_free(&value);
         }, nb::arg("type_name"), nb::arg("metadata"),
            "Set free-form type metadata dict")
+        .def("set_registration_owner", &InspectRegistry::set_registration_owner,
+             nb::arg("owner"),
+             "Set current module/type owner for subsequent inspect registrations")
+        .def("registration_owner", &InspectRegistry::registration_owner,
+             "Get current module/type owner for inspect registrations")
+        .def("owner_of", &InspectRegistry::owner_of,
+             nb::arg("type_name"),
+             "Get owner module id for a runtime type")
 
         .def("get", [](InspectRegistry& self, nb::object obj, const std::string& field_path) {
             std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));

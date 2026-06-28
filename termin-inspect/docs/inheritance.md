@@ -14,12 +14,18 @@ fields("MeshRenderer")     → [mesh, material]
 
 ## Хранение
 
-`InspectRegistry` содержит два словаря:
+`InspectRegistry` хранит только inspect-специфичные данные. Собственные поля
+остаются в inspect facet/storage, а связь типов хранится в общем runtime type
+record:
 
-| Словарь | Ключ | Значение |
-|---------|------|----------|
-| `_fields` | `type_name` | Только собственные поля типа |
-| `_type_parents` | `type_name` | Имя родительского типа (строка) |
+| Хранилище | Ключ | Значение |
+|-----------|------|----------|
+| inspect field storage | `type_name` | Только собственные поля типа |
+| `RuntimeTypeRegistry` | `type_name` | Runtime type record: owner, parent, generation, facets |
+
+`get_type_parent()` читает parent из `RuntimeTypeRegistry`. Это важно для
+миграции к единой модели runtime-типов: компонентный, inspect и pass слои не
+должны хранить независимые parent/owner maps для одного и того же типа.
 
 ## Регистрация родителя
 
