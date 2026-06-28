@@ -61,6 +61,11 @@ TC_API bool tc_runtime_type_registry_has_facet(
     const char* type_name,
     const char* facet_id
 );
+TC_API size_t tc_runtime_type_registry_types_with_facet_count(const char* facet_id);
+TC_API const char* tc_runtime_type_registry_type_with_facet_at(
+    const char* facet_id,
+    size_t index
+);
 
 TC_API size_t tc_runtime_type_registry_type_count(void);
 TC_API const char* tc_runtime_type_registry_type_at(size_t index);

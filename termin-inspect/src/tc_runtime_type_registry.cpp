@@ -79,6 +79,11 @@ std::vector<std::string>& facet_id_cache() {
     return cache;
 }
 
+std::vector<std::string>& types_with_facet_cache() {
+    static std::vector<std::string> cache;
+    return cache;
+}
+
 } // namespace
 
 RuntimeTypeRegistry& RuntimeTypeRegistry::instance() {
@@ -235,6 +240,11 @@ bool RuntimeTypeRegistry::set_facet(
 
     RuntimeTypeRecord& record = storage().ensure(type_name);
     RuntimeTypeFacet& facet = record.facets[facet_id];
+    if (facet.payload == payload && facet.destroy == destroy) {
+        facet.abi_version = abi_version;
+        record.generation++;
+        return true;
+    }
     storage().destroy_facet(facet);
     facet.payload = payload;
     facet.destroy = destroy;
@@ -269,6 +279,10 @@ bool RuntimeTypeRegistry::remove_facet(
     }
     storage().destroy_facet(facet_it->second);
     record_it->second.facets.erase(facet_it);
+    if (record_it->second.facets.empty()) {
+        storage().records.erase(record_it);
+        return true;
+    }
     record_it->second.generation++;
     return true;
 }
@@ -286,6 +300,22 @@ bool RuntimeTypeRegistry::has_facet(
 
 std::vector<std::string> RuntimeTypeRegistry::types() const {
     return sorted_record_names();
+}
+
+std::vector<std::string> RuntimeTypeRegistry::types_with_facet(
+    const std::string& facet_id
+) const {
+    std::vector<std::string> names;
+    if (facet_id.empty()) {
+        return names;
+    }
+    for (const auto& [name, record] : storage().records) {
+        if (record.facets.find(facet_id) != record.facets.end()) {
+            names.push_back(name);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 std::vector<std::string> RuntimeTypeRegistry::facet_ids(const std::string& type_name) const {
@@ -440,6 +470,30 @@ bool tc_runtime_type_registry_has_facet(const char* type_name, const char* facet
         return false;
     }
     return tc::RuntimeTypeRegistry::instance().has_facet(type_name, facet_id);
+}
+
+size_t tc_runtime_type_registry_types_with_facet_count(const char* facet_id) {
+    if (!facet_id) {
+        return 0;
+    }
+    tc::types_with_facet_cache() =
+        tc::RuntimeTypeRegistry::instance().types_with_facet(facet_id);
+    return tc::types_with_facet_cache().size();
+}
+
+const char* tc_runtime_type_registry_type_with_facet_at(
+    const char* facet_id,
+    size_t index
+) {
+    if (!facet_id) {
+        return nullptr;
+    }
+    tc::types_with_facet_cache() =
+        tc::RuntimeTypeRegistry::instance().types_with_facet(facet_id);
+    if (index >= tc::types_with_facet_cache().size()) {
+        return nullptr;
+    }
+    return tc::types_with_facet_cache()[index].c_str();
 }
 
 size_t tc_runtime_type_registry_type_count(void) {

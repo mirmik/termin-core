@@ -105,6 +105,10 @@ struct InspectFieldInfo {
 class TC_INSPECT_API InspectRegistry {
     friend class InspectRegistryPythonExt;
 
+    struct InspectFacetPayload {
+        std::string type_name;
+    };
+
     std::unordered_map<std::string, std::vector<InspectFieldInfo>> _fields;
     std::unordered_map<std::string, TypeBackend> _type_backends;
     std::unordered_map<std::string, tc_value> _type_metadata;
@@ -221,6 +225,44 @@ class TC_INSPECT_API InspectRegistry {
         );
     }
 
+    static void destroy_inspect_facet(void* payload) {
+        std::unique_ptr<InspectFacetPayload> facet_payload(
+            static_cast<InspectFacetPayload*>(payload)
+        );
+        if (!facet_payload || facet_payload->type_name.empty()) {
+            return;
+        }
+        InspectRegistry::instance().erase_local_type_data(facet_payload->type_name);
+    }
+
+    void ensure_inspect_facet(const std::string& type_name) {
+        if (RuntimeTypeRegistry::instance().has_facet(
+                type_name,
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)) {
+            return;
+        }
+
+        auto* payload = new InspectFacetPayload{type_name};
+        if (!RuntimeTypeRegistry::instance().set_facet(
+                type_name,
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+                payload,
+                destroy_inspect_facet,
+                1)) {
+            delete payload;
+        }
+    }
+
+    void erase_local_type_data(const std::string& type_name) {
+        _fields.erase(type_name);
+        _type_backends.erase(type_name);
+        auto meta_it = _type_metadata.find(type_name);
+        if (meta_it != _type_metadata.end()) {
+            tc_value_free(&meta_it->second);
+            _type_metadata.erase(meta_it);
+        }
+    }
+
     void upsert_field(const std::string& type_name, InspectFieldInfo&& info) {
         auto& fields = _fields[type_name];
         for (InspectFieldInfo& existing : fields) {
@@ -248,14 +290,8 @@ class TC_INSPECT_API InspectRegistry {
         }
 
         RuntimeTypeRegistry::instance().ensure_type(type_name);
+        ensure_inspect_facet(type_name);
         upsert_field(type_name, std::move(info));
-        RuntimeTypeRegistry::instance().set_facet(
-            type_name,
-            TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
-            nullptr,
-            nullptr,
-            1
-        );
         if (mark_cpp_backend) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
@@ -281,6 +317,7 @@ public:
             return;
         }
         RuntimeTypeRegistry::instance().ensure_type(type_name);
+        ensure_inspect_facet(type_name);
         _type_backends[type_name] = backend;
         assign_current_owner(type_name, existed_before, false);
     }
@@ -302,6 +339,7 @@ public:
                 return;
             }
             RuntimeTypeRegistry::instance().set_parent(type_name, parent_name);
+            ensure_inspect_facet(type_name);
             if (_type_backends.find(type_name) == _type_backends.end()) {
                 _type_backends[type_name] = TypeBackend::Cpp;
             }
@@ -314,13 +352,17 @@ public:
     }
 
     void unregister_type(const std::string& type_name) {
-        _fields.erase(type_name);
-        _type_backends.erase(type_name);
-        RuntimeTypeRegistry::instance().unregister_type(type_name);
-        auto meta_it = _type_metadata.find(type_name);
-        if (meta_it != _type_metadata.end()) {
-            tc_value_free(&meta_it->second);
-            _type_metadata.erase(meta_it);
+        if (RuntimeTypeRegistry::instance().has_facet(
+                type_name,
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)) {
+            RuntimeTypeRegistry::instance().remove_facet(
+                type_name,
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
+        } else {
+            erase_local_type_data(type_name);
+            if (RuntimeTypeRegistry::instance().facet_ids(type_name).empty()) {
+                RuntimeTypeRegistry::instance().unregister_type(type_name);
+            }
         }
     }
 
@@ -342,8 +384,13 @@ public:
             return 0;
         }
 
-        std::vector<std::string> pending =
-            RuntimeTypeRegistry::instance().list_owned(owner);
+        std::vector<std::string> pending;
+        for (const std::string& type_name :
+             RuntimeTypeRegistry::instance().types_with_facet(TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)) {
+            if (RuntimeTypeRegistry::instance().owner_of(type_name) == owner) {
+                pending.push_back(type_name);
+            }
+        }
 
         for (const std::string& type_name : pending) {
             unregister_type(type_name);
@@ -357,6 +404,7 @@ public:
             return;
         }
         RuntimeTypeRegistry::instance().ensure_type(type_name);
+        ensure_inspect_facet(type_name);
         auto it = _type_metadata.find(type_name);
         if (it != _type_metadata.end()) {
             tc_value_free(&it->second);
@@ -375,6 +423,7 @@ public:
             return;
         }
         RuntimeTypeRegistry::instance().ensure_type(type_name);
+        ensure_inspect_facet(type_name);
         auto it = _type_metadata.find(type_name);
         if (it == _type_metadata.end() || it->second.type != TC_VALUE_DICT) {
             if (it != _type_metadata.end()) {

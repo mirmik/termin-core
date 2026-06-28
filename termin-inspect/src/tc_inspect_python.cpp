@@ -146,13 +146,7 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
     }
 
     RuntimeTypeRegistry::instance().ensure_type(type_name);
-    RuntimeTypeRegistry::instance().set_facet(
-        type_name,
-        TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
-        nullptr,
-        nullptr,
-        1
-    );
+    reg.ensure_inspect_facet(type_name);
     reg._fields.erase(type_name);
 
     for (auto item : fields_dict) {

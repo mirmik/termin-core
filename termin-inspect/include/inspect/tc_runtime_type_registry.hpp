@@ -62,6 +62,7 @@ public:
     bool has_facet(const std::string& type_name, const std::string& facet_id) const;
 
     std::vector<std::string> types() const;
+    std::vector<std::string> types_with_facet(const std::string& facet_id) const;
     std::vector<std::string> facet_ids(const std::string& type_name) const;
     bool info(const std::string& type_name, RuntimeTypeRecordInfo& out_info) const;
 

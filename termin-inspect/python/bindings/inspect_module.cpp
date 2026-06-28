@@ -240,6 +240,10 @@ NB_MODULE(_inspect_native, m) {
         }
         return result;
     }, "Return runtime type records with owner, parent, generation and facet ids");
+    m.def("unregister_runtime_type_owner", [](const std::string& owner) {
+        return tc::RuntimeTypeRegistry::instance().unregister_owner(owner);
+    }, nb::arg("owner"),
+       "Remove runtime type records owned by a module and invoke facet cleanup callbacks");
 
     // Register pointer extractor (for domain types)
     m.def("register_ptr_extractor", [](nb::object fn) {

@@ -142,7 +142,7 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     CHECK_EQ(inspect.get_type_parent("RuntimeTypeDerivedProbe"), std::string("RuntimeTypeBaseProbe"));
     CHECK(inspect.find_field("RuntimeTypeDerivedProbe", "hp") != nullptr);
 
-    CHECK_EQ(inspect.unregister_owner("runtime_type_probe_module"), 2u);
+    CHECK_EQ(runtime_types.unregister_owner("runtime_type_probe_module"), 2u);
     CHECK(!runtime_types.has_type("RuntimeTypeBaseProbe"));
     CHECK(!runtime_types.has_type("RuntimeTypeDerivedProbe"));
     CHECK(!inspect.has_type("RuntimeTypeBaseProbe"));
