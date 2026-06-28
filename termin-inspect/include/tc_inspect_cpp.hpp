@@ -295,6 +295,20 @@ class TC_INSPECT_API InspectRegistry {
 
         tc_runtime_type_registry_ensure_type(type_name.c_str());
         InspectFacetPayload& payload = ensure_inspect_facet(type_name);
+        if (_current_registration_owner.empty()) {
+            for (const InspectFieldInfo& existing : payload.fields) {
+                if (existing.path == info.path) {
+                    tc_log(
+                        TC_LOG_DEBUG,
+                        "[Inspect] Ignoring unowned %s for existing field '%s.%s'",
+                        operation,
+                        type_name.c_str(),
+                        info.path.c_str()
+                    );
+                    return;
+                }
+            }
+        }
         upsert_field(payload, std::move(info));
         if (mark_cpp_backend) {
             payload.backend = TypeBackend::Cpp;
@@ -809,11 +823,125 @@ TC_INSPECT_API void init_cpp_inspect_vtable();
 // ============================================================================
 
 template<typename C, typename T>
+void register_inspect_field(
+    T C::*member,
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind,
+    double min = -1e9,
+    double max = 1e9,
+    double step = 0.01
+) {
+    InspectRegistry::instance().add<C, T>(
+        type_name,
+        member,
+        path,
+        label,
+        kind,
+        min,
+        max,
+        step
+    );
+}
+
+template<typename C, typename T>
+void register_inspect_field_choices(
+    T C::*member,
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind_str,
+    std::initializer_list<std::pair<const char*, const char*>> choices_list
+) {
+    InspectFieldInfo info;
+    info.type_name = type_name;
+    info.path = path;
+    info.label = label;
+    info.kind = kind_str;
+
+    for (const auto& [value, choice_label] : choices_list) {
+        EnumChoice choice;
+        choice.value = value;
+        choice.label = choice_label;
+        info.choices.push_back(std::move(choice));
+    }
+
+    std::string kind_copy = kind_str;
+    std::string type_copy = type_name;
+    std::string path_copy = path;
+
+    info.getter = [member, kind_copy](void* obj) -> tc_value {
+        T val = static_cast<C*>(obj)->*member;
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+            if (kind_copy == "enum") {
+                return tc_value_string(val.c_str());
+            }
+        }
+        return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+    };
+
+    info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+            if (kind_copy == "enum") {
+                if (value.type == TC_VALUE_STRING) {
+                    static_cast<C*>(obj)->*member = tc_value_to_string(&value);
+                } else {
+                    static_cast<C*>(obj)->*member = std::to_string(tc_value_to_int(&value));
+                }
+                return;
+            }
+        }
+        std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+        if (val.has_value()) {
+            try {
+                static_cast<C*>(obj)->*member = std::any_cast<T>(val);
+            } catch (const std::bad_any_cast&) {
+                tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
+                               "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
+                               type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
+            }
+        }
+    };
+
+    InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+}
+
+template<typename C>
+void register_inspect_button_method(
+    const char* type_name,
+    const char* path,
+    const char* label,
+    void (C::*method)()
+) {
+    InspectRegistry::instance().add_button(
+        type_name,
+        path,
+        label,
+        [method](void* obj, const ::tc::InspectContext&) {
+            auto* self = static_cast<C*>(obj);
+            if (self) {
+                (self->*method)();
+            }
+        }
+    );
+}
+
+template<typename C, typename T>
 struct InspectFieldRegistrar {
     InspectFieldRegistrar(T C::*member, const char* type_name,
                           const char* path, const char* label, const char* kind,
                           double min = -1e9, double max = 1e9, double step = 0.01) {
-        InspectRegistry::instance().add<C, T>(type_name, member, path, label, kind, min, max, step);
+        register_inspect_field<C, T>(
+            member,
+            type_name,
+            path,
+            label,
+            kind,
+            min,
+            max,
+            step
+        );
     }
 };
 
@@ -946,57 +1074,14 @@ struct InspectFieldChoicesRegistrar {
         const char* kind_str,
         std::initializer_list<std::pair<const char*, const char*>> choices_list
     ) {
-        InspectFieldInfo info;
-        info.type_name = type_name;
-        info.path = path;
-        info.label = label;
-        info.kind = kind_str;
-
-        for (const auto& [value, choice_label] : choices_list) {
-            EnumChoice choice;
-            choice.value = value;
-            choice.label = choice_label;
-            info.choices.push_back(std::move(choice));
-        }
-
-        std::string kind_copy = kind_str;
-        std::string type_copy = type_name;
-        std::string path_copy = path;
-
-        info.getter = [member, kind_copy](void* obj) -> tc_value {
-            T val = static_cast<C*>(obj)->*member;
-            if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
-                if (kind_copy == "enum") {
-                    return tc_value_string(val.c_str());
-                }
-            }
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
-        };
-
-        info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
-            if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
-                if (kind_copy == "enum") {
-                    if (value.type == TC_VALUE_STRING) {
-                        static_cast<C*>(obj)->*member = tc_value_to_string(&value);
-                    } else {
-                        static_cast<C*>(obj)->*member = std::to_string(tc_value_to_int(&value));
-                    }
-                    return;
-                }
-            }
-            std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
-            if (val.has_value()) {
-                try {
-                    static_cast<C*>(obj)->*member = std::any_cast<T>(val);
-                } catch (const std::bad_any_cast&) {
-                    tc_log(TC_LOG_ERROR, "[Inspect] Field '%s.%s': kind '%s' returned incompatible type. "
-                                   "Check that field type matches kind (e.g., 'double' field needs 'double' kind, not 'float')",
-                                   type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
-                }
-            }
-        };
-
-        InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+        register_inspect_field_choices<C, T>(
+            member,
+            type_name,
+            path,
+            label,
+            kind_str,
+            choices_list
+        );
     }
 };
 
@@ -1081,6 +1166,17 @@ struct InspectTypeMetadataRegistrar {
 #define INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
     inline static ::tc::InspectFieldChoicesRegistrar<cls, decltype(cls::field)> \
         _inspect_reg_##cls##_##field{&cls::field, #cls, #field, label, kind, {__VA_ARGS__}};
+
+#define TC_MODULE_INSPECT_FIELD(cls, field, label, kind, ...) \
+    ::tc::register_inspect_field<cls, decltype(cls::field)>( \
+        &cls::field, #cls, #field, label, kind, ##__VA_ARGS__)
+
+#define TC_MODULE_INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
+    ::tc::register_inspect_field_choices<cls, decltype(cls::field)>( \
+        &cls::field, #cls, #field, label, kind, {__VA_ARGS__})
+
+#define TC_MODULE_INSPECT_BUTTON(cls, name, label, method) \
+    ::tc::register_inspect_button_method<cls>(#cls, #name, label, method)
 
 #define INSPECT_BUTTON(cls, name, label, method) \
     inline static ::tc::InspectButtonRegistrar \
