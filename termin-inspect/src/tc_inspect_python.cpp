@@ -139,13 +139,13 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
     const bool existed_before = reg.type_exists(type_name);
     const bool adopt_unowned_shell =
         existed_before &&
-        RuntimeTypeRegistry::instance().owner_of(type_name).empty() &&
+        tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
         reg.can_adopt_unowned_shell(type_name, "python field registration");
     if (!reg.can_register_type_data(type_name, existed_before, "python field registration")) {
         return;
     }
 
-    RuntimeTypeRegistry::instance().ensure_type(type_name);
+    tc_runtime_type_registry_ensure_type(type_name.c_str());
     auto& payload = reg.ensure_inspect_facet(type_name);
     payload.fields.clear();
 

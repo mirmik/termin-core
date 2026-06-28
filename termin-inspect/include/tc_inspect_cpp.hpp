@@ -22,7 +22,7 @@
 #include <utility>
 
 #include "inspect/tc_kind_cpp.hpp"
-#include "inspect/tc_runtime_type_registry.hpp"
+#include "inspect/tc_runtime_type_registry.h"
 
 namespace tc {
 
@@ -128,12 +128,14 @@ class TC_INSPECT_API InspectRegistry {
     std::string _current_registration_owner;
 
     bool type_exists(const std::string& type_name) const {
-        return RuntimeTypeRegistry::instance().has_type(type_name);
+        return tc_runtime_type_registry_has_type(type_name.c_str());
     }
 
     InspectFacetPayload* inspect_facet(const std::string& type_name) const {
         return static_cast<InspectFacetPayload*>(
-            RuntimeTypeRegistry::instance().facet(type_name, TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)
+            tc_runtime_type_registry_get_facet(
+                type_name.c_str(),
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)
         );
     }
 
@@ -167,7 +169,8 @@ class TC_INSPECT_API InspectRegistry {
             return true;
         }
 
-        std::string owner = RuntimeTypeRegistry::instance().owner_of(type_name);
+        const char* owner_c = tc_runtime_type_registry_get_owner(type_name.c_str());
+        std::string owner = owner_c ? owner_c : "";
         if (!owner.empty()) {
             if (owner == _current_registration_owner) {
                 return true;
@@ -216,7 +219,8 @@ class TC_INSPECT_API InspectRegistry {
             return;
         }
 
-        std::string owner = RuntimeTypeRegistry::instance().owner_of(type_name);
+        const char* owner_c = tc_runtime_type_registry_get_owner(type_name.c_str());
+        std::string owner = owner_c ? owner_c : "";
         if (!owner.empty()) {
             if (owner != _current_registration_owner) {
                 tc_log(
@@ -234,9 +238,9 @@ class TC_INSPECT_API InspectRegistry {
             return;
         }
 
-        RuntimeTypeRegistry::instance().set_owner(
-            type_name,
-            _current_registration_owner,
+        tc_runtime_type_registry_set_owner(
+            type_name.c_str(),
+            _current_registration_owner.c_str(),
             true
         );
     }
@@ -251,8 +255,8 @@ class TC_INSPECT_API InspectRegistry {
         }
 
         auto* payload = new InspectFacetPayload(type_name);
-        if (!RuntimeTypeRegistry::instance().set_facet(
-                type_name,
+        if (!tc_runtime_type_registry_set_facet(
+                type_name.c_str(),
                 TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
                 payload,
                 destroy_inspect_facet,
@@ -283,13 +287,13 @@ class TC_INSPECT_API InspectRegistry {
         const bool existed_before = type_exists(type_name);
         const bool adopt_unowned_shell =
             existed_before &&
-            RuntimeTypeRegistry::instance().owner_of(type_name).empty() &&
+            tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
             can_adopt_unowned_shell(type_name, operation);
         if (!can_register_type_data(type_name, existed_before, operation)) {
             return;
         }
 
-        RuntimeTypeRegistry::instance().ensure_type(type_name);
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
         InspectFacetPayload& payload = ensure_inspect_facet(type_name);
         upsert_field(payload, std::move(info));
         if (mark_cpp_backend) {
@@ -313,7 +317,7 @@ public:
         if (!can_register_type_data(type_name, existed_before, "backend registration")) {
             return;
         }
-        RuntimeTypeRegistry::instance().ensure_type(type_name);
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
         InspectFacetPayload& payload = ensure_inspect_facet(type_name);
         payload.backend = backend;
         payload.has_backend = true;
@@ -326,8 +330,8 @@ public:
     }
 
     bool has_type(const std::string& type_name) const {
-        return RuntimeTypeRegistry::instance().has_facet(
-            type_name,
+        return tc_runtime_type_registry_has_facet(
+            type_name.c_str(),
             TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
     }
 
@@ -337,7 +341,7 @@ public:
             if (!can_register_type_data(type_name, existed_before, "parent registration")) {
                 return;
             }
-            RuntimeTypeRegistry::instance().set_parent(type_name, parent_name);
+            tc_runtime_type_registry_set_parent(type_name.c_str(), parent_name.c_str());
             InspectFacetPayload& payload = ensure_inspect_facet(type_name);
             if (!payload.has_backend) {
                 payload.backend = TypeBackend::Cpp;
@@ -348,26 +352,27 @@ public:
     }
 
     std::string get_type_parent(const std::string& type_name) const {
-        return RuntimeTypeRegistry::instance().parent_of(type_name);
+        const char* parent = tc_runtime_type_registry_get_parent(type_name.c_str());
+        return parent ? std::string(parent) : std::string();
     }
 
     void unregister_type(const std::string& type_name) {
-        if (RuntimeTypeRegistry::instance().has_facet(
-                type_name,
+        if (tc_runtime_type_registry_has_facet(
+                type_name.c_str(),
                 TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)) {
-            RuntimeTypeRegistry::instance().remove_facet(
-                type_name,
+            tc_runtime_type_registry_remove_facet(
+                type_name.c_str(),
                 TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
         } else {
-            if (RuntimeTypeRegistry::instance().facet_ids(type_name).empty()) {
-                RuntimeTypeRegistry::instance().unregister_type(type_name);
+            if (tc_runtime_type_registry_facet_count(type_name.c_str()) == 0) {
+                tc_runtime_type_registry_unregister_type(type_name.c_str());
             }
         }
     }
 
     void set_registration_owner(const std::string& owner) {
         _current_registration_owner = owner;
-        RuntimeTypeRegistry::instance().set_registration_owner(owner);
+        tc_runtime_type_registry_set_registration_owner(owner.c_str());
     }
 
     std::string registration_owner() const {
@@ -375,26 +380,15 @@ public:
     }
 
     std::string owner_of(const std::string& type_name) const {
-        return RuntimeTypeRegistry::instance().owner_of(type_name);
+        const char* owner = tc_runtime_type_registry_get_owner(type_name.c_str());
+        return owner ? std::string(owner) : std::string();
     }
 
     size_t unregister_owner(const std::string& owner) {
         if (owner.empty()) {
             return 0;
         }
-
-        std::vector<std::string> pending;
-        for (const std::string& type_name :
-             RuntimeTypeRegistry::instance().types_with_facet(TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS)) {
-            if (RuntimeTypeRegistry::instance().owner_of(type_name) == owner) {
-                pending.push_back(type_name);
-            }
-        }
-
-        for (const std::string& type_name : pending) {
-            unregister_type(type_name);
-        }
-        return pending.size();
+        return tc_runtime_type_registry_unregister_owner(owner.c_str());
     }
 
     void set_type_metadata(const std::string& type_name, const tc_value* metadata) {
@@ -402,7 +396,7 @@ public:
         if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
             return;
         }
-        RuntimeTypeRegistry::instance().ensure_type(type_name);
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
         InspectFacetPayload& payload = ensure_inspect_facet(type_name);
         if (payload.has_metadata) {
             tc_value_free(&payload.metadata);
@@ -421,7 +415,7 @@ public:
         if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
             return;
         }
-        RuntimeTypeRegistry::instance().ensure_type(type_name);
+        tc_runtime_type_registry_ensure_type(type_name.c_str());
         InspectFacetPayload& payload = ensure_inspect_facet(type_name);
         if (!payload.has_metadata || payload.metadata.type != TC_VALUE_DICT) {
             if (payload.has_metadata) {
@@ -731,8 +725,14 @@ public:
     }
 
     std::vector<std::string> types() const {
-        std::vector<std::string> result =
-            RuntimeTypeRegistry::instance().types_with_facet(TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
+        std::vector<std::string> result;
+        tc_runtime_type_registry_foreach_type_with_facet(
+            TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+            [](const char* type_name, void* user_data) -> bool {
+                static_cast<std::vector<std::string>*>(user_data)->emplace_back(type_name);
+                return true;
+            },
+            &result);
         std::sort(result.begin(), result.end());
         return result;
     }

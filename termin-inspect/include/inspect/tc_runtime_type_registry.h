@@ -12,6 +12,8 @@ extern "C" {
 #endif
 
 typedef void (*tc_runtime_type_facet_destroy_fn)(void* payload);
+typedef bool (*tc_runtime_type_iter_fn)(const char* type_name, void* user_data);
+typedef bool (*tc_runtime_type_facet_iter_fn)(const char* facet_id, void* user_data);
 
 typedef struct tc_runtime_type_record_info {
     const char* name;
@@ -60,6 +62,20 @@ TC_API bool tc_runtime_type_registry_remove_facet(
 TC_API bool tc_runtime_type_registry_has_facet(
     const char* type_name,
     const char* facet_id
+);
+TC_API void tc_runtime_type_registry_foreach_type(
+    tc_runtime_type_iter_fn callback,
+    void* user_data
+);
+TC_API void tc_runtime_type_registry_foreach_type_with_facet(
+    const char* facet_id,
+    tc_runtime_type_iter_fn callback,
+    void* user_data
+);
+TC_API void tc_runtime_type_registry_foreach_facet(
+    const char* type_name,
+    tc_runtime_type_facet_iter_fn callback,
+    void* user_data
 );
 TC_API size_t tc_runtime_type_registry_types_with_facet_count(const char* facet_id);
 TC_API const char* tc_runtime_type_registry_type_with_facet_at(

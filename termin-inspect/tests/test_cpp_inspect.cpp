@@ -1,5 +1,5 @@
 #include "tc_inspect_cpp.hpp"
-#include "inspect/tc_runtime_type_registry.hpp"
+#include "inspect/tc_runtime_type_registry.h"
 
 #include <any>
 #include <cmath>
@@ -107,13 +107,12 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     tc::init_cpp_inspect_vtable();
     tc::register_builtin_cpp_kinds();
 
-    auto& runtime_types = tc::RuntimeTypeRegistry::instance();
     auto& inspect = tc::InspectRegistry::instance();
 
     inspect.unregister_type("RuntimeTypeBaseProbe");
     inspect.unregister_type("RuntimeTypeDerivedProbe");
-    runtime_types.unregister_type("RuntimeTypeBaseProbe");
-    runtime_types.unregister_type("RuntimeTypeDerivedProbe");
+    tc_runtime_type_registry_unregister_type("RuntimeTypeBaseProbe");
+    tc_runtime_type_registry_unregister_type("RuntimeTypeDerivedProbe");
 
     inspect.set_registration_owner("runtime_type_probe_module");
     inspect.add<CppBaseComponent, int>(
@@ -133,18 +132,18 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     inspect.set_type_parent("RuntimeTypeDerivedProbe", "RuntimeTypeBaseProbe");
     inspect.set_registration_owner("");
 
-    CHECK(runtime_types.has_type("RuntimeTypeBaseProbe"));
-    CHECK(runtime_types.has_type("RuntimeTypeDerivedProbe"));
-    CHECK_EQ(runtime_types.owner_of("RuntimeTypeBaseProbe"), std::string("runtime_type_probe_module"));
-    CHECK_EQ(runtime_types.owner_of("RuntimeTypeDerivedProbe"), std::string("runtime_type_probe_module"));
-    CHECK_EQ(runtime_types.parent_of("RuntimeTypeDerivedProbe"), std::string("RuntimeTypeBaseProbe"));
+    CHECK(tc_runtime_type_registry_has_type("RuntimeTypeBaseProbe"));
+    CHECK(tc_runtime_type_registry_has_type("RuntimeTypeDerivedProbe"));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_owner("RuntimeTypeBaseProbe")), std::string("runtime_type_probe_module"));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_owner("RuntimeTypeDerivedProbe")), std::string("runtime_type_probe_module"));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent("RuntimeTypeDerivedProbe")), std::string("RuntimeTypeBaseProbe"));
     CHECK_EQ(inspect.owner_of("RuntimeTypeDerivedProbe"), std::string("runtime_type_probe_module"));
     CHECK_EQ(inspect.get_type_parent("RuntimeTypeDerivedProbe"), std::string("RuntimeTypeBaseProbe"));
     CHECK(inspect.find_field("RuntimeTypeDerivedProbe", "hp") != nullptr);
 
-    CHECK_EQ(runtime_types.unregister_owner("runtime_type_probe_module"), 2u);
-    CHECK(!runtime_types.has_type("RuntimeTypeBaseProbe"));
-    CHECK(!runtime_types.has_type("RuntimeTypeDerivedProbe"));
+    CHECK_EQ(tc_runtime_type_registry_unregister_owner("runtime_type_probe_module"), 2u);
+    CHECK(!tc_runtime_type_registry_has_type("RuntimeTypeBaseProbe"));
+    CHECK(!tc_runtime_type_registry_has_type("RuntimeTypeDerivedProbe"));
     CHECK(!inspect.has_type("RuntimeTypeBaseProbe"));
     CHECK(!inspect.has_type("RuntimeTypeDerivedProbe"));
 }

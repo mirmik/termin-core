@@ -221,27 +221,35 @@ NB_MODULE(_inspect_native, m) {
     });
     m.def("runtime_type_registry_snapshot", []() {
         nb::list result;
-        for (const std::string& type_name : tc::RuntimeTypeRegistry::instance().types()) {
-            tc::RuntimeTypeRecordInfo info;
-            if (!tc::RuntimeTypeRegistry::instance().info(type_name, info)) {
-                continue;
-            }
-            nb::dict item;
-            item["name"] = info.name;
-            item["owner"] = info.owner;
-            item["parent"] = info.parent;
-            item["generation"] = info.generation;
-            nb::list facets;
-            for (const std::string& facet : info.facets) {
-                facets.append(facet);
-            }
-            item["facets"] = facets;
-            result.append(item);
-        }
+        tc_runtime_type_registry_foreach_type(
+            [](const char* type_name, void* user_data) -> bool {
+                auto* result = static_cast<nb::list*>(user_data);
+                tc_runtime_type_record_info info;
+                if (!tc_runtime_type_registry_get_info(type_name, &info)) {
+                    return true;
+                }
+                nb::dict item;
+                item["name"] = info.name ? info.name : "";
+                item["owner"] = info.owner ? info.owner : "";
+                item["parent"] = info.parent ? info.parent : "";
+                item["generation"] = info.generation;
+                nb::list facets;
+                tc_runtime_type_registry_foreach_facet(
+                    type_name,
+                    [](const char* facet_id, void* facet_user_data) -> bool {
+                        static_cast<nb::list*>(facet_user_data)->append(facet_id ? facet_id : "");
+                        return true;
+                    },
+                    &facets);
+                item["facets"] = facets;
+                result->append(item);
+                return true;
+            },
+            &result);
         return result;
     }, "Return runtime type records with owner, parent, generation and facet ids");
     m.def("unregister_runtime_type_owner", [](const std::string& owner) {
-        return tc::RuntimeTypeRegistry::instance().unregister_owner(owner);
+        return tc_runtime_type_registry_unregister_owner(owner.c_str());
     }, nb::arg("owner"),
        "Remove runtime type records owned by a module and invoke facet cleanup callbacks");
 
