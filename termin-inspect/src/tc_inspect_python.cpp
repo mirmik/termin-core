@@ -131,11 +131,16 @@ void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::strin
         py_action(py_obj);
     };
 
-    reg._fields[type_name].push_back(std::move(info));
+    reg.register_field(type_name, std::move(info), false, "python button registration");
 }
 
 void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, const std::string& type_name,
                                                        nb::dict fields_dict) {
+    const bool existed_before = reg.type_exists(type_name);
+    if (!reg.can_register_type_data(type_name, existed_before, "python field registration")) {
+        return;
+    }
+
     reg._fields.erase(type_name);
 
     for (auto item : fields_dict) {
@@ -301,6 +306,7 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
     }
 
     reg._type_backends[type_name] = TypeBackend::Python;
+    reg.assign_current_owner(type_name, existed_before);
 }
 
 nb::object InspectRegistryPythonExt::get(InspectRegistry& reg, void* obj,

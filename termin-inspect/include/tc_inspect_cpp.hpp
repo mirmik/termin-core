@@ -107,10 +107,106 @@ class TC_INSPECT_API InspectRegistry {
     std::unordered_map<std::string, std::string> _type_owners;
     std::string _current_registration_owner;
 
-    void assign_current_owner(const std::string& type_name) {
-        if (!_current_registration_owner.empty()) {
-            _type_owners[type_name] = _current_registration_owner;
+    bool type_exists(const std::string& type_name) const {
+        return _fields.find(type_name) != _fields.end() ||
+            _type_backends.find(type_name) != _type_backends.end() ||
+            _type_parents.find(type_name) != _type_parents.end() ||
+            _type_metadata.find(type_name) != _type_metadata.end() ||
+            _type_owners.find(type_name) != _type_owners.end();
+    }
+
+    bool can_register_type_data(
+        const std::string& type_name,
+        bool type_existed_before,
+        const char* operation
+    ) const {
+        if (_current_registration_owner.empty()) {
+            return true;
         }
+
+        auto owner_it = _type_owners.find(type_name);
+        if (owner_it != _type_owners.end()) {
+            if (owner_it->second == _current_registration_owner) {
+                return true;
+            }
+            tc_log(
+                TC_LOG_WARN,
+                "[Inspect] Ignoring %s for type '%s' from owner '%s': type is owned by '%s'",
+                operation,
+                type_name.c_str(),
+                _current_registration_owner.c_str(),
+                owner_it->second.c_str()
+            );
+            return false;
+        }
+
+        if (type_existed_before) {
+            tc_log(
+                TC_LOG_WARN,
+                "[Inspect] Ignoring %s for existing unowned type '%s' from owner '%s'",
+                operation,
+                type_name.c_str(),
+                _current_registration_owner.c_str()
+            );
+            return false;
+        }
+
+        return true;
+    }
+
+    void assign_current_owner(const std::string& type_name, bool type_existed_before) {
+        if (_current_registration_owner.empty()) {
+            return;
+        }
+
+        auto owner_it = _type_owners.find(type_name);
+        if (owner_it != _type_owners.end()) {
+            if (owner_it->second != _current_registration_owner) {
+                tc_log(
+                    TC_LOG_WARN,
+                    "[Inspect] Keeping owner '%s' for type '%s'; current registration owner is '%s'",
+                    owner_it->second.c_str(),
+                    type_name.c_str(),
+                    _current_registration_owner.c_str()
+                );
+            }
+            return;
+        }
+
+        if (type_existed_before) {
+            return;
+        }
+
+        _type_owners[type_name] = _current_registration_owner;
+    }
+
+    void upsert_field(const std::string& type_name, InspectFieldInfo&& info) {
+        auto& fields = _fields[type_name];
+        for (InspectFieldInfo& existing : fields) {
+            if (existing.path == info.path) {
+                existing = std::move(info);
+                return;
+            }
+        }
+        fields.push_back(std::move(info));
+    }
+
+    void register_field(
+        const std::string& type_name,
+        InspectFieldInfo&& info,
+        bool mark_cpp_backend,
+        const char* operation
+    ) {
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, operation)) {
+            return;
+        }
+
+        upsert_field(type_name, std::move(info));
+        if (mark_cpp_backend) {
+            _type_backends[type_name] = TypeBackend::Cpp;
+        }
+        assign_current_owner(type_name, existed_before);
     }
 
 public:
@@ -127,8 +223,12 @@ public:
     // ========================================================================
 
     void set_type_backend(const std::string& type_name, TypeBackend backend) {
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, "backend registration")) {
+            return;
+        }
         _type_backends[type_name] = backend;
-        assign_current_owner(type_name);
+        assign_current_owner(type_name, existed_before);
     }
 
     TypeBackend get_type_backend(const std::string& type_name) const {
@@ -142,11 +242,15 @@ public:
 
     void set_type_parent(const std::string& type_name, const std::string& parent_name) {
         if (!parent_name.empty()) {
+            const bool existed_before = type_exists(type_name);
+            if (!can_register_type_data(type_name, existed_before, "parent registration")) {
+                return;
+            }
             _type_parents[type_name] = parent_name;
             if (_type_backends.find(type_name) == _type_backends.end()) {
                 _type_backends[type_name] = TypeBackend::Cpp;
             }
-            assign_current_owner(type_name);
+            assign_current_owner(type_name, existed_before);
         }
     }
 
@@ -199,6 +303,10 @@ public:
     }
 
     void set_type_metadata(const std::string& type_name, const tc_value* metadata) {
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
+            return;
+        }
         auto it = _type_metadata.find(type_name);
         if (it != _type_metadata.end()) {
             tc_value_free(&it->second);
@@ -208,10 +316,14 @@ public:
         if (_type_backends.find(type_name) == _type_backends.end()) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
-        assign_current_owner(type_name);
+        assign_current_owner(type_name, existed_before);
     }
 
     void set_type_metadata_key(const std::string& type_name, const std::string& key, const tc_value* value) {
+        const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
+            return;
+        }
         auto it = _type_metadata.find(type_name);
         if (it == _type_metadata.end() || it->second.type != TC_VALUE_DICT) {
             if (it != _type_metadata.end()) {
@@ -224,7 +336,7 @@ public:
         if (_type_backends.find(type_name) == _type_backends.end()) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
-        assign_current_owner(type_name);
+        assign_current_owner(type_name, existed_before);
     }
 
     tc_value type_metadata(const std::string& type_name) const {
@@ -304,9 +416,7 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     template<typename C, typename T>
@@ -353,9 +463,7 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     template<typename C, typename T>
@@ -395,9 +503,7 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     template<typename C, typename H>
@@ -433,20 +539,15 @@ public:
             }
         };
 
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     void add_serializable_field(const std::string& type_name, InspectFieldInfo&& info) {
-        _fields[type_name].push_back(std::move(info));
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), false, "serializable field registration");
     }
 
     void add_field_with_choices(const std::string& type_name, InspectFieldInfo&& info) {
-        _fields[type_name].push_back(std::move(info));
-        _type_backends[type_name] = TypeBackend::Cpp;
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), true, "field registration");
     }
 
     void add_button(const std::string& type_name, const std::string& path,
@@ -460,8 +561,7 @@ public:
         info.is_inspectable = true;
         info.action = std::move(action_fn);
 
-        _fields[type_name].push_back(std::move(info));
-        assign_current_owner(type_name);
+        register_field(type_name, std::move(info), false, "button registration");
     }
 
     // ========================================================================
