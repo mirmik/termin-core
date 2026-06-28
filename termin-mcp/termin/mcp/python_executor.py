@@ -5,7 +5,6 @@ from __future__ import annotations
 import code
 import contextlib
 import io
-import importlib
 import queue
 import threading
 import traceback
@@ -148,24 +147,23 @@ class PythonScriptExecutor:
 
     def _add_common_context(self, namespace: dict[str, object | None]) -> None:
         try:
-            termin_module = importlib.import_module("termin")
-            resources_module = importlib.import_module("termin.assets.resources")
-            geombase_module = importlib.import_module("termin.geombase")
-            scene_module = importlib.import_module("termin.scene")
+            import termin
+            from termin.geombase import GeneralPose3, Pose3, Quat, Vec3, Vec4
+            from termin.scene import GeneralTransform3
+            from termin_assets import get_resource_manager
         except Exception as exc:
             log.warning(f"[{self._log_prefix}] common Termin MCP context is incomplete: {exc}")
             return
 
-        resource_manager_type = getattr(resources_module, "ResourceManager")
-        namespace["rm"] = resource_manager_type.instance()
+        namespace["rm"] = get_resource_manager()
         namespace["resource_manager"] = namespace["rm"]
-        namespace["termin"] = termin_module
-        namespace["Vec3"] = getattr(geombase_module, "Vec3")
-        namespace["Vec4"] = getattr(geombase_module, "Vec4")
-        namespace["Quat"] = getattr(geombase_module, "Quat")
-        namespace["Pose3"] = getattr(geombase_module, "Pose3")
-        namespace["GeneralPose3"] = getattr(geombase_module, "GeneralPose3")
-        namespace["GeneralTransform3"] = getattr(scene_module, "GeneralTransform3")
+        namespace["termin"] = termin
+        namespace["Vec3"] = Vec3
+        namespace["Vec4"] = Vec4
+        namespace["Quat"] = Quat
+        namespace["Pose3"] = Pose3
+        namespace["GeneralPose3"] = GeneralPose3
+        namespace["GeneralTransform3"] = GeneralTransform3
 
     def _add_runtime_context(self, namespace: dict[str, object | None]) -> None:
         del namespace

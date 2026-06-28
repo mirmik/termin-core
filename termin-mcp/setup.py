@@ -15,6 +15,8 @@ setup(
     package_dir={"termin.mcp": "termin/mcp"},
     install_requires=[
         "tcbase",
+        "termin-assets",
+        "termin-scene",
         "numpy",
         "Pillow",
     ],
