@@ -17,6 +17,7 @@
 #include <any>
 #include <memory>
 #include <type_traits>
+#include <cstring>
 
 #include "inspect/tc_kind_cpp.hpp"
 
@@ -115,6 +116,27 @@ class TC_INSPECT_API InspectRegistry {
             _type_owners.find(type_name) != _type_owners.end();
     }
 
+    bool type_has_own_fields(const std::string& type_name) const {
+        auto it = _fields.find(type_name);
+        return it != _fields.end() && !it->second.empty();
+    }
+
+    bool operation_can_adopt_unowned_shell(const char* operation) const {
+        return operation &&
+            (strcmp(operation, "field registration") == 0 ||
+             strcmp(operation, "serializable field registration") == 0 ||
+             strcmp(operation, "button registration") == 0 ||
+             strcmp(operation, "python field registration") == 0);
+    }
+
+    bool can_adopt_unowned_shell(const std::string& type_name, const char* operation) const {
+        if (!operation_can_adopt_unowned_shell(operation)) {
+            return false;
+        }
+        return !type_has_own_fields(type_name) &&
+            _type_metadata.find(type_name) == _type_metadata.end();
+    }
+
     bool can_register_type_data(
         const std::string& type_name,
         bool type_existed_before,
@@ -141,6 +163,16 @@ class TC_INSPECT_API InspectRegistry {
         }
 
         if (type_existed_before) {
+            if (can_adopt_unowned_shell(type_name, operation)) {
+                tc_log(
+                    TC_LOG_WARN,
+                    "[Inspect] Adopting empty unowned type shell '%s' for %s from owner '%s'",
+                    type_name.c_str(),
+                    operation,
+                    _current_registration_owner.c_str()
+                );
+                return true;
+            }
             tc_log(
                 TC_LOG_WARN,
                 "[Inspect] Ignoring %s for existing unowned type '%s' from owner '%s'",
@@ -154,7 +186,11 @@ class TC_INSPECT_API InspectRegistry {
         return true;
     }
 
-    void assign_current_owner(const std::string& type_name, bool type_existed_before) {
+    void assign_current_owner(
+        const std::string& type_name,
+        bool type_existed_before,
+        bool allow_adopt_unowned_existing
+    ) {
         if (_current_registration_owner.empty()) {
             return;
         }
@@ -173,7 +209,7 @@ class TC_INSPECT_API InspectRegistry {
             return;
         }
 
-        if (type_existed_before) {
+        if (type_existed_before && !allow_adopt_unowned_existing) {
             return;
         }
 
@@ -198,6 +234,10 @@ class TC_INSPECT_API InspectRegistry {
         const char* operation
     ) {
         const bool existed_before = type_exists(type_name);
+        const bool adopt_unowned_shell =
+            existed_before &&
+            _type_owners.find(type_name) == _type_owners.end() &&
+            can_adopt_unowned_shell(type_name, operation);
         if (!can_register_type_data(type_name, existed_before, operation)) {
             return;
         }
@@ -206,7 +246,7 @@ class TC_INSPECT_API InspectRegistry {
         if (mark_cpp_backend) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
-        assign_current_owner(type_name, existed_before);
+        assign_current_owner(type_name, existed_before, adopt_unowned_shell);
     }
 
 public:
@@ -228,7 +268,7 @@ public:
             return;
         }
         _type_backends[type_name] = backend;
-        assign_current_owner(type_name, existed_before);
+        assign_current_owner(type_name, existed_before, false);
     }
 
     TypeBackend get_type_backend(const std::string& type_name) const {
@@ -250,7 +290,7 @@ public:
             if (_type_backends.find(type_name) == _type_backends.end()) {
                 _type_backends[type_name] = TypeBackend::Cpp;
             }
-            assign_current_owner(type_name, existed_before);
+            assign_current_owner(type_name, existed_before, false);
         }
     }
 
@@ -316,7 +356,7 @@ public:
         if (_type_backends.find(type_name) == _type_backends.end()) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
-        assign_current_owner(type_name, existed_before);
+        assign_current_owner(type_name, existed_before, false);
     }
 
     void set_type_metadata_key(const std::string& type_name, const std::string& key, const tc_value* value) {
@@ -336,7 +376,7 @@ public:
         if (_type_backends.find(type_name) == _type_backends.end()) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
-        assign_current_owner(type_name, existed_before);
+        assign_current_owner(type_name, existed_before, false);
     }
 
     tc_value type_metadata(const std::string& type_name) const {
