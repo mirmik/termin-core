@@ -139,12 +139,20 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
     const bool existed_before = reg.type_exists(type_name);
     const bool adopt_unowned_shell =
         existed_before &&
-        reg._type_owners.find(type_name) == reg._type_owners.end() &&
+        RuntimeTypeRegistry::instance().owner_of(type_name).empty() &&
         reg.can_adopt_unowned_shell(type_name, "python field registration");
     if (!reg.can_register_type_data(type_name, existed_before, "python field registration")) {
         return;
     }
 
+    RuntimeTypeRegistry::instance().ensure_type(type_name);
+    RuntimeTypeRegistry::instance().set_facet(
+        type_name,
+        TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+        nullptr,
+        nullptr,
+        1
+    );
     reg._fields.erase(type_name);
 
     for (auto item : fields_dict) {

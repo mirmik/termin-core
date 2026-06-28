@@ -219,6 +219,27 @@ NB_MODULE(_inspect_native, m) {
     m.def("kind_registry_cpp_address", []() -> uintptr_t {
         return reinterpret_cast<uintptr_t>(&tc::KindRegistryCpp::instance());
     });
+    m.def("runtime_type_registry_snapshot", []() {
+        nb::list result;
+        for (const std::string& type_name : tc::RuntimeTypeRegistry::instance().types()) {
+            tc::RuntimeTypeRecordInfo info;
+            if (!tc::RuntimeTypeRegistry::instance().info(type_name, info)) {
+                continue;
+            }
+            nb::dict item;
+            item["name"] = info.name;
+            item["owner"] = info.owner;
+            item["parent"] = info.parent;
+            item["generation"] = info.generation;
+            nb::list facets;
+            for (const std::string& facet : info.facets) {
+                facets.append(facet);
+            }
+            item["facets"] = facets;
+            result.append(item);
+        }
+        return result;
+    }, "Return runtime type records with owner, parent, generation and facet ids");
 
     // Register pointer extractor (for domain types)
     m.def("register_ptr_extractor", [](nb::object fn) {
@@ -317,6 +338,14 @@ NB_MODULE(_inspect_native, m) {
             tc_value_free(&value);
         }, nb::arg("type_name"), nb::arg("metadata"),
            "Set free-form type metadata dict")
+        .def("set_registration_owner", &InspectRegistry::set_registration_owner,
+             nb::arg("owner"),
+             "Set current module/type owner for subsequent inspect registrations")
+        .def("registration_owner", &InspectRegistry::registration_owner,
+             "Get current module/type owner for inspect registrations")
+        .def("owner_of", &InspectRegistry::owner_of,
+             nb::arg("type_name"),
+             "Get owner module id for a runtime type")
 
         .def("get", [](InspectRegistry& self, nb::object obj, const std::string& field_path) {
             std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));

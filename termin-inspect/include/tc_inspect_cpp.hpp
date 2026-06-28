@@ -18,10 +18,14 @@
 #include <memory>
 #include <type_traits>
 #include <cstring>
+#include <algorithm>
 
 #include "inspect/tc_kind_cpp.hpp"
+#include "inspect/tc_runtime_type_registry.hpp"
 
 namespace tc {
+
+inline constexpr const char* TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS = "termin.inspect.fields";
 
 // ============================================================================
 // TypeBackend - language/runtime that implements the type
@@ -103,17 +107,14 @@ class TC_INSPECT_API InspectRegistry {
 
     std::unordered_map<std::string, std::vector<InspectFieldInfo>> _fields;
     std::unordered_map<std::string, TypeBackend> _type_backends;
-    std::unordered_map<std::string, std::string> _type_parents;
     std::unordered_map<std::string, tc_value> _type_metadata;
-    std::unordered_map<std::string, std::string> _type_owners;
     std::string _current_registration_owner;
 
     bool type_exists(const std::string& type_name) const {
         return _fields.find(type_name) != _fields.end() ||
             _type_backends.find(type_name) != _type_backends.end() ||
-            _type_parents.find(type_name) != _type_parents.end() ||
             _type_metadata.find(type_name) != _type_metadata.end() ||
-            _type_owners.find(type_name) != _type_owners.end();
+            RuntimeTypeRegistry::instance().has_type(type_name);
     }
 
     bool type_has_own_fields(const std::string& type_name) const {
@@ -146,9 +147,9 @@ class TC_INSPECT_API InspectRegistry {
             return true;
         }
 
-        auto owner_it = _type_owners.find(type_name);
-        if (owner_it != _type_owners.end()) {
-            if (owner_it->second == _current_registration_owner) {
+        std::string owner = RuntimeTypeRegistry::instance().owner_of(type_name);
+        if (!owner.empty()) {
+            if (owner == _current_registration_owner) {
                 return true;
             }
             tc_log(
@@ -157,7 +158,7 @@ class TC_INSPECT_API InspectRegistry {
                 operation,
                 type_name.c_str(),
                 _current_registration_owner.c_str(),
-                owner_it->second.c_str()
+                owner.c_str()
             );
             return false;
         }
@@ -195,13 +196,13 @@ class TC_INSPECT_API InspectRegistry {
             return;
         }
 
-        auto owner_it = _type_owners.find(type_name);
-        if (owner_it != _type_owners.end()) {
-            if (owner_it->second != _current_registration_owner) {
+        std::string owner = RuntimeTypeRegistry::instance().owner_of(type_name);
+        if (!owner.empty()) {
+            if (owner != _current_registration_owner) {
                 tc_log(
                     TC_LOG_WARN,
                     "[Inspect] Keeping owner '%s' for type '%s'; current registration owner is '%s'",
-                    owner_it->second.c_str(),
+                    owner.c_str(),
                     type_name.c_str(),
                     _current_registration_owner.c_str()
                 );
@@ -213,7 +214,11 @@ class TC_INSPECT_API InspectRegistry {
             return;
         }
 
-        _type_owners[type_name] = _current_registration_owner;
+        RuntimeTypeRegistry::instance().set_owner(
+            type_name,
+            _current_registration_owner,
+            true
+        );
     }
 
     void upsert_field(const std::string& type_name, InspectFieldInfo&& info) {
@@ -236,13 +241,21 @@ class TC_INSPECT_API InspectRegistry {
         const bool existed_before = type_exists(type_name);
         const bool adopt_unowned_shell =
             existed_before &&
-            _type_owners.find(type_name) == _type_owners.end() &&
+            RuntimeTypeRegistry::instance().owner_of(type_name).empty() &&
             can_adopt_unowned_shell(type_name, operation);
         if (!can_register_type_data(type_name, existed_before, operation)) {
             return;
         }
 
+        RuntimeTypeRegistry::instance().ensure_type(type_name);
         upsert_field(type_name, std::move(info));
+        RuntimeTypeRegistry::instance().set_facet(
+            type_name,
+            TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+            nullptr,
+            nullptr,
+            1
+        );
         if (mark_cpp_backend) {
             _type_backends[type_name] = TypeBackend::Cpp;
         }
@@ -267,6 +280,7 @@ public:
         if (!can_register_type_data(type_name, existed_before, "backend registration")) {
             return;
         }
+        RuntimeTypeRegistry::instance().ensure_type(type_name);
         _type_backends[type_name] = backend;
         assign_current_owner(type_name, existed_before, false);
     }
@@ -277,7 +291,8 @@ public:
     }
 
     bool has_type(const std::string& type_name) const {
-        return _type_backends.find(type_name) != _type_backends.end();
+        return _type_backends.find(type_name) != _type_backends.end() ||
+            RuntimeTypeRegistry::instance().has_type(type_name);
     }
 
     void set_type_parent(const std::string& type_name, const std::string& parent_name) {
@@ -286,7 +301,7 @@ public:
             if (!can_register_type_data(type_name, existed_before, "parent registration")) {
                 return;
             }
-            _type_parents[type_name] = parent_name;
+            RuntimeTypeRegistry::instance().set_parent(type_name, parent_name);
             if (_type_backends.find(type_name) == _type_backends.end()) {
                 _type_backends[type_name] = TypeBackend::Cpp;
             }
@@ -295,15 +310,13 @@ public:
     }
 
     std::string get_type_parent(const std::string& type_name) const {
-        auto it = _type_parents.find(type_name);
-        return it != _type_parents.end() ? it->second : "";
+        return RuntimeTypeRegistry::instance().parent_of(type_name);
     }
 
     void unregister_type(const std::string& type_name) {
         _fields.erase(type_name);
         _type_backends.erase(type_name);
-        _type_parents.erase(type_name);
-        _type_owners.erase(type_name);
+        RuntimeTypeRegistry::instance().unregister_type(type_name);
         auto meta_it = _type_metadata.find(type_name);
         if (meta_it != _type_metadata.end()) {
             tc_value_free(&meta_it->second);
@@ -313,6 +326,7 @@ public:
 
     void set_registration_owner(const std::string& owner) {
         _current_registration_owner = owner;
+        RuntimeTypeRegistry::instance().set_registration_owner(owner);
     }
 
     std::string registration_owner() const {
@@ -320,8 +334,7 @@ public:
     }
 
     std::string owner_of(const std::string& type_name) const {
-        auto it = _type_owners.find(type_name);
-        return it != _type_owners.end() ? it->second : "";
+        return RuntimeTypeRegistry::instance().owner_of(type_name);
     }
 
     size_t unregister_owner(const std::string& owner) {
@@ -329,12 +342,8 @@ public:
             return 0;
         }
 
-        std::vector<std::string> pending;
-        for (const auto& [type_name, type_owner] : _type_owners) {
-            if (type_owner == owner) {
-                pending.push_back(type_name);
-            }
-        }
+        std::vector<std::string> pending =
+            RuntimeTypeRegistry::instance().list_owned(owner);
 
         for (const std::string& type_name : pending) {
             unregister_type(type_name);
@@ -347,6 +356,7 @@ public:
         if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
             return;
         }
+        RuntimeTypeRegistry::instance().ensure_type(type_name);
         auto it = _type_metadata.find(type_name);
         if (it != _type_metadata.end()) {
             tc_value_free(&it->second);
@@ -364,6 +374,7 @@ public:
         if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
             return;
         }
+        RuntimeTypeRegistry::instance().ensure_type(type_name);
         auto it = _type_metadata.find(type_name);
         if (it == _type_metadata.end() || it->second.type != TC_VALUE_DICT) {
             if (it != _type_metadata.end()) {
@@ -672,10 +683,18 @@ public:
     }
 
     std::vector<std::string> types() const {
-        std::vector<std::string> result;
+        std::vector<std::string> result = RuntimeTypeRegistry::instance().types();
         for (const auto& [name, _] : _fields) {
-            result.push_back(name);
+            if (std::find(result.begin(), result.end(), name) == result.end()) {
+                result.push_back(name);
+            }
         }
+        for (const auto& [name, _] : _type_backends) {
+            if (std::find(result.begin(), result.end(), name) == result.end()) {
+                result.push_back(name);
+            }
+        }
+        std::sort(result.begin(), result.end());
         return result;
     }
 
