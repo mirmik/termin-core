@@ -233,6 +233,8 @@ NB_MODULE(_inspect_native, m) {
                 item["owner"] = info.owner ? info.owner : "";
                 item["parent"] = info.parent ? info.parent : "";
                 item["generation"] = info.generation;
+                item["instance_count"] = info.instance_count;
+                item["tombstoned"] = info.tombstoned;
                 nb::list facets;
                 tc_runtime_type_registry_foreach_facet(
                     type_name,

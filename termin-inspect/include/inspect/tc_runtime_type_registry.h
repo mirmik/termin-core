@@ -3,6 +3,7 @@
 #define TC_RUNTIME_TYPE_REGISTRY_H
 
 #include "tc_types.h"
+#include <tcbase/tc_dlist.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -14,6 +15,17 @@ extern "C" {
 typedef void (*tc_runtime_type_facet_destroy_fn)(void* payload);
 typedef bool (*tc_runtime_type_iter_fn)(const char* type_name, void* user_data);
 typedef bool (*tc_runtime_type_facet_iter_fn)(const char* facet_id, void* user_data);
+typedef bool (*tc_runtime_type_instance_iter_fn)(
+    void* instance,
+    void* user_data
+);
+
+typedef struct tc_runtime_type_instance_link {
+    tc_dlist_node node;
+    const char* type_name;
+    uint64_t generation;
+    void* instance;
+} tc_runtime_type_instance_link;
 
 typedef struct tc_runtime_type_record_info {
     const char* name;
@@ -21,6 +33,8 @@ typedef struct tc_runtime_type_record_info {
     const char* parent;
     uint64_t generation;
     size_t facet_count;
+    size_t instance_count;
+    bool tombstoned;
 } tc_runtime_type_record_info;
 
 TC_API void tc_runtime_type_registry_set_registration_owner(const char* owner);
@@ -77,6 +91,26 @@ TC_API void tc_runtime_type_registry_foreach_facet(
     tc_runtime_type_facet_iter_fn callback,
     void* user_data
 );
+
+TC_API void tc_runtime_type_instance_link_init(tc_runtime_type_instance_link* link);
+TC_API bool tc_runtime_type_registry_link_instance(
+    const char* type_name,
+    tc_runtime_type_instance_link* link,
+    void* instance
+);
+TC_API void tc_runtime_type_registry_unlink_instance(
+    tc_runtime_type_instance_link* link
+);
+TC_API size_t tc_runtime_type_registry_instance_count(const char* type_name);
+TC_API bool tc_runtime_type_registry_instance_is_current(
+    const tc_runtime_type_instance_link* link
+);
+TC_API void tc_runtime_type_registry_foreach_instance(
+    const char* type_name,
+    tc_runtime_type_instance_iter_fn callback,
+    void* user_data
+);
+
 TC_API size_t tc_runtime_type_registry_types_with_facet_count(const char* facet_id);
 TC_API const char* tc_runtime_type_registry_type_with_facet_at(
     const char* facet_id,

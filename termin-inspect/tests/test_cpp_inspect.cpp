@@ -3,7 +3,9 @@
 
 #include <any>
 #include <cmath>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "guard_main.h"
 
@@ -23,6 +25,25 @@ struct CppChoiceComponent {
     int accessor_mode = 0;
     std::string string_mode = "average";
 };
+
+struct RuntimeInstanceProbe {
+    tc_runtime_type_instance_link link;
+    int value = 0;
+};
+
+static int g_destroyed_runtime_instance_probe_facets = 0;
+
+void destroy_runtime_instance_probe_facet(void* payload) {
+    delete static_cast<int*>(payload);
+    g_destroyed_runtime_instance_probe_facets++;
+}
+
+bool collect_runtime_instance_probe(void* instance, void* user_data) {
+    auto* values = static_cast<std::vector<int>*>(user_data);
+    auto* probe = static_cast<RuntimeInstanceProbe*>(instance);
+    values->push_back(probe ? probe->value : -1);
+    return true;
+}
 
 void expect_near(float a, float b, float eps = 1e-6f) {
     CHECK(std::fabs(a - b) <= eps);
@@ -146,6 +167,91 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     CHECK(!tc_runtime_type_registry_has_type("RuntimeTypeDerivedProbe"));
     CHECK(!inspect.has_type("RuntimeTypeBaseProbe"));
     CHECK(!inspect.has_type("RuntimeTypeDerivedProbe"));
+}
+
+TEST_CASE("Runtime type records keep tombstones while live instances are linked") {
+    const char* type_name = "RuntimeTypeInstanceProbe";
+    tc_runtime_type_registry_unregister_type(type_name);
+
+    RuntimeInstanceProbe first;
+    RuntimeInstanceProbe second;
+    tc_runtime_type_instance_link_init(&first.link);
+    tc_runtime_type_instance_link_init(&second.link);
+    first.value = 11;
+    second.value = 29;
+
+    CHECK(tc_runtime_type_registry_ensure_type(type_name));
+    CHECK(tc_runtime_type_registry_link_instance(type_name, &first.link, &first));
+    CHECK(tc_runtime_type_registry_link_instance(type_name, &second.link, &second));
+    CHECK_EQ(tc_runtime_type_registry_instance_count(type_name), 2u);
+    CHECK(tc_runtime_type_registry_instance_is_current(&first.link));
+
+    std::vector<int> values;
+    tc_runtime_type_registry_foreach_instance(
+        type_name,
+        collect_runtime_instance_probe,
+        &values
+    );
+    REQUIRE_EQ(values.size(), 2u);
+    CHECK_EQ(values[0], 11);
+    CHECK_EQ(values[1], 29);
+
+    tc_runtime_type_registry_unregister_type(type_name);
+    CHECK(!tc_runtime_type_registry_has_type(type_name));
+    CHECK_EQ(tc_runtime_type_registry_instance_count(type_name), 2u);
+    CHECK(!tc_runtime_type_registry_instance_is_current(&first.link));
+
+    tc_runtime_type_record_info info;
+    REQUIRE(tc_runtime_type_registry_get_info(type_name, &info));
+    CHECK(info.tombstoned);
+    CHECK_EQ(info.facet_count, 0u);
+    CHECK_EQ(info.instance_count, 2u);
+
+    tc_runtime_type_registry_unlink_instance(&first.link);
+    REQUIRE(tc_runtime_type_registry_get_info(type_name, &info));
+    CHECK(info.tombstoned);
+    CHECK_EQ(info.instance_count, 1u);
+
+    tc_runtime_type_registry_unlink_instance(&second.link);
+    CHECK(!tc_runtime_type_registry_get_info(type_name, &info));
+    CHECK_EQ(tc_runtime_type_registry_instance_count(type_name), 0u);
+}
+
+TEST_CASE("Owner cleanup removes facets but keeps live instance tombstones") {
+    const char* type_name = "RuntimeTypeOwnedInstanceProbe";
+    const char* owner = "runtime_type_instance_probe_module";
+    tc_runtime_type_registry_unregister_type(type_name);
+    g_destroyed_runtime_instance_probe_facets = 0;
+
+    RuntimeInstanceProbe probe;
+    tc_runtime_type_instance_link_init(&probe.link);
+    probe.value = 71;
+
+    tc_runtime_type_registry_set_registration_owner(owner);
+    CHECK(tc_runtime_type_registry_ensure_type(type_name));
+    tc_runtime_type_registry_set_registration_owner("");
+    CHECK(tc_runtime_type_registry_set_facet(
+        type_name,
+        "termin.test.instance_probe",
+        new int(5),
+        destroy_runtime_instance_probe_facet,
+        1
+    ));
+    CHECK(tc_runtime_type_registry_link_instance(type_name, &probe.link, &probe));
+
+    CHECK_EQ(tc_runtime_type_registry_unregister_owner(owner), 1u);
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
+    CHECK(!tc_runtime_type_registry_has_type(type_name));
+
+    tc_runtime_type_record_info info;
+    REQUIRE(tc_runtime_type_registry_get_info(type_name, &info));
+    CHECK(info.tombstoned);
+    CHECK_EQ(info.facet_count, 0u);
+    CHECK_EQ(info.instance_count, 1u);
+    CHECK_EQ(tc_runtime_type_registry_unregister_owner(owner), 0u);
+
+    tc_runtime_type_registry_unlink_instance(&probe.link);
+    CHECK(!tc_runtime_type_registry_get_info(type_name, &info));
 }
 
 TEST_CASE("C++ inspect choices support string enum fields") {
