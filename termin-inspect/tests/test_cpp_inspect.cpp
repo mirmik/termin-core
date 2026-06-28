@@ -1,5 +1,6 @@
 #include "tc_inspect_cpp.hpp"
 
+#include <any>
 #include <cmath>
 #include <string>
 
@@ -27,6 +28,18 @@ void expect_near(float a, float b, float eps = 1e-6f) {
 }
 
 } // namespace
+
+TEST_CASE("C++ kind serialization mismatch is logged and returns nil") {
+    tc::init_cpp_inspect_vtable();
+    tc::register_builtin_cpp_kinds();
+
+    tc_value value = tc::KindRegistryCpp::instance().serialize(
+        "int",
+        std::any(std::string("not-an-int")));
+
+    CHECK(value.type == TC_VALUE_NIL);
+    tc_value_free(&value);
+}
 
 TEST_CASE("C++ inspect registry roundtrips inherited fields") {
     tc::init_cpp_inspect_vtable();
