@@ -32,6 +32,7 @@ struct RuntimeInstanceProbe {
 };
 
 static int g_destroyed_runtime_instance_probe_facets = 0;
+static int g_prepared_runtime_instance_probe_facets = 0;
 
 void destroy_runtime_instance_probe_facet(void* payload) {
     delete static_cast<int*>(payload);
@@ -43,6 +44,33 @@ bool collect_runtime_instance_probe(void* instance, void* user_data) {
     auto* probe = static_cast<RuntimeInstanceProbe*>(instance);
     values->push_back(probe ? probe->value : -1);
     return true;
+}
+
+bool prepare_runtime_instance_probe_facet(
+    const char* type_name,
+    void* payload,
+    void* context
+) {
+    auto* marker = static_cast<int*>(payload);
+    auto* context_marker = static_cast<int*>(context);
+    if (!type_name || std::string(type_name) != "RuntimeTypePrepareProbe") {
+        return false;
+    }
+    if (!marker || !context_marker) {
+        return false;
+    }
+    *marker += *context_marker;
+    g_prepared_runtime_instance_probe_facets++;
+    return true;
+}
+
+bool refuse_runtime_instance_probe_facet(
+    const char*,
+    void*,
+    void*
+) {
+    g_prepared_runtime_instance_probe_facets++;
+    return false;
 }
 
 void expect_near(float a, float b, float eps = 1e-6f) {
@@ -252,6 +280,58 @@ TEST_CASE("Owner cleanup removes facets but keeps live instance tombstones") {
 
     tc_runtime_type_registry_unlink_instance(&probe.link);
     CHECK(!tc_runtime_type_registry_get_info(type_name, &info));
+}
+
+TEST_CASE("Runtime type facet prepare unload receives context and can refuse cleanup") {
+    const char* type_name = "RuntimeTypePrepareProbe";
+    const char* owner = "runtime_type_prepare_probe_module";
+    tc_runtime_type_registry_unregister_type(type_name);
+    g_destroyed_runtime_instance_probe_facets = 0;
+    g_prepared_runtime_instance_probe_facets = 0;
+
+    tc_runtime_type_registry_set_registration_owner(owner);
+    CHECK(tc_runtime_type_registry_ensure_type(type_name));
+    tc_runtime_type_registry_set_registration_owner("");
+
+    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
+        type_name,
+        "termin.test.prepare_probe",
+        new int(10),
+        destroy_runtime_instance_probe_facet,
+        prepare_runtime_instance_probe_facet,
+        1
+    ));
+
+    int context_marker = 32;
+    CHECK_EQ(
+        tc_runtime_type_registry_unregister_owner_with_context(owner, &context_marker),
+        1u
+    );
+    CHECK_EQ(g_prepared_runtime_instance_probe_facets, 1);
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
+    CHECK(!tc_runtime_type_registry_has_type(type_name));
+
+    const char* refusing_type_name = "RuntimeTypePrepareRefuseProbe";
+    tc_runtime_type_registry_unregister_type(refusing_type_name);
+    tc_runtime_type_registry_set_registration_owner(owner);
+    CHECK(tc_runtime_type_registry_ensure_type(refusing_type_name));
+    tc_runtime_type_registry_set_registration_owner("");
+    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
+        refusing_type_name,
+        "termin.test.prepare_refuse_probe",
+        new int(1),
+        destroy_runtime_instance_probe_facet,
+        refuse_runtime_instance_probe_facet,
+        1
+    ));
+
+    CHECK_EQ(tc_runtime_type_registry_unregister_owner_with_context(owner, nullptr), 0u);
+    CHECK(tc_runtime_type_registry_has_type(refusing_type_name));
+    CHECK(tc_runtime_type_registry_remove_facet(
+        refusing_type_name,
+        "termin.test.prepare_refuse_probe"
+    ));
+    tc_runtime_type_registry_unregister_type(refusing_type_name);
 }
 
 TEST_CASE("C++ inspect choices support string enum fields") {

@@ -10,6 +10,7 @@
 typedef struct tc_runtime_type_facet_record {
     void* payload;
     tc_runtime_type_facet_destroy_fn destroy;
+    tc_runtime_type_facet_prepare_unload_fn prepare_unload;
     uint32_t abi_version;
 } tc_runtime_type_facet_record;
 
@@ -162,6 +163,46 @@ static void try_remove_tombstoned_record(tc_runtime_type_record* record) {
     tc_resource_map_remove(g_runtime_type_registry.records, record->name);
 }
 
+typedef struct prepare_unload_ctx {
+    const char* type_name;
+    void* context;
+    bool ok;
+} prepare_unload_ctx;
+
+static bool prepare_facet_unload_bridge(
+    const char* facet_id,
+    void* resource,
+    void* user_data
+) {
+    prepare_unload_ctx* ctx = (prepare_unload_ctx*)user_data;
+    tc_runtime_type_facet_record* facet = (tc_runtime_type_facet_record*)resource;
+    if (!ctx || !facet || !facet->prepare_unload) {
+        return true;
+    }
+
+    if (!facet->prepare_unload(ctx->type_name, facet->payload, ctx->context)) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] facet '%s' refused unload for runtime type '%s'",
+            facet_id ? facet_id : "<unknown>",
+            ctx->type_name ? ctx->type_name : "<unknown>"
+        );
+        ctx->ok = false;
+        return false;
+    }
+    return true;
+}
+
+static bool prepare_record_unload(tc_runtime_type_record* record, void* context) {
+    if (!record || !record->facets) {
+        return true;
+    }
+
+    prepare_unload_ctx ctx = { record->name, context, true };
+    tc_resource_map_foreach(record->facets, prepare_facet_unload_bridge, &ctx);
+    return ctx.ok;
+}
+
 void tc_runtime_type_registry_set_registration_owner(const char* owner) {
     g_runtime_type_registry.current_owner =
         (owner && owner[0]) ? tgfx_intern_string(owner) : NULL;
@@ -180,24 +221,36 @@ bool tc_runtime_type_registry_ensure_type(const char* type_name) {
     return ensure_record(type_name) != NULL;
 }
 
-void tc_runtime_type_registry_unregister_type(const char* type_name) {
+bool tc_runtime_type_registry_unregister_type_with_context(
+    const char* type_name,
+    void* context
+) {
     if (!type_name || !g_runtime_type_registry.records) {
-        return;
+        return true;
     }
 
     tc_runtime_type_record* record = find_record(type_name);
     if (!record) {
-        return;
+        return true;
+    }
+
+    if (!prepare_record_unload(record, context)) {
+        return false;
     }
 
     if (record->instance_count == 0) {
         tc_resource_map_remove(g_runtime_type_registry.records, type_name);
-        return;
+        return true;
     }
 
     clear_record_facets(record);
     record->tombstoned = true;
     record->generation++;
+    return true;
+}
+
+void tc_runtime_type_registry_unregister_type(const char* type_name) {
+    (void)tc_runtime_type_registry_unregister_type_with_context(type_name, NULL);
 }
 
 typedef struct unregister_owner_ctx {
@@ -234,7 +287,10 @@ static bool collect_owner_type(const char* name, void* resource, void* user_data
     return true;
 }
 
-size_t tc_runtime_type_registry_unregister_owner(const char* owner) {
+size_t tc_runtime_type_registry_unregister_owner_with_context(
+    const char* owner,
+    void* context
+) {
     if (!owner || !owner[0] || !g_runtime_type_registry.records) {
         return 0;
     }
@@ -247,13 +303,19 @@ size_t tc_runtime_type_registry_unregister_owner(const char* owner) {
     };
     tc_resource_map_foreach(g_runtime_type_registry.records, collect_owner_type, &ctx);
 
+    size_t removed = 0;
     for (size_t i = 0; i < ctx.count; ++i) {
-        tc_runtime_type_registry_unregister_type(ctx.names[i]);
+        if (tc_runtime_type_registry_unregister_type_with_context(ctx.names[i], context)) {
+            removed++;
+        }
     }
 
-    size_t removed = ctx.count;
     free(ctx.names);
     return removed;
+}
+
+size_t tc_runtime_type_registry_unregister_owner(const char* owner) {
+    return tc_runtime_type_registry_unregister_owner_with_context(owner, NULL);
 }
 
 bool tc_runtime_type_registry_set_owner(
@@ -338,6 +400,24 @@ bool tc_runtime_type_registry_set_facet(
     tc_runtime_type_facet_destroy_fn destroy,
     uint32_t abi_version
 ) {
+    return tc_runtime_type_registry_set_facet_with_lifecycle(
+        type_name,
+        facet_id,
+        payload,
+        destroy,
+        NULL,
+        abi_version
+    );
+}
+
+bool tc_runtime_type_registry_set_facet_with_lifecycle(
+    const char* type_name,
+    const char* facet_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy,
+    tc_runtime_type_facet_prepare_unload_fn prepare_unload,
+    uint32_t abi_version
+) {
     if (!type_name || !type_name[0] || !facet_id || !facet_id[0]) {
         tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] cannot set unnamed facet or type");
         return false;
@@ -357,7 +437,9 @@ bool tc_runtime_type_registry_set_facet(
 
     tc_runtime_type_facet_record* existing =
         (tc_runtime_type_facet_record*)tc_resource_map_get(record->facets, facet_id);
-    if (existing && existing->payload == payload && existing->destroy == destroy) {
+    if (existing && existing->payload == payload &&
+        existing->destroy == destroy &&
+        existing->prepare_unload == prepare_unload) {
         existing->abi_version = abi_version;
         record->generation++;
         return true;
@@ -375,6 +457,7 @@ bool tc_runtime_type_registry_set_facet(
     }
     facet->payload = payload;
     facet->destroy = destroy;
+    facet->prepare_unload = prepare_unload;
     facet->abi_version = abi_version;
 
     if (!tc_resource_map_add(record->facets, facet_id, facet)) {

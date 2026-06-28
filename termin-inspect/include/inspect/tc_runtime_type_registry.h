@@ -13,6 +13,11 @@ extern "C" {
 #endif
 
 typedef void (*tc_runtime_type_facet_destroy_fn)(void* payload);
+typedef bool (*tc_runtime_type_facet_prepare_unload_fn)(
+    const char* type_name,
+    void* payload,
+    void* context
+);
 typedef bool (*tc_runtime_type_iter_fn)(const char* type_name, void* user_data);
 typedef bool (*tc_runtime_type_facet_iter_fn)(const char* facet_id, void* user_data);
 typedef bool (*tc_runtime_type_instance_iter_fn)(
@@ -43,7 +48,15 @@ TC_API const char* tc_runtime_type_registry_get_registration_owner(void);
 TC_API bool tc_runtime_type_registry_has_type(const char* type_name);
 TC_API bool tc_runtime_type_registry_ensure_type(const char* type_name);
 TC_API void tc_runtime_type_registry_unregister_type(const char* type_name);
+TC_API bool tc_runtime_type_registry_unregister_type_with_context(
+    const char* type_name,
+    void* context
+);
 TC_API size_t tc_runtime_type_registry_unregister_owner(const char* owner);
+TC_API size_t tc_runtime_type_registry_unregister_owner_with_context(
+    const char* owner,
+    void* context
+);
 
 TC_API bool tc_runtime_type_registry_set_owner(
     const char* type_name,
@@ -63,6 +76,14 @@ TC_API bool tc_runtime_type_registry_set_facet(
     const char* facet_id,
     void* payload,
     tc_runtime_type_facet_destroy_fn destroy,
+    uint32_t abi_version
+);
+TC_API bool tc_runtime_type_registry_set_facet_with_lifecycle(
+    const char* type_name,
+    const char* facet_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy,
+    tc_runtime_type_facet_prepare_unload_fn prepare_unload,
     uint32_t abi_version
 );
 TC_API void* tc_runtime_type_registry_get_facet(
