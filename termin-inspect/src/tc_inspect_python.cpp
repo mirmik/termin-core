@@ -146,8 +146,8 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
     }
 
     RuntimeTypeRegistry::instance().ensure_type(type_name);
-    reg.ensure_inspect_facet(type_name);
-    reg._fields.erase(type_name);
+    auto& payload = reg.ensure_inspect_facet(type_name);
+    payload.fields.clear();
 
     for (auto item : fields_dict) {
         std::string field_name = nb::cast<std::string>(item.first);
@@ -308,10 +308,11 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
             }
         };
 
-        reg._fields[type_name].push_back(std::move(info));
+        payload.fields.push_back(std::move(info));
     }
 
-    reg._type_backends[type_name] = TypeBackend::Python;
+    payload.backend = TypeBackend::Python;
+    payload.has_backend = true;
     reg.assign_current_owner(type_name, existed_before, adopt_unowned_shell);
 }
 
