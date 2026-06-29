@@ -25,6 +25,7 @@ from ._geom_native import (
 )
 
 from .pose2 import Pose2
+from .quaternion import deg2rad, qinv, qmul, qmul_vector, qrot, qslerp
 from .screw import Screw, Screw2
 from .transform_aabb import TransformAABB
 
@@ -43,4 +44,10 @@ __all__ = [
     'AABB',
     'OrbitCamera',
     'TransformAABB',
+    'deg2rad',
+    'qinv',
+    'qmul',
+    'qmul_vector',
+    'qrot',
+    'qslerp',
 ]
