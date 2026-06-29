@@ -8,7 +8,7 @@
 
 Сборка через `./build-sdk.sh` проходит в четыре стадии:
 1. **C/C++ библиотеки + Python bindings** — shared libraries, заголовки, CMake config, nanobind-модули и Python-исходники
-2. **C# bindings** (опционально, требует SWIG)
+2. **C# bindings** (требует SWIG и `dotnet`; под Linux собирает `Termin.Native`, WPF-проект не входит в этот граф)
 3. **Bundled Python site-packages** — установка Python-пакетов в bundled runtime SDK
 4. **SDK Python wheelhouse** — сборка `sdk/wheels` (отключается через `--no-wheels`)
 
@@ -35,6 +35,7 @@
 ```
 
 Профиль `plot-d3d11` генерирует C# API только для `tcplot`/`Termin.Wpf`, не копирует scene/render/component DLL и режет `share/termin` до D3D11 artifacts, нужных графикам.
+`Termin.Wpf` целится в `net8.0-windows`/WindowsDesktop SDK и собирается только Windows-скриптом; Linux `build-sdk-csharp.sh` намеренно пакует только cross-platform `Termin.Native` и native runtime `.so`.
 
 Только C/C++ стадия:
 
