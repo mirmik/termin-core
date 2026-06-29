@@ -209,6 +209,123 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
     ]
 
 
+def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifacts(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    stdlib = tmp_path / "host" / "lib" / "python3.10"
+    libdir = tmp_path / "host" / "lib"
+    config_dir = stdlib / "config-3.10-x86_64-linux-gnu"
+    config_dir.mkdir(parents=True)
+    (config_dir / "libpython3.10.a").write_bytes(b"static")
+    (stdlib / "ensurepip").mkdir()
+    (stdlib / "ctypes").mkdir()
+    (stdlib / "ctypes" / "__init__.py").write_text("", encoding="utf-8")
+    (libdir / "libpython3.10.so.1.0").write_bytes(b"shared")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {
+            "version": "3.10",
+            "stdlib": str(stdlib),
+            "libdir": str(libdir),
+            "sitepackages": [],
+        },
+    )
+
+    bundled_py_dir = sdk.ensure_bundled_python_runtime(sdk_prefix)
+
+    assert bundled_py_dir == sdk_prefix / "lib" / "python3.10"
+    assert (sdk_prefix / "lib" / "libpython3.10.so.1.0").read_bytes() == b"shared"
+    assert not (bundled_py_dir / "config-3.10-x86_64-linux-gnu").exists()
+    assert (bundled_py_dir / "ctypes" / "__init__.py").is_file()
+
+
+def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    build_dir = repo_root / "build" / "Release"
+    bundled_py_dir = sdk_prefix / "lib" / "python3.10"
+    site_packages = bundled_py_dir / "site-packages"
+    host_libdir = tmp_path / "host" / "lib"
+    config_dir = bundled_py_dir / "config-3.10-x86_64-linux-gnu"
+    requirements = repo_root / "termin-app" / "requirements.txt"
+    (bundled_py_dir / "ensurepip").mkdir(parents=True)
+    site_packages.mkdir()
+    config_dir.mkdir()
+    (config_dir / "libpython3.10.a").write_bytes(b"static")
+    host_libdir.mkdir(parents=True)
+    (host_libdir / "libpython3.10.so.1.0").write_bytes(b"shared")
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("watchdog>=3.0\n", encoding="utf-8")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {
+            "version": "3.10",
+            "stdlib": str(tmp_path / "unused"),
+            "libdir": str(host_libdir),
+            "sitepackages": [],
+        },
+    )
+    monkeypatch.setattr(sdk, "ensure_bundled_python_cli", lambda _sdk_prefix: None)
+    monkeypatch.setattr(sdk, "_run", lambda _command, **_kwargs: 0)
+    monkeypatch.setattr(sdk, "install_pip_packages", lambda **_kwargs: 0)
+
+    result = sdk.install_python_packages(
+        repo_root=repo_root,
+        sdk_prefix=sdk_prefix,
+        build_dir=build_dir,
+    )
+
+    assert result == 0
+    assert (sdk_prefix / "lib" / "libpython3.10.so.1.0").read_bytes() == b"shared"
+    assert not config_dir.exists()
+
+
+def test_prepare_build_python_runtime_sanitizes_sdk_before_cmake(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    bundled_py_dir = sdk_prefix / "lib" / "python3.10"
+    config_dir = bundled_py_dir / "config-3.10-x86_64-linux-gnu"
+    host_libdir = tmp_path / "host" / "lib"
+    config_dir.mkdir(parents=True)
+    (config_dir / "libpython3.10.a").write_bytes(b"static")
+    host_libdir.mkdir(parents=True)
+    (host_libdir / "libpython3.10.so").write_bytes(b"shared")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {
+            "version": "3.10",
+            "stdlib": str(tmp_path / "unused"),
+            "libdir": str(host_libdir),
+            "sitepackages": [],
+        },
+    )
+
+    result = sdk.prepare_build_python_runtime(sdk_prefix)
+
+    assert result == 0
+    assert not config_dir.exists()
+    assert (sdk_prefix / "lib" / "libpython3.10.so").read_bytes() == b"shared"
+
+
 def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_path):
     target_dir = tmp_path / "site-packages"
     target_dir.mkdir()

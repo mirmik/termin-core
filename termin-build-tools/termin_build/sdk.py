@@ -340,6 +340,53 @@ def _copy_windows_python_runtime_executables(sdk_prefix: Path, info: dict[str, o
             shutil.copy2(dll, python_home / dll.name)
 
 
+def _copy_linux_python_shared_library(sdk_prefix: Path, info: dict[str, object]) -> list[Path]:
+    if _is_windows():
+        return []
+
+    version = str(info["version"])
+    libdir = Path(str(info["libdir"])) if info.get("libdir") else None
+    if libdir is None:
+        return []
+
+    copied: list[Path] = []
+    target_dir = sdk_prefix / "lib"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for libpython in libdir.glob(f"libpython{version}*.so*"):
+        target = target_dir / libpython.name
+        shutil.copy2(libpython, target)
+        copied.append(target)
+    return copied
+
+
+def _remove_linux_python_config_artifacts(bundled_py_dir: Path) -> None:
+    if _is_windows():
+        return
+
+    for config_dir in bundled_py_dir.glob("config-*"):
+        if config_dir.is_dir():
+            shutil.rmtree(config_dir)
+
+
+def _ensure_linux_python_shared_library(sdk_prefix: Path, info: dict[str, object]) -> None:
+    if _is_windows():
+        return
+
+    version = str(info["version"])
+    lib_dir = sdk_prefix / "lib"
+    if list(lib_dir.glob(f"libpython{version}*.so*")):
+        return
+
+    copied = _copy_linux_python_shared_library(sdk_prefix, info)
+    if copied:
+        return
+
+    raise RuntimeError(
+        f"shared libpython{version} was not found for bundled SDK Python; "
+        "native stdlib modules such as _ctypes require a shared libpython in sdk/lib"
+    )
+
+
 def ensure_bundled_python_cli(sdk_prefix: Path) -> None:
     if not _is_windows():
         return
@@ -354,8 +401,6 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
     info = _python_version_and_paths(py_exec)
     version = str(info["version"])
     stdlib = Path(str(info["stdlib"]))
-    libdir = Path(str(info["libdir"])) if info.get("libdir") else None
-    ldlibrary = str(info.get("ldlibrary") or "")
 
     if not stdlib.is_dir():
         raise RuntimeError(f"Python stdlib not found: {stdlib}")
@@ -384,9 +429,8 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
                     dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
                 )
-    elif libdir is not None and ldlibrary:
-        for libpython in libdir.glob(f"libpython{version}*.so*"):
-            shutil.copy2(libpython, sdk_prefix / "lib" / libpython.name)
+    else:
+        _ensure_linux_python_shared_library(sdk_prefix, info)
 
     _copy_tree_contents(
         stdlib,
@@ -400,6 +444,7 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
             "site-packages",
         },
     )
+    _remove_linux_python_config_artifacts(bundled_py_dir)
 
     sitepackages = [Path(str(path)) for path in info.get("sitepackages", [])]
     for site_dir in sitepackages:
@@ -632,6 +677,8 @@ def install_python_packages(
     sdk_prefix: Path,
     build_dir: Path,
 ) -> int:
+    py_exec = _python_executable()
+    info = _python_version_and_paths(py_exec)
     bundled_py_dir = _find_bundled_python_dir(sdk_prefix)
     if bundled_py_dir is None or not (bundled_py_dir / "ensurepip").is_dir():
         reason = "not found" if bundled_py_dir is None else "missing ensurepip"
@@ -643,6 +690,8 @@ def install_python_packages(
             file=sys.stderr,
         )
         return 1
+    _remove_linux_python_config_artifacts(bundled_py_dir)
+    _ensure_linux_python_shared_library(sdk_prefix, info)
     ensure_bundled_python_cli(sdk_prefix)
 
     bundled_site_packages = bundled_py_dir / "site-packages"
@@ -668,6 +717,19 @@ def install_python_packages(
         editable=False,
         force=True,
     )
+
+
+def prepare_build_python_runtime(sdk_prefix: Path) -> int:
+    if _is_windows():
+        return 0
+
+    info = _python_version_and_paths(_python_executable())
+    bundled_py_dir = _find_bundled_python_dir(sdk_prefix)
+    if bundled_py_dir is not None:
+        _remove_linux_python_config_artifacts(bundled_py_dir)
+    _ensure_linux_python_shared_library(sdk_prefix, info)
+    print(f"Prepared bundled Python runtime for native build: {sdk_prefix}")
+    return 0
 
 
 def _install_bundled_runtime_requirements(
@@ -1593,6 +1655,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     install_python_parser.add_argument("--build-type", default="Release")
 
+    prepare_python_parser = subparsers.add_parser(
+        "prepare-build-python-runtime",
+        help="Prepare bundled Python runtime files before native CMake configure.",
+    )
+    prepare_python_parser.add_argument(
+        "--sdk-prefix",
+        type=Path,
+        default=None,
+        help="SDK install prefix. Defaults to SDK_PREFIX or ./sdk.",
+    )
+
     install_packages_parser = subparsers.add_parser(
         "install-packages",
         help="Install Termin Python packages into the current Python or --target.",
@@ -1663,6 +1736,11 @@ def main(argv: list[str] | None = None) -> int:
             sdk_prefix=sdk_prefix,
             build_dir=build_dir,
         )
+    if args.command == "prepare-build-python-runtime":
+        sdk_prefix = args.sdk_prefix
+        if sdk_prefix is None:
+            sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
+        return prepare_build_python_runtime(sdk_prefix)
     if args.command == "install-packages":
         if unknown_args:
             print(
