@@ -49,3 +49,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/termin/geombase/
     PATTERN "__pycache__" EXCLUDE
     PATTERN "*.pyc" EXCLUDE
 )
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/termin/artifacts/
+    DESTINATION lib/python/termin/artifacts
+    PATTERN "__pycache__" EXCLUDE
+    PATTERN "*.pyc" EXCLUDE
+)

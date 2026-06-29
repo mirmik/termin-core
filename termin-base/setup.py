@@ -23,10 +23,11 @@ setup(
     author="mirmik",
     author_email="mirmikns@yandex.ru",
     python_requires=">=3.8",
-    packages=["tcbase", "termin.geombase"],
+    packages=["tcbase", "termin.geombase", "termin.artifacts"],
     package_dir={
         "tcbase": "python/tcbase",
         "termin.geombase": "python/termin/geombase",
+        "termin.artifacts": "python/termin/artifacts",
     },
     package_data={
         "tcbase": [
