@@ -27,11 +27,14 @@
 ./build-sdk.sh --sdl --no-wheels
 ```
 
-Для WPF/C# D3D11-профиля SDK собирается без SDL, Vulkan и legacy OpenGL:
+Для WPF/C# D3D11-профиля SDK собирается без SDL, Vulkan и legacy OpenGL. После C++ SDK стадии C# слой нужно собрать в Windows-only plot profile, чтобы в `sdk/csharp` попали только tcplot/WPF runtime DLL и D3D11 shader artifacts:
 
-```bash
-./build-sdk.sh --no-sdl --no-vulkan --no-opengl --no-wheels
+```powershell
+.\build-sdk.ps1 --no-sdl --no-vulkan --no-opengl --no-wheels
+.\build-sdk-csharp.ps1 --plot-d3d11 --no-sdl --no-vulkan --no-opengl
 ```
+
+Профиль `plot-d3d11` генерирует C# API только для `tcplot`/`Termin.Wpf`, не копирует scene/render/component DLL и режет `share/termin` до D3D11 artifacts, нужных графикам.
 
 Только C/C++ стадия:
 
