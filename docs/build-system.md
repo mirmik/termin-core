@@ -301,10 +301,10 @@ Project-level defaults для окна standalone player хранятся в
 }
 ```
 
-Legacy `build.json` и desktop bundle `app.json` записывают эти значения в
-`runtime.window`. Python `termin.player` и C++ `termin_player` используют их как
-дефолт, а CLI-флаги `--width`, `--height`, `--fullscreen` и `--windowed`
-остаются явными override-ами для smoke/manual runs.
+Desktop bundle `app.json` записывает эти значения в `runtime.window`.
+Python `termin.player` и C++ `termin_player` используют их как дефолт, а
+CLI-флаги `--width`, `--height`, `--fullscreen` и `--windowed` остаются явными
+override-ами для smoke/manual runs.
 
 Если `shader_targets` задан, runtime package export пишет артефакты только для
 запрошенных backend targets и добавляет их в `target_requirements` manifest-а.
