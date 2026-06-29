@@ -10,7 +10,7 @@ option(TI_BUILD_SHARED "Build shared library" ON)
 option(TI_BUILD_TESTS "Build tests" ON)
 option(TI_BUILD_CPP "Build C++ inspect/kind core runtime" ON)
 option(TERMIN_BUILD_PYTHON "Build Python/nanobind inspect bridge" OFF)
-option(TI_BUILD_PYTHON_TESTS "Build C++ tests for the Python inspect bridge" ${TI_BUILD_TESTS})
+option(TI_BUILD_PYTHON_TESTS "Build C++ tests for the Python inspect bridge" ${TERMIN_BUILD_PYTHON})
 
 set(TI_BUILD_PYTHON_BRIDGE OFF)
 if(TERMIN_BUILD_PYTHON OR (TI_BUILD_TESTS AND TI_BUILD_PYTHON_TESTS))

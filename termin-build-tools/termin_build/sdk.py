@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .package_manifest import load_manifest, repo_root_from
+from .package_manifest import PackageEntry, load_manifest, repo_root_from
 
 
 EXPECTED_SUBMODULE_FILES = {
