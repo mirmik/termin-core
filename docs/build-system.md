@@ -27,6 +27,12 @@
 ./build-sdk.sh --sdl --no-wheels
 ```
 
+Для WPF/C# D3D11-профиля SDK собирается без SDL, Vulkan и legacy OpenGL:
+
+```bash
+./build-sdk.sh --no-sdl --no-vulkan --no-opengl --no-wheels
+```
+
 Только C/C++ стадия:
 
 ```bash
