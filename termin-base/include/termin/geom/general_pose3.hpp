@@ -79,6 +79,12 @@ struct GeneralPose3 {
         return ang.rotate(scaled);
     }
 
+    // Apply rotation only (no translation, no scale). Use for axes, normals,
+    // ray directions, and other orientation-only vectors.
+    Vec3 transform_direction(const Vec3& d) const {
+        return ang.rotate(d);
+    }
+
     // Alias for transform_vector
     Vec3 rotate_point(const Vec3& p) const {
         return transform_vector(p);
@@ -113,61 +119,67 @@ struct GeneralPose3 {
         return rot;
     }
 
+    Vec3 inverse_transform_direction(const Vec3& d) const {
+        return ang.inverse_rotate(d);
+    }
+
     // Readable aliases for space conversion.
     Vec3 point_to_global(const Vec3& p) const { return transform_point(p); }
     Vec3 vector_to_global(const Vec3& v) const { return transform_vector(v); }
+    Vec3 direction_to_global(const Vec3& d) const { return transform_direction(d); }
     Vec3 point_to_local(const Vec3& p) const { return inverse_transform_point(p); }
     Vec3 vector_to_local(const Vec3& v) const { return inverse_transform_vector(v); }
+    Vec3 direction_to_local(const Vec3& d) const { return inverse_transform_direction(d); }
 
     // Direction helpers. Termin uses Y-forward, Z-up convention.
     // *_in_global returns a local basis axis expressed in global coordinates.
     Vec3 forward_in_global(double distance = 1.0) const {
-        return transform_vector(Vec3{0.0, distance, 0.0});
+        return transform_direction(Vec3{0.0, distance, 0.0});
     }
 
     Vec3 backward_in_global(double distance = 1.0) const {
-        return transform_vector(Vec3{0.0, -distance, 0.0});
+        return transform_direction(Vec3{0.0, -distance, 0.0});
     }
 
     Vec3 up_in_global(double distance = 1.0) const {
-        return transform_vector(Vec3{0.0, 0.0, distance});
+        return transform_direction(Vec3{0.0, 0.0, distance});
     }
 
     Vec3 down_in_global(double distance = 1.0) const {
-        return transform_vector(Vec3{0.0, 0.0, -distance});
+        return transform_direction(Vec3{0.0, 0.0, -distance});
     }
 
     Vec3 right_in_global(double distance = 1.0) const {
-        return transform_vector(Vec3{distance, 0.0, 0.0});
+        return transform_direction(Vec3{distance, 0.0, 0.0});
     }
 
     Vec3 left_in_global(double distance = 1.0) const {
-        return transform_vector(Vec3{-distance, 0.0, 0.0});
+        return transform_direction(Vec3{-distance, 0.0, 0.0});
     }
 
     // global_*_in_local returns a global basis axis expressed in local coordinates.
     Vec3 global_forward_in_local(double distance = 1.0) const {
-        return inverse_transform_vector(Vec3{0.0, distance, 0.0});
+        return inverse_transform_direction(Vec3{0.0, distance, 0.0});
     }
 
     Vec3 global_backward_in_local(double distance = 1.0) const {
-        return inverse_transform_vector(Vec3{0.0, -distance, 0.0});
+        return inverse_transform_direction(Vec3{0.0, -distance, 0.0});
     }
 
     Vec3 global_up_in_local(double distance = 1.0) const {
-        return inverse_transform_vector(Vec3{0.0, 0.0, distance});
+        return inverse_transform_direction(Vec3{0.0, 0.0, distance});
     }
 
     Vec3 global_down_in_local(double distance = 1.0) const {
-        return inverse_transform_vector(Vec3{0.0, 0.0, -distance});
+        return inverse_transform_direction(Vec3{0.0, 0.0, -distance});
     }
 
     Vec3 global_right_in_local(double distance = 1.0) const {
-        return inverse_transform_vector(Vec3{distance, 0.0, 0.0});
+        return inverse_transform_direction(Vec3{distance, 0.0, 0.0});
     }
 
     Vec3 global_left_in_local(double distance = 1.0) const {
-        return inverse_transform_vector(Vec3{-distance, 0.0, 0.0});
+        return inverse_transform_direction(Vec3{-distance, 0.0, 0.0});
     }
 
     GeneralPose3 normalized() const {

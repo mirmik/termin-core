@@ -228,6 +228,24 @@ class TestGeneralPose3TransformPoint:
         result = gp.transform_point(point)
         assert_vec3_approx(result, (2, 3, 4))
 
+    def test_transform_vector_applies_scale_but_transform_direction_does_not(self):
+        gp = GeneralPose3(scale=Vec3(2, 3, 4))
+        vector = Vec3(1, 1, 1)
+
+        transformed_vector = gp.transform_vector(vector)
+        transformed_direction = gp.transform_direction(vector)
+
+        assert_vec3_approx(transformed_vector, (2, 3, 4))
+        assert_vec3_approx(transformed_direction, (1, 1, 1))
+
+    def test_direction_helpers_ignore_scale(self):
+        gp = GeneralPose3(scale=Vec3(2, 3, 4))
+
+        assert_vec3_approx(gp.forward_in_global(), (0, 1, 0))
+        assert_vec3_approx(gp.right_in_global(), (1, 0, 0))
+        assert_vec3_approx(gp.up_in_global(), (0, 0, 1))
+        assert_vec3_approx(gp.forward_in_global(2.0), (0, 2, 0))
+
     def test_transform_point_translation_and_scale(self):
         gp = GeneralPose3(
             lin=Vec3(10, 20, 30),

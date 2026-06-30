@@ -92,6 +92,10 @@ void bind_general_pose3(nb::module_& m) {
         .def("transform_vector", [](const GeneralPose3& p, nb::object obj) {
             return p.transform_vector(py_to_vec3(obj));
         })
+        .def("transform_direction", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_direction, nb::const_))
+        .def("transform_direction", [](const GeneralPose3& p, nb::object obj) {
+            return p.transform_direction(py_to_vec3(obj));
+        })
         .def("rotate_point", nb::overload_cast<const Vec3&>(&GeneralPose3::rotate_point, nb::const_))
         .def("rotate_point", [](const GeneralPose3& p, nb::object obj) {
             return p.rotate_point(py_to_vec3(obj));
@@ -104,6 +108,10 @@ void bind_general_pose3(nb::module_& m) {
         .def("inverse_transform_vector", [](const GeneralPose3& p, nb::object obj) {
             return p.inverse_transform_vector(py_to_vec3(obj));
         })
+        .def("inverse_transform_direction", nb::overload_cast<const Vec3&>(&GeneralPose3::inverse_transform_direction, nb::const_))
+        .def("inverse_transform_direction", [](const GeneralPose3& p, nb::object obj) {
+            return p.inverse_transform_direction(py_to_vec3(obj));
+        })
         .def("point_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::point_to_global, nb::const_))
         .def("point_to_global", [](const GeneralPose3& p, nb::object obj) {
             return p.point_to_global(py_to_vec3(obj));
@@ -112,6 +120,10 @@ void bind_general_pose3(nb::module_& m) {
         .def("vector_to_global", [](const GeneralPose3& p, nb::object obj) {
             return p.vector_to_global(py_to_vec3(obj));
         })
+        .def("direction_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::direction_to_global, nb::const_))
+        .def("direction_to_global", [](const GeneralPose3& p, nb::object obj) {
+            return p.direction_to_global(py_to_vec3(obj));
+        })
         .def("point_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::point_to_local, nb::const_))
         .def("point_to_local", [](const GeneralPose3& p, nb::object obj) {
             return p.point_to_local(py_to_vec3(obj));
@@ -119,6 +131,10 @@ void bind_general_pose3(nb::module_& m) {
         .def("vector_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::vector_to_local, nb::const_))
         .def("vector_to_local", [](const GeneralPose3& p, nb::object obj) {
             return p.vector_to_local(py_to_vec3(obj));
+        })
+        .def("direction_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::direction_to_local, nb::const_))
+        .def("direction_to_local", [](const GeneralPose3& p, nb::object obj) {
+            return p.direction_to_local(py_to_vec3(obj));
         })
         .def("forward_in_global", &GeneralPose3::forward_in_global, nb::arg("distance") = 1.0)
         .def("backward_in_global", &GeneralPose3::backward_in_global, nb::arg("distance") = 1.0)
