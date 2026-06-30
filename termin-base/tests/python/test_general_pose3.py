@@ -48,8 +48,12 @@ class TestGeneralPose3Basics:
         gp_copy = gp.copy()
 
         # Check copy has same values
-        assert gp_copy.lin.x == pytest.approx(1)
-        assert gp_copy.scale.x == pytest.approx(2)
+        assert_vec3_approx(gp_copy.lin, (1, 2, 3))
+        assert gp_copy.ang.x == pytest.approx(0)
+        assert gp_copy.ang.y == pytest.approx(0)
+        assert gp_copy.ang.z == pytest.approx(0)
+        assert gp_copy.ang.w == pytest.approx(1)
+        assert_vec3_approx(gp_copy.scale, (2, 2, 2))
 
 
 class TestGeneralPose3Composition:
@@ -318,6 +322,9 @@ class TestGeneralPose3Matrix:
 
         assert_vec3_approx(gp2.lin, (gp.lin.x, gp.lin.y, gp.lin.z), eps=1e-5)
         assert_vec3_approx(gp2.scale, (gp.scale.x, gp.scale.y, gp.scale.z), eps=1e-5)
+        expected_point = gp.transform_point(Vec3(1, 2, 3))
+        actual_point = gp2.transform_point(Vec3(1, 2, 3))
+        assert_vec3_approx(actual_point, (expected_point.x, expected_point.y, expected_point.z), eps=1e-5)
 
 
 class TestGeneralPose3ToPose3:
@@ -347,6 +354,10 @@ class TestGeneralPose3ToPose3:
         pose2 = gp.to_pose3()
 
         assert_vec3_approx(pose2.lin, (pose.lin.x, pose.lin.y, pose.lin.z))
+        assert pose2.ang.x == pytest.approx(pose.ang.x)
+        assert pose2.ang.y == pytest.approx(pose.ang.y)
+        assert pose2.ang.z == pytest.approx(pose.ang.z)
+        assert pose2.ang.w == pytest.approx(pose.ang.w)
 
 
 class TestGeneralPose3Lerp:

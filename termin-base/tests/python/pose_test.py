@@ -215,14 +215,15 @@ class TestPose3(unittest.TestCase):
         # Check that the pose is at the correct position
         assert_vec3_approx(pose.lin, eye)
 
-        # The Z axis (local up, index 2 in rotation matrix) should align with world up
-        rot_mat = pose.rotation_matrix()
-        local_up = numpy.array([rot_mat[0, 2], rot_mat[1, 2], rot_mat[2, 2]])  # Column 2 is the up direction
-        numpy.testing.assert_array_almost_equal(
-            local_up,
-            numpy.array([up.x, up.y, up.z]),
-            decimal=5
-        )
+        forward = pose.forward_in_global()
+        pose_up = pose.up_in_global()
+        right = pose.right_in_global()
+
+        assert_vec3_approx(forward, (1.0, 0.0, 0.0))
+        assert_vec3_approx(pose_up, up)
+        assert abs(forward.dot(pose_up)) < 1e-6
+        assert abs(forward.dot(right)) < 1e-6
+        assert abs(pose_up.dot(right)) < 1e-6
 
     def test_properties_xyz(self):
         pose = Pose3(
