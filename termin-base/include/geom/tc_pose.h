@@ -1,4 +1,4 @@
-// tc_pose.h - Pose types (position + rotation + optional scale)
+// tc_pose.h - Pose types (ang + lin + optional scale)
 #ifndef TC_POSE_H
 #define TC_POSE_H
 
@@ -7,7 +7,7 @@
 #include "geom/tc_quat.h"
 
 // C/C++ compatible struct initialization
-// Layout: rotation first, then position (matches C++ Pose3/GeneralPose3)
+// Layout: ang first, then lin (matches C++ Pose3/GeneralPose3)
 #ifdef __cplusplus
     #define TC_POSE3(rot, pos) tc_pose3{rot, pos}
     #define TC_GPOSE(rot, pos, scl) tc_general_pose3{rot, pos, scl}
@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 // ============================================================================
-// Pose3 (rotation + position, no scale)
+// Pose3 (ang + lin, no scale)
 // ============================================================================
 
 static inline tc_pose3 tc_pose3_identity(void) {
@@ -43,29 +43,29 @@ static inline tc_pose3 tc_pose3_from_rotation(tc_quat rot) {
 // Composition: parent * child
 static inline tc_pose3 tc_pose3_mul(tc_pose3 parent, tc_pose3 child) {
     return TC_POSE3(
-        tc_quat_mul(parent.rotation, child.rotation),
-        tc_vec3_add(parent.position, tc_quat_rotate(parent.rotation, child.position))
+        tc_quat_mul(parent.ang, child.ang),
+        tc_vec3_add(parent.lin, tc_quat_rotate(parent.ang, child.lin))
     );
 }
 
 static inline tc_pose3 tc_pose3_inverse(tc_pose3 p) {
-    tc_quat inv_rot = tc_quat_inverse(p.rotation);
+    tc_quat inv_rot = tc_quat_inverse(p.ang);
     return TC_POSE3(
         inv_rot,
-        tc_quat_rotate(inv_rot, tc_vec3_neg(p.position))
+        tc_quat_rotate(inv_rot, tc_vec3_neg(p.lin))
     );
 }
 
 static inline tc_vec3 tc_pose3_transform_point(tc_pose3 p, tc_vec3 point) {
-    return tc_vec3_add(p.position, tc_quat_rotate(p.rotation, point));
+    return tc_vec3_add(p.lin, tc_quat_rotate(p.ang, point));
 }
 
 static inline tc_vec3 tc_pose3_transform_vector(tc_pose3 p, tc_vec3 vec) {
-    return tc_quat_rotate(p.rotation, vec);
+    return tc_quat_rotate(p.ang, vec);
 }
 
 // ============================================================================
-// GeneralPose3 (rotation + position + scale)
+// GeneralPose3 (ang + lin + scale)
 // ============================================================================
 
 static inline tc_general_pose3 tc_gpose_identity(void) {
@@ -77,30 +77,30 @@ static inline tc_general_pose3 tc_gpose_new(tc_quat rot, tc_vec3 pos, tc_vec3 sc
 }
 
 static inline tc_general_pose3 tc_gpose_from_pose(tc_pose3 p) {
-    return TC_GPOSE(p.rotation, p.position, tc_vec3_one());
+    return TC_GPOSE(p.ang, p.lin, tc_vec3_one());
 }
 
 static inline tc_pose3 tc_gpose_to_pose(tc_general_pose3 gp) {
-    return TC_POSE3(gp.rotation, gp.position);
+    return TC_POSE3(gp.ang, gp.lin);
 }
 
 // Composition: parent * child (with scale inheritance)
 static inline tc_general_pose3 tc_gpose_mul(tc_general_pose3 parent, tc_general_pose3 child) {
-    tc_vec3 scaled_child = tc_vec3_mul(parent.scale, child.position);
-    tc_vec3 rotated_child = tc_quat_rotate(parent.rotation, scaled_child);
+    tc_vec3 scaled_child = tc_vec3_mul(parent.scale, child.lin);
+    tc_vec3 rotated_child = tc_quat_rotate(parent.ang, scaled_child);
 
     return TC_GPOSE(
-        tc_quat_mul(parent.rotation, child.rotation),
-        tc_vec3_add(parent.position, rotated_child),
+        tc_quat_mul(parent.ang, child.ang),
+        tc_vec3_add(parent.lin, rotated_child),
         tc_vec3_mul(parent.scale, child.scale)
     );
 }
 
 // Inverse (approximate for non-uniform scale)
 static inline tc_general_pose3 tc_gpose_inverse(tc_general_pose3 p) {
-    tc_quat inv_rot = tc_quat_inverse(p.rotation);
+    tc_quat inv_rot = tc_quat_inverse(p.ang);
     tc_vec3 inv_scale = TC_VEC3(1.0 / p.scale.x, 1.0 / p.scale.y, 1.0 / p.scale.z);
-    tc_vec3 neg_pos = tc_vec3_neg(p.position);
+    tc_vec3 neg_pos = tc_vec3_neg(p.lin);
     tc_vec3 rotated = tc_quat_rotate(inv_rot, neg_pos);
     tc_vec3 scaled = tc_vec3_mul(inv_scale, rotated);
 
@@ -109,13 +109,13 @@ static inline tc_general_pose3 tc_gpose_inverse(tc_general_pose3 p) {
 
 static inline tc_vec3 tc_gpose_transform_point(tc_general_pose3 p, tc_vec3 point) {
     tc_vec3 scaled = tc_vec3_mul(p.scale, point);
-    tc_vec3 rotated = tc_quat_rotate(p.rotation, scaled);
-    return tc_vec3_add(p.position, rotated);
+    tc_vec3 rotated = tc_quat_rotate(p.ang, scaled);
+    return tc_vec3_add(p.lin, rotated);
 }
 
 static inline tc_vec3 tc_gpose_transform_vector(tc_general_pose3 p, tc_vec3 vec) {
     tc_vec3 scaled = tc_vec3_mul(p.scale, vec);
-    return tc_quat_rotate(p.rotation, scaled);
+    return tc_quat_rotate(p.ang, scaled);
 }
 
 // ============================================================================
@@ -124,15 +124,15 @@ static inline tc_vec3 tc_gpose_transform_vector(tc_general_pose3 p, tc_vec3 vec)
 
 // Fill 4x4 column-major matrix from Pose3 (no scale)
 static inline void tc_pose3_to_matrix(tc_pose3 p, double* out) {
-    double xx = p.rotation.x * p.rotation.x;
-    double yy = p.rotation.y * p.rotation.y;
-    double zz = p.rotation.z * p.rotation.z;
-    double xy = p.rotation.x * p.rotation.y;
-    double xz = p.rotation.x * p.rotation.z;
-    double yz = p.rotation.y * p.rotation.z;
-    double wx = p.rotation.w * p.rotation.x;
-    double wy = p.rotation.w * p.rotation.y;
-    double wz = p.rotation.w * p.rotation.z;
+    double xx = p.ang.x * p.ang.x;
+    double yy = p.ang.y * p.ang.y;
+    double zz = p.ang.z * p.ang.z;
+    double xy = p.ang.x * p.ang.y;
+    double xz = p.ang.x * p.ang.z;
+    double yz = p.ang.y * p.ang.z;
+    double wx = p.ang.w * p.ang.x;
+    double wy = p.ang.w * p.ang.y;
+    double wz = p.ang.w * p.ang.z;
 
     // Column 0
     out[0] = 1.0 - 2.0 * (yy + zz);
@@ -153,23 +153,23 @@ static inline void tc_pose3_to_matrix(tc_pose3 p, double* out) {
     out[11] = 0.0;
 
     // Column 3 (translation)
-    out[12] = p.position.x;
-    out[13] = p.position.y;
-    out[14] = p.position.z;
+    out[12] = p.lin.x;
+    out[13] = p.lin.y;
+    out[14] = p.lin.z;
     out[15] = 1.0;
 }
 
 // Fill 4x4 column-major matrix from GeneralPose3
 static inline void tc_gpose_to_mat44(tc_general_pose3 p, tc_mat44* out) {
-    double xx = p.rotation.x * p.rotation.x;
-    double yy = p.rotation.y * p.rotation.y;
-    double zz = p.rotation.z * p.rotation.z;
-    double xy = p.rotation.x * p.rotation.y;
-    double xz = p.rotation.x * p.rotation.z;
-    double yz = p.rotation.y * p.rotation.z;
-    double wx = p.rotation.w * p.rotation.x;
-    double wy = p.rotation.w * p.rotation.y;
-    double wz = p.rotation.w * p.rotation.z;
+    double xx = p.ang.x * p.ang.x;
+    double yy = p.ang.y * p.ang.y;
+    double zz = p.ang.z * p.ang.z;
+    double xy = p.ang.x * p.ang.y;
+    double xz = p.ang.x * p.ang.z;
+    double yz = p.ang.y * p.ang.z;
+    double wx = p.ang.w * p.ang.x;
+    double wy = p.ang.w * p.ang.y;
+    double wz = p.ang.w * p.ang.z;
 
     double sx = p.scale.x, sy = p.scale.y, sz = p.scale.z;
 
@@ -192,17 +192,17 @@ static inline void tc_gpose_to_mat44(tc_general_pose3 p, tc_mat44* out) {
     out->m[11] = 0.0;
 
     // Column 3 (translation)
-    out->m[12] = p.position.x;
-    out->m[13] = p.position.y;
-    out->m[14] = p.position.z;
+    out->m[12] = p.lin.x;
+    out->m[13] = p.lin.y;
+    out->m[14] = p.lin.z;
     out->m[15] = 1.0;
 }
 
 // Interpolation
 static inline tc_general_pose3 tc_gpose_lerp(tc_general_pose3 a, tc_general_pose3 b, double t) {
     return TC_GPOSE(
-        tc_quat_slerp(a.rotation, b.rotation, t),
-        tc_vec3_lerp(a.position, b.position, t),
+        tc_quat_slerp(a.ang, b.ang, t),
+        tc_vec3_lerp(a.lin, b.lin, t),
         tc_vec3_lerp(a.scale, b.scale, t)
     );
 }

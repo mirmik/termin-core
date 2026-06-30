@@ -29,6 +29,10 @@
 
 #ifdef __cplusplus
 
+namespace termin {
+struct Mat44;
+}
+
 struct tc_vec3 {
     double x = 0.0;
     double y = 0.0;
@@ -316,14 +320,149 @@ struct tc_quatf {
 };
 
 struct tc_pose3 {
-    tc_quat rotation;
-    tc_vec3 position;
+    tc_quat ang;
+    tc_vec3 lin;
+
+    constexpr tc_pose3() noexcept = default;
+    constexpr tc_pose3(const tc_quat& ang, const tc_vec3& lin) noexcept
+        : ang(ang), lin(lin) {}
+
+    static tc_pose3 identity();
+
+    tc_pose3 operator*(const tc_pose3& other) const;
+    tc_pose3 inverse() const;
+
+    tc_vec3 transform_point(const tc_vec3& p) const;
+    tc_vec3 transform_vector(const tc_vec3& v) const;
+    tc_vec3 rotate_point(const tc_vec3& p) const;
+    tc_vec3 inverse_transform_point(const tc_vec3& p) const;
+    tc_vec3 inverse_transform_vector(const tc_vec3& v) const;
+
+    tc_vec3 point_to_global(const tc_vec3& p) const;
+    tc_vec3 vector_to_global(const tc_vec3& v) const;
+    tc_vec3 point_to_local(const tc_vec3& p) const;
+    tc_vec3 vector_to_local(const tc_vec3& v) const;
+
+    tc_vec3 forward_in_global(double distance = 1.0) const;
+    tc_vec3 backward_in_global(double distance = 1.0) const;
+    tc_vec3 up_in_global(double distance = 1.0) const;
+    tc_vec3 down_in_global(double distance = 1.0) const;
+    tc_vec3 right_in_global(double distance = 1.0) const;
+    tc_vec3 left_in_global(double distance = 1.0) const;
+
+    tc_vec3 global_forward_in_local(double distance = 1.0) const;
+    tc_vec3 global_backward_in_local(double distance = 1.0) const;
+    tc_vec3 global_up_in_local(double distance = 1.0) const;
+    tc_vec3 global_down_in_local(double distance = 1.0) const;
+    tc_vec3 global_right_in_local(double distance = 1.0) const;
+    tc_vec3 global_left_in_local(double distance = 1.0) const;
+
+    tc_pose3 normalized() const;
+    tc_pose3 with_translation(const tc_vec3& new_lin) const;
+    tc_pose3 with_rotation(const tc_quat& new_ang) const;
+
+    void rotation_matrix(double* m) const;
+    void as_matrix(double* m) const;
+    termin::Mat44 as_mat44() const;
+
+    double distance(const tc_pose3& other) const;
+
+    static tc_pose3 translation(double x, double y, double z);
+    static tc_pose3 translation(const tc_vec3& t);
+    static tc_pose3 rotation(const tc_vec3& axis, double angle);
+    static tc_pose3 rotate_x(double angle);
+    static tc_pose3 rotate_y(double angle);
+    static tc_pose3 rotate_z(double angle);
+    static tc_pose3 looking_at(
+        const tc_vec3& eye,
+        const tc_vec3& target,
+        const tc_vec3& up = tc_vec3::unit_z());
+    static tc_pose3 from_euler(double roll, double pitch, double yaw);
+
+    tc_vec3 to_euler() const;
+    void to_axis_angle(tc_vec3& axis, double& angle) const;
+    tc_pose3 copy() const;
 };
 
 struct tc_general_pose3 {
-    tc_quat rotation;
-    tc_vec3 position;
-    tc_vec3 scale;
+    tc_quat ang;
+    tc_vec3 lin;
+    tc_vec3 scale = {1.0, 1.0, 1.0};
+
+    constexpr tc_general_pose3() noexcept = default;
+    constexpr tc_general_pose3(
+        const tc_quat& ang,
+        const tc_vec3& lin,
+        const tc_vec3& scale = tc_vec3{1.0, 1.0, 1.0}) noexcept
+        : ang(ang), lin(lin), scale(scale) {}
+
+    static tc_general_pose3 identity();
+
+    tc_general_pose3 operator*(const tc_general_pose3& other) const;
+    tc_general_pose3 operator*(const tc_pose3& other) const;
+    tc_general_pose3 inverse() const;
+
+    tc_vec3 transform_point(const tc_vec3& p) const;
+    tc_vec3 transform_vector(const tc_vec3& v) const;
+    tc_vec3 transform_direction(const tc_vec3& d) const;
+    tc_vec3 rotate_point(const tc_vec3& p) const;
+    tc_vec3 inverse_transform_point(const tc_vec3& p) const;
+    tc_vec3 inverse_transform_vector(const tc_vec3& v) const;
+    tc_vec3 inverse_transform_direction(const tc_vec3& d) const;
+
+    tc_vec3 point_to_global(const tc_vec3& p) const;
+    tc_vec3 vector_to_global(const tc_vec3& v) const;
+    tc_vec3 direction_to_global(const tc_vec3& d) const;
+    tc_vec3 point_to_local(const tc_vec3& p) const;
+    tc_vec3 vector_to_local(const tc_vec3& v) const;
+    tc_vec3 direction_to_local(const tc_vec3& d) const;
+
+    tc_vec3 forward_in_global(double distance = 1.0) const;
+    tc_vec3 backward_in_global(double distance = 1.0) const;
+    tc_vec3 up_in_global(double distance = 1.0) const;
+    tc_vec3 down_in_global(double distance = 1.0) const;
+    tc_vec3 right_in_global(double distance = 1.0) const;
+    tc_vec3 left_in_global(double distance = 1.0) const;
+
+    tc_vec3 global_forward_in_local(double distance = 1.0) const;
+    tc_vec3 global_backward_in_local(double distance = 1.0) const;
+    tc_vec3 global_up_in_local(double distance = 1.0) const;
+    tc_vec3 global_down_in_local(double distance = 1.0) const;
+    tc_vec3 global_right_in_local(double distance = 1.0) const;
+    tc_vec3 global_left_in_local(double distance = 1.0) const;
+
+    tc_general_pose3 normalized() const;
+    tc_general_pose3 with_rotation(const tc_quat& new_ang) const;
+    tc_general_pose3 with_translation(const tc_vec3& new_lin) const;
+    tc_general_pose3 with_scale(const tc_vec3& new_scale) const;
+    tc_pose3 to_pose3() const;
+
+    void rotation_matrix(double* m) const;
+    void matrix4(double* m) const;
+    void matrix34(double* m) const;
+    void inverse_matrix4(double* m) const;
+
+    double distance(const tc_general_pose3& other) const;
+
+    static tc_general_pose3 translation(double x, double y, double z);
+    static tc_general_pose3 translation(const tc_vec3& t);
+    static tc_general_pose3 rotation(const tc_vec3& axis, double angle);
+    static tc_general_pose3 scaling(double sx, double sy, double sz);
+    static tc_general_pose3 scaling(double s);
+    static tc_general_pose3 rotate_x(double angle);
+    static tc_general_pose3 rotate_y(double angle);
+    static tc_general_pose3 rotate_z(double angle);
+    static tc_general_pose3 move(double dx, double dy, double dz);
+    static tc_general_pose3 move_x(double d);
+    static tc_general_pose3 move_y(double d);
+    static tc_general_pose3 move_z(double d);
+    static tc_general_pose3 right(double d);
+    static tc_general_pose3 forward(double d);
+    static tc_general_pose3 up(double d);
+    static tc_general_pose3 looking_at(
+        const tc_vec3& eye,
+        const tc_vec3& target,
+        const tc_vec3& up_vec = tc_vec3{0.0, 0.0, 1.0});
 };
 
 struct tc_mat44 {
@@ -359,15 +498,14 @@ typedef struct tc_quatf {
     float x, y, z, w;
 } tc_quatf;
 
-// Layout matches C++ Pose3/GeneralPose3 for zero-cost interop.
 typedef struct tc_pose3 {
-    tc_quat rotation;
-    tc_vec3 position;
+    tc_quat ang;
+    tc_vec3 lin;
 } tc_pose3;
 
 typedef struct tc_general_pose3 {
-    tc_quat rotation;
-    tc_vec3 position;
+    tc_quat ang;
+    tc_vec3 lin;
     tc_vec3 scale;
 } tc_general_pose3;
 
