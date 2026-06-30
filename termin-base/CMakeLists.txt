@@ -72,6 +72,13 @@ if(TERMIN_BASE_BUILD_TESTS)
     )
     target_link_libraries(termin_base_orbit_camera_test PRIVATE termin_base)
     add_test(NAME termin_base_orbit_camera_test COMMAND termin_base_orbit_camera_test)
+
+    add_executable(termin_base_geometry_test tests/test_geometry.cpp)
+    target_include_directories(termin_base_geometry_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
+    target_link_libraries(termin_base_geometry_test PRIVATE termin_base)
+    add_test(NAME termin_base_geometry_test COMMAND termin_base_geometry_test)
 endif()
 
 # Install

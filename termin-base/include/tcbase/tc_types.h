@@ -8,6 +8,7 @@
 
 #ifdef __cplusplus
 #include <cmath>
+#include <limits>
 #endif
 
 #include <tcbase/tc_binding_types.h>
@@ -73,7 +74,8 @@ struct tc_vec3 {
 
     tc_vec3 normalized() const {
         double n = norm();
-        return n > 1e-10 ? *this / n : tc_vec3{0, 0, 1};
+        double nan = std::numeric_limits<double>::quiet_NaN();
+        return n > 1e-10 ? *this / n : tc_vec3{nan, nan, nan};
     }
 
     static double angle(const tc_vec3& a, const tc_vec3& b) {
