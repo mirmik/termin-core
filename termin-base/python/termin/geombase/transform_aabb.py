@@ -22,7 +22,11 @@ class TransformAABB:
         TransformAABB.transform_to_taabb_map[transform] = self
 
     def compile_tree_aabb(self) -> AABB:
-        if self._last_tree_inspected_version == self._transform._version_for_walking_to_distal:
+        inspected_version = (
+            self._transform._version_for_walking_to_distal,
+            self._transform._version_for_walking_to_proximal,
+        )
+        if self._last_tree_inspected_version == inspected_version:
             return self._compiled_aabb
         result = self.get_world_aabb()
         for child in self._transform.children:
@@ -31,16 +35,18 @@ class TransformAABB:
                 child_aabb = child_taabb.compile_tree_aabb()
                 result = result.merge(child_aabb)
         self._compiled_aabb = result
-        self._last_tree_inspected_version = self._transform._version_for_walking_to_distal
+        self._last_tree_inspected_version = inspected_version
         return self._compiled_aabb
 
     def get_world_aabb(self) -> AABB:
         """Get the AABB widened by the rotation of the transform."""
-        if self._last_inspected_version == self._transform._version_only_my:
+        inspected_version = self._transform._version_for_walking_to_proximal
+        if self._last_inspected_version == inspected_version:
             return self._my_world_aabb
         matrix = self._transform.global_pose().as_matrix()[:3, :]  # 3x4 from 4x4
         corners = self._my_aabb.get_corners_homogeneous()
         transformed_corners = numpy.dot(matrix, corners.T).T
         new_aabb = AABB.from_points(transformed_corners)
         self._my_world_aabb = new_aabb
+        self._last_inspected_version = inspected_version
         return new_aabb
