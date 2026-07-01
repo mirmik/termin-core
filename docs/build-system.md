@@ -382,7 +382,10 @@ bash run-tests-cpp.sh
 - `--vulkan` / `--no-vulkan` управляют `TERMIN_ENABLE_VULKAN`; Vulkan
   включён по умолчанию и является основным тестовым путём;
 - `--window-tests` / `--no-window-tests` точечно управляют тестами, которым нужен windowing/video backend;
-- tgfx2 тесты подключены к CTest и являются частью основного C++ test workflow.
+- tgfx2 тесты подключены к CTest и являются частью основного C++ test workflow;
+  backend-independent проверки вроде `tgfx2_sdf_test` остаются в обычном
+  headless наборе, а тесты, создающие окна/GL-контексты, включаются только
+  через `--window-tests` / `--full`.
 
 Window tests настроены так, чтобы пропускаться в headless-окружении без usable video backend, а не валить весь прогон.
 
