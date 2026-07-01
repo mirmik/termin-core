@@ -2,6 +2,7 @@ import importlib.metadata
 import json
 from pathlib import Path
 
+import pytest
 from setuptools import Distribution
 from setuptools.config.pyprojecttoml import apply_configuration
 
@@ -505,24 +506,45 @@ def test_editable_install_failure_reports_windows_native_lock_context(
     assert "install-pip-packages.ps1 --editable --force" in captured.err
 
 
+@pytest.mark.parametrize(
+    ("is_windows", "bundled_python_parts"),
+    [
+        (False, ("lib", "python3.10")),
+        (True, ("python", "Lib")),
+    ],
+)
 def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
     tmp_path,
     monkeypatch,
+    is_windows,
+    bundled_python_parts,
 ):
     repo_root = tmp_path / "repo"
     sdk_prefix = repo_root / "sdk"
     build_dir = repo_root / "build" / "Release"
-    bundled_py_dir = sdk_prefix / "lib" / "python3.10"
+    bundled_py_dir = sdk_prefix.joinpath(*bundled_python_parts)
     site_packages = bundled_py_dir / "site-packages"
     requirements = repo_root / "termin-app" / "requirements.txt"
     (bundled_py_dir / "ensurepip").mkdir(parents=True)
+    if not is_windows:
+        (sdk_prefix / "lib" / "libpython3.10.so").write_bytes(b"shared")
     requirements.parent.mkdir(parents=True)
     requirements.write_text("watchdog>=3.0\n", encoding="utf-8")
 
     calls = []
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_is_windows", lambda: is_windows)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {
+            "version": "3.10",
+            "stdlib": str(tmp_path / "unused"),
+            "libdir": str(tmp_path / "unused"),
+            "sitepackages": [],
+        },
+    )
     monkeypatch.setattr(sdk, "ensure_bundled_python_cli", lambda _sdk_prefix: None)
     monkeypatch.setattr(
         sdk,
