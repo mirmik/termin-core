@@ -1315,9 +1315,24 @@ def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
     path_text = _normalize_path(str(path))
     sdk_text = _normalize_path(str(sdk_prefix))
     android_prefix = _normalize_path(str(sdk_prefix / "android")) + "/"
+    csharp_lib_prefix = _normalize_path(str(sdk_prefix / "csharp" / "lib")) + "/"
     lower_path = path_text.lower()
+    csharp_lib_relative = (
+        path_text[len(csharp_lib_prefix) :]
+        if path_text.startswith(csharp_lib_prefix)
+        else ""
+    )
+    csharp_lib_parts = [part for part in csharp_lib_relative.split("/") if part]
+    is_csharp_managed_lib = (
+        _is_windows()
+        and len(csharp_lib_parts) in (1, 2)
+        and csharp_lib_parts[-1].lower().endswith(".dll")
+    )
     return (
         path_text.startswith(android_prefix)
+        # Managed C# assemblies are intentionally installed both as legacy flat
+        # copies and as target-framework-specific lib/<TFM> assemblies.
+        or is_csharp_managed_lib
         or "/csharp/runtimes/" in path_text
         or "/site-packages/scipy/" in path_text
         # The bundled Python keeps pysdl2-dll's extension DLLs available.

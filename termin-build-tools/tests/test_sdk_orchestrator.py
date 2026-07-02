@@ -892,6 +892,36 @@ def test_verify_duplicate_libraries_ignores_scoped_sdk_duplicates(
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
 
+def test_verify_duplicate_libraries_allows_csharp_tfm_managed_assemblies(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    lib_dir = sdk_prefix / "csharp" / "lib"
+    (lib_dir / "netstandard2.1").mkdir(parents=True)
+    (lib_dir / "netcoreapp3.1").mkdir(parents=True)
+    (lib_dir / "net8.0-windows").mkdir(parents=True)
+
+    (lib_dir / "Termin.Native.dll").write_text("flat-native", encoding="utf-8")
+    (lib_dir / "netstandard2.1" / "Termin.Native.dll").write_text(
+        "tfm-native",
+        encoding="utf-8",
+    )
+    (lib_dir / "Termin.Wpf.dll").write_text("flat-wpf", encoding="utf-8")
+    (lib_dir / "netcoreapp3.1" / "Termin.Wpf.dll").write_text(
+        "tfm-wpf-netcore",
+        encoding="utf-8",
+    )
+    (lib_dir / "net8.0-windows" / "Termin.Wpf.dll").write_text(
+        "tfm-wpf-net8",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+
+    assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
+
+
 def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     tmp_path,
     monkeypatch,
