@@ -35,7 +35,7 @@
 ```
 
 Профиль `plot-d3d11` генерирует C# API только для `tcplot`/`Termin.Wpf`, не копирует scene/render/component DLL и режет `share/termin` до D3D11 artifacts, нужных графикам.
-`Termin.Wpf` целится в `net8.0-windows`/WindowsDesktop SDK и собирается только Windows-скриптом; Linux `build-sdk-csharp.sh` намеренно пакует только cross-platform `Termin.Native` и native runtime `.so`.
+`Termin.Wpf` собирается только Windows-скриптом и multitarget-ится под `netcoreapp3.1` и `net8.0-windows`. Управляемые сборки в SDK раскладываются по `sdk/csharp/lib/<tfm>/`; плоские `sdk/csharp/lib/*.dll` оставлены для старых потребителей и содержат `netcoreapp3.1`-вариант `Termin.Wpf`. Linux `build-sdk-csharp.sh` намеренно пакует только cross-platform `Termin.Native` и native runtime `.so`.
 
 Только C/C++ стадия:
 
