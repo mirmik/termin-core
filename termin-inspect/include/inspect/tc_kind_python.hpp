@@ -77,7 +77,7 @@ public:
     nb::object serialize(const std::string& kind_name, nb::object obj) const;
 
     // Deserialize value using Python handler
-    nb::object deserialize(const std::string& kind_name, nb::object data) const;
+    nb::object deserialize(const std::string& kind_name, nb::object data, void* context = nullptr) const;
 
     // Clear all Python references (call before Python finalization)
     void clear();
@@ -129,6 +129,7 @@ public:
 
     // Deserialize using Python handler
     nb::object deserialize_python(const std::string& kind_name, nb::object data) const;
+    nb::object deserialize_python(const std::string& kind_name, nb::object data, void* context) const;
 
     // Clear Python references
     void clear_python();
@@ -159,8 +160,9 @@ inline void bind_kind_registry(nb::module_& m) {
              nb::arg("obj"))
         .def("serialize", &KindRegistry::serialize_python,
              nb::arg("kind"), nb::arg("obj"))
-        .def("deserialize", &KindRegistry::deserialize_python,
-             nb::arg("kind"), nb::arg("data"));
+        .def("deserialize", [](KindRegistry& self, const std::string& kind, nb::object data) {
+            return self.deserialize_python(kind, data);
+        }, nb::arg("kind"), nb::arg("data"));
 }
 
 // Initialize Python language vtable in C dispatcher

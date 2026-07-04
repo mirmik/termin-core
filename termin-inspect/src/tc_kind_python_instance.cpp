@@ -146,9 +146,17 @@ nb::object KindRegistryPython::serialize(const std::string& kind_name, nb::objec
     return nb::none();
 }
 
-nb::object KindRegistryPython::deserialize(const std::string& kind_name, nb::object data) const {
+nb::object KindRegistryPython::deserialize(const std::string& kind_name, nb::object data, void* context) const {
     auto* kind = get(kind_name);
     if (kind && kind->deserialize.ptr()) {
+        try {
+            return kind->deserialize(data, nb::int_(reinterpret_cast<uintptr_t>(context)));
+        } catch (const nb::python_error& e) {
+            if (!e.matches(PyExc_TypeError)) {
+                throw;
+            }
+            PyErr_Clear();
+        }
         return kind->deserialize(data);
     }
     return nb::none();
@@ -263,6 +271,10 @@ nb::object KindRegistry::serialize_python(const std::string& kind_name, nb::obje
 
 nb::object KindRegistry::deserialize_python(const std::string& kind_name, nb::object data) const {
     return KindRegistryPython::instance().deserialize(kind_name, data);
+}
+
+nb::object KindRegistry::deserialize_python(const std::string& kind_name, nb::object data, void* context) const {
+    return KindRegistryPython::instance().deserialize(kind_name, data, context);
 }
 
 void KindRegistry::register_type(nb::handle type, const std::string& kind_name) {

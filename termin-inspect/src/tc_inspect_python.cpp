@@ -268,7 +268,7 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
             return nb_to_tc_value(result);
         };
 
-        info.setter = [path_copy, kind_copy, py_setter](void* obj, tc_value value, void*) {
+        info.setter = [path_copy, kind_copy, py_setter](void* obj, tc_value value, void* context) {
             try {
                 // obj is PyObject* for Python types
                 nb::object py_obj = nb::borrow<nb::object>(
@@ -281,7 +281,7 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
                 ensure_list_handler(kind_copy);
                 auto& py_reg = KindRegistryPython::instance();
                 if (py_reg.has(kind_copy)) {
-                    py_value = py_reg.deserialize(kind_copy, py_value);
+                    py_value = py_reg.deserialize(kind_copy, py_value, context);
                 }
 
                 if (!py_setter.is_none()) {
