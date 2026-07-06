@@ -1,15 +1,18 @@
 #include "common.hpp"
 
 #include <nanobind/stl/optional.h>
-#include <nanobind/stl/tuple.h>
 
 #include <termin/camera/orbit_camera.hpp>
 
 namespace termin {
 namespace {
 
-nb::tuple vec3f_tuple(Vec3f v) {
-    return nb::make_tuple(v.x, v.y, v.z);
+Vec3 vec3f_to_vec3(Vec3f v) {
+    return {static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
+}
+
+Vec3f vec3_to_vec3f(const Vec3& v) {
+    return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
 }
 
 nb::tuple mat44f_tuple(const Mat44f& m) {
@@ -20,10 +23,6 @@ nb::tuple mat44f_tuple(const Mat44f& m) {
     return nb::tuple(result);
 }
 
-Vec3f tuple_to_vec3f(std::tuple<float, float, float> v) {
-    return {std::get<0>(v), std::get<1>(v), std::get<2>(v)};
-}
-
 }  // namespace
 
 void bind_orbit_camera(nb::module_& m) {
@@ -31,10 +30,10 @@ void bind_orbit_camera(nb::module_& m) {
         .def(nb::init<>())
         .def_prop_rw("target",
             [](const OrbitCamera& c) {
-                return vec3f_tuple(c.target);
+                return vec3f_to_vec3(c.target);
             },
-            [](OrbitCamera& c, std::tuple<float, float, float> target) {
-                c.target = tuple_to_vec3f(target);
+            [](OrbitCamera& c, nb::object target) {
+                c.target = vec3_to_vec3f(py_to_vec3(target));
             })
         .def_rw("distance", &OrbitCamera::distance)
         .def_rw("azimuth", &OrbitCamera::azimuth)
@@ -50,7 +49,7 @@ void bind_orbit_camera(nb::module_& m) {
         .def_rw("min_elevation", &OrbitCamera::min_elevation)
         .def_rw("max_elevation", &OrbitCamera::max_elevation)
         .def_prop_ro("eye", [](const OrbitCamera& c) {
-            return vec3f_tuple(c.eye());
+            return vec3f_to_vec3(c.eye());
         })
         .def("view_matrix", [](const OrbitCamera& c) {
             return mat44f_tuple(c.view_matrix());
@@ -67,20 +66,20 @@ void bind_orbit_camera(nb::module_& m) {
         .def("pan", &OrbitCamera::pan, nb::arg("dx"), nb::arg("dy"))
         .def("fit_bounds",
              [](OrbitCamera& c,
-                std::tuple<float, float, float> bounds_min,
-                std::tuple<float, float, float> bounds_max) {
-                 c.fit_bounds(tuple_to_vec3f(bounds_min),
-                              tuple_to_vec3f(bounds_max));
+                nb::object bounds_min,
+                nb::object bounds_max) {
+                 c.fit_bounds(vec3_to_vec3f(py_to_vec3(bounds_min)),
+                              vec3_to_vec3f(py_to_vec3(bounds_max)));
              },
              nb::arg("bounds_min"), nb::arg("bounds_max"))
         .def("screen_ray",
              [](const OrbitCamera& c,
                 float screen_x, float screen_y,
                 float width, float height) {
-                 OrbitCameraRay ray = c.screen_ray(
-                     screen_x, screen_y, width, height);
-                 return nb::make_tuple(vec3f_tuple(ray.origin),
-                                       vec3f_tuple(ray.direction));
+	                 OrbitCameraRay ray = c.screen_ray(
+	                     screen_x, screen_y, width, height);
+	                 return nb::make_tuple(vec3f_to_vec3(ray.origin),
+	                                       vec3f_to_vec3(ray.direction));
              },
              nb::arg("screen_x"), nb::arg("screen_y"),
              nb::arg("width"), nb::arg("height"))
@@ -91,11 +90,11 @@ void bind_orbit_camera(nb::module_& m) {
                 float z) -> nb::object {
                  std::optional<Vec3f> p = c.world_point_on_z_plane(
                      screen_x, screen_y, width, height, z);
-                 if (!p.has_value()) {
-                     return nb::none();
-                 }
-                 return vec3f_tuple(*p);
-             },
+	                 if (!p.has_value()) {
+	                     return nb::none();
+	                 }
+	                 return nb::cast(vec3f_to_vec3(*p));
+	             },
              nb::arg("screen_x"), nb::arg("screen_y"),
              nb::arg("width"), nb::arg("height"), nb::arg("z") = 0.0f);
 }

@@ -12,7 +12,11 @@
 
 # Import C++ native implementations
 from ._geom_native import (
+    Vec2,
+    Vec2f,
+    Vec2i,
     Vec3,
+    Vec3i,
     Vec4,
     Quat,
     Mat44,
@@ -31,6 +35,10 @@ from .transform_aabb import TransformAABB
 
 __all__ = [
     'Vec3',
+    'Vec2',
+    'Vec2f',
+    'Vec2i',
+    'Vec3i',
     'Vec4',
     'Quat',
     'Mat44',

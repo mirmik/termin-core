@@ -6,6 +6,7 @@ NB_MODULE(_geom_native, m) {
     m.doc() = "Native C++ geometry module for termin";
 
     // Bind all geometry types in order of dependencies
+    bind_vec2(m);
     bind_vec3(m);
     bind_vec4(m);
     bind_quat(m);

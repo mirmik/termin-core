@@ -70,6 +70,52 @@ void bind_vec3(nb::module_& m) {
             return "Vec3(" + std::to_string(v.x) + ", " +
                    std::to_string(v.y) + ", " + std::to_string(v.z) + ")";
         });
+
+    nb::class_<Vec3i>(m, "Vec3i")
+        .def(nb::init<>())
+        .def(nb::init<int, int, int>())
+        .def_rw("x", &Vec3i::x)
+        .def_rw("y", &Vec3i::y)
+        .def_rw("z", &Vec3i::z)
+        .def("__getitem__", [](const Vec3i& v, int i) { return v[i]; })
+        .def("__setitem__", [](Vec3i& v, int i, int val) { v[i] = val; })
+        .def("__len__", [](const Vec3i&) { return 3; })
+        .def("__iter__", [](const Vec3i& v) {
+            return nb::iter(nb::make_tuple(v.x, v.y, v.z));
+        })
+        .def(nb::self + nb::self)
+        .def(nb::self - nb::self)
+        .def(nb::self * int())
+        .def(int() * nb::self)
+        .def(nb::self / int())
+        .def(-nb::self)
+        .def("dot", &Vec3i::dot)
+        .def("cross", &Vec3i::cross)
+        .def("to_double", &Vec3i::to_double)
+        .def_static("zero", &Vec3i::zero)
+        .def_static("unit_x", &Vec3i::unit_x)
+        .def_static("unit_y", &Vec3i::unit_y)
+        .def_static("unit_z", &Vec3i::unit_z)
+        .def_static("right", &Vec3i::right)
+        .def_static("left", &Vec3i::left)
+        .def_static("forward", &Vec3i::forward)
+        .def_static("backward", &Vec3i::backward)
+        .def_static("up", &Vec3i::up)
+        .def_static("down", &Vec3i::down)
+        .def("tolist", [](const Vec3i& v) {
+            nb::list lst;
+            lst.append(v.x);
+            lst.append(v.y);
+            lst.append(v.z);
+            return lst;
+        })
+        .def("copy", [](const Vec3i& v) { return v; })
+        .def("__eq__", &Vec3i::operator==)
+        .def("__ne__", &Vec3i::operator!=)
+        .def("__repr__", [](const Vec3i& v) {
+            return "Vec3i(" + std::to_string(v.x) + ", " +
+                   std::to_string(v.y) + ", " + std::to_string(v.z) + ")";
+        });
 }
 
 } // namespace termin
