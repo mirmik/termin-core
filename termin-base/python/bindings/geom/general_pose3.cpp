@@ -6,136 +6,40 @@ void bind_general_pose3(nb::module_& m) {
     nb::class_<GeneralPose3>(m, "GeneralPose3")
         .def(nb::init<>())
         .def(nb::init<const Quat&, const Vec3&, const Vec3&>(),
-             nb::arg("ang"), nb::arg("lin"), nb::arg("scale") = Vec3{1.0, 1.0, 1.0})
-        .def("__init__", [](GeneralPose3* self,
-                           nb::ndarray<double, nb::c_contig, nb::device::cpu> ang_arr,
-                           nb::ndarray<double, nb::c_contig, nb::device::cpu> lin_arr,
-                           nb::ndarray<double, nb::c_contig, nb::device::cpu> scale_arr) {
-            new (self) GeneralPose3(numpy_to_quat(ang_arr), numpy_to_vec3(lin_arr), numpy_to_vec3(scale_arr));
-        })
-        // Python-style constructor with keyword args (matching Python GeneralPose3)
-        .def("__init__", [](GeneralPose3* self, nb::object ang, nb::object lin, nb::object scale) {
-            Quat q = Quat::identity();
-            Vec3 t = Vec3::zero();
-            Vec3 s{1.0, 1.0, 1.0};
-
-            if (!ang.is_none()) {
-                if (nb::isinstance<Quat>(ang)) {
-                    q = nb::cast<Quat>(ang);
-                } else {
-                    auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(ang);
-                    double* ptr = arr.data();
-                    q = Quat{ptr[0], ptr[1], ptr[2], ptr[3]};
-                }
-            }
-            if (!lin.is_none()) {
-                if (nb::isinstance<Vec3>(lin)) {
-                    t = nb::cast<Vec3>(lin);
-                } else {
-                    auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(lin);
-                    double* ptr = arr.data();
-                    t = Vec3{ptr[0], ptr[1], ptr[2]};
-                }
-            }
-            if (!scale.is_none()) {
-                if (nb::isinstance<Vec3>(scale)) {
-                    s = nb::cast<Vec3>(scale);
-                } else {
-                    auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(scale);
-                    double* ptr = arr.data();
-                    s = Vec3{ptr[0], ptr[1], ptr[2]};
-                }
-            }
-            new (self) GeneralPose3{q, t, s};
-        }, nb::arg("ang") = nb::none(), nb::arg("lin") = nb::none(), nb::arg("scale") = nb::none())
+             nb::arg("ang") = Quat::identity(),
+             nb::arg("lin") = Vec3::zero(),
+             nb::arg("scale") = Vec3{1.0, 1.0, 1.0})
         .def_prop_rw("ang",
             [](const GeneralPose3& p) { return p.ang; },
-            [](GeneralPose3& p, nb::object val) {
-                if (nb::isinstance<Quat>(val)) {
-                    p.ang = nb::cast<Quat>(val);
-                } else {
-                    auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(val);
-                    double* ptr = arr.data();
-                    p.ang = Quat{ptr[0], ptr[1], ptr[2], ptr[3]};
-                }
+            [](GeneralPose3& p, const Quat& val) {
+                p.ang = val;
             })
         .def_prop_rw("lin",
             [](const GeneralPose3& p) { return p.lin; },
-            [](GeneralPose3& p, nb::object val) {
-                if (nb::isinstance<Vec3>(val)) {
-                    p.lin = nb::cast<Vec3>(val);
-                } else {
-                    auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(val);
-                    double* ptr = arr.data();
-                    p.lin = Vec3{ptr[0], ptr[1], ptr[2]};
-                }
+            [](GeneralPose3& p, const Vec3& val) {
+                p.lin = val;
             })
         .def_prop_rw("scale",
             [](const GeneralPose3& p) { return p.scale; },
-            [](GeneralPose3& p, nb::object val) {
-                if (nb::isinstance<Vec3>(val)) {
-                    p.scale = nb::cast<Vec3>(val);
-                } else {
-                    auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(val);
-                    double* ptr = arr.data();
-                    p.scale = Vec3{ptr[0], ptr[1], ptr[2]};
-                }
+            [](GeneralPose3& p, const Vec3& val) {
+                p.scale = val;
             })
         .def(nb::self * nb::self)
         .def("__matmul__", [](const GeneralPose3& a, const GeneralPose3& b) { return a * b; })
         .def("inverse", &GeneralPose3::inverse)
         .def("transform_point", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_point, nb::const_))
-        .def("transform_point", [](const GeneralPose3& p, nb::object obj) {
-            return p.transform_point(py_to_vec3(obj));
-        })
         .def("transform_vector", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_vector, nb::const_))
-        .def("transform_vector", [](const GeneralPose3& p, nb::object obj) {
-            return p.transform_vector(py_to_vec3(obj));
-        })
         .def("transform_direction", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_direction, nb::const_))
-        .def("transform_direction", [](const GeneralPose3& p, nb::object obj) {
-            return p.transform_direction(py_to_vec3(obj));
-        })
         .def("rotate_point", nb::overload_cast<const Vec3&>(&GeneralPose3::rotate_point, nb::const_))
-        .def("rotate_point", [](const GeneralPose3& p, nb::object obj) {
-            return p.rotate_point(py_to_vec3(obj));
-        })
         .def("inverse_transform_point", nb::overload_cast<const Vec3&>(&GeneralPose3::inverse_transform_point, nb::const_))
-        .def("inverse_transform_point", [](const GeneralPose3& p, nb::object obj) {
-            return p.inverse_transform_point(py_to_vec3(obj));
-        })
         .def("inverse_transform_vector", nb::overload_cast<const Vec3&>(&GeneralPose3::inverse_transform_vector, nb::const_))
-        .def("inverse_transform_vector", [](const GeneralPose3& p, nb::object obj) {
-            return p.inverse_transform_vector(py_to_vec3(obj));
-        })
         .def("inverse_transform_direction", nb::overload_cast<const Vec3&>(&GeneralPose3::inverse_transform_direction, nb::const_))
-        .def("inverse_transform_direction", [](const GeneralPose3& p, nb::object obj) {
-            return p.inverse_transform_direction(py_to_vec3(obj));
-        })
         .def("point_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::point_to_global, nb::const_))
-        .def("point_to_global", [](const GeneralPose3& p, nb::object obj) {
-            return p.point_to_global(py_to_vec3(obj));
-        })
         .def("vector_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::vector_to_global, nb::const_))
-        .def("vector_to_global", [](const GeneralPose3& p, nb::object obj) {
-            return p.vector_to_global(py_to_vec3(obj));
-        })
         .def("direction_to_global", nb::overload_cast<const Vec3&>(&GeneralPose3::direction_to_global, nb::const_))
-        .def("direction_to_global", [](const GeneralPose3& p, nb::object obj) {
-            return p.direction_to_global(py_to_vec3(obj));
-        })
         .def("point_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::point_to_local, nb::const_))
-        .def("point_to_local", [](const GeneralPose3& p, nb::object obj) {
-            return p.point_to_local(py_to_vec3(obj));
-        })
         .def("vector_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::vector_to_local, nb::const_))
-        .def("vector_to_local", [](const GeneralPose3& p, nb::object obj) {
-            return p.vector_to_local(py_to_vec3(obj));
-        })
         .def("direction_to_local", nb::overload_cast<const Vec3&>(&GeneralPose3::direction_to_local, nb::const_))
-        .def("direction_to_local", [](const GeneralPose3& p, nb::object obj) {
-            return p.direction_to_local(py_to_vec3(obj));
-        })
         .def("forward_in_global", &GeneralPose3::forward_in_global, nb::arg("distance") = 1.0)
         .def("backward_in_global", &GeneralPose3::backward_in_global, nb::arg("distance") = 1.0)
         .def("up_in_global", &GeneralPose3::up_in_global, nb::arg("distance") = 1.0)
@@ -154,23 +58,19 @@ void bind_general_pose3(nb::module_& m) {
         .def("with_scale", nb::overload_cast<const Vec3&>(&GeneralPose3::with_scale, nb::const_))
         .def("to_pose3", &GeneralPose3::to_pose3)
         .def("rotation_matrix", [](const GeneralPose3& p) {
-            double* data = new double[9];
+            double data[9];
             p.rotation_matrix(data);
-            nb::capsule owner(data, [](void* ptr) noexcept { delete[] static_cast<double*>(ptr); });
-            size_t shape[2] = {3, 3};
-            return nb::ndarray<nb::numpy, double, nb::shape<3, 3>>(data, 2, shape, owner);
+            return mat33_row_tuple(data);
         })
         .def("as_matrix", [](const GeneralPose3& p) {
-            double* data = new double[16];
+            double data[16];
             double m_arr[16];
             p.matrix4(m_arr);  // Column-major
             // Column-major to row-major for numpy
             for (int row = 0; row < 4; row++)
                 for (int col = 0; col < 4; col++)
                     data[row * 4 + col] = m_arr[col * 4 + row];
-            nb::capsule owner(data, [](void* ptr) noexcept { delete[] static_cast<double*>(ptr); });
-            size_t shape[2] = {4, 4};
-            return nb::ndarray<nb::numpy, double, nb::shape<4, 4>>(data, 2, shape, owner);
+            return mat44_row_tuple(data);
         })
         .def("as_mat44", [](const GeneralPose3& p) {
             // Build column-major 4x4 TRS matrix (same convention as Pose3::as_matrix)
@@ -200,28 +100,24 @@ void bind_general_pose3(nb::module_& m) {
             return m;
         })
         .def("as_matrix34", [](const GeneralPose3& p) {
-            double* data = new double[12];
+            double data[12];
             double m_arr[12];
             p.matrix34(m_arr);  // Column-major (4 cols x 3 rows)
             // Column-major to row-major for numpy (3 rows x 4 cols)
             for (int row = 0; row < 3; row++)
                 for (int col = 0; col < 4; col++)
                     data[row * 4 + col] = m_arr[col * 3 + row];
-            nb::capsule owner(data, [](void* ptr) noexcept { delete[] static_cast<double*>(ptr); });
-            size_t shape[2] = {3, 4};
-            return nb::ndarray<nb::numpy, double, nb::shape<3, 4>>(data, 2, shape, owner);
+            return mat34_row_tuple(data);
         })
         .def("inverse_matrix", [](const GeneralPose3& p) {
-            double* data = new double[16];
+            double data[16];
             double m_arr[16];
             p.inverse_matrix4(m_arr);  // Column-major
             // Column-major to row-major for numpy
             for (int row = 0; row < 4; row++)
                 for (int col = 0; col < 4; col++)
                     data[row * 4 + col] = m_arr[col * 4 + row];
-            nb::capsule owner(data, [](void* ptr) noexcept { delete[] static_cast<double*>(ptr); });
-            size_t shape[2] = {4, 4};
-            return nb::ndarray<nb::numpy, double, nb::shape<4, 4>>(data, 2, shape, owner);
+            return mat44_row_tuple(data);
         })
         .def_static("identity", &GeneralPose3::identity)
         .def_static("translation", nb::overload_cast<double, double, double>(&GeneralPose3::translation))
@@ -246,32 +142,16 @@ void bind_general_pose3(nb::module_& m) {
         .def_static("up", &GeneralPose3::up)
         .def_static("looking_at", nb::overload_cast<const Vec3&, const Vec3&, const Vec3&>(&GeneralPose3::looking_at),
                     nb::arg("eye"), nb::arg("target"), nb::arg("up_vec") = Vec3{0.0, 0.0, 1.0})
-        .def_static("looking_at", [](nb::ndarray<double, nb::c_contig, nb::device::cpu> eye,
-                                     nb::ndarray<double, nb::c_contig, nb::device::cpu> target,
-                                     nb::object up_obj) {
-            Vec3 up{0.0, 0.0, 1.0};
-            if (!up_obj.is_none()) {
-                if (nb::isinstance<Vec3>(up_obj)) {
-                    up = nb::cast<Vec3>(up_obj);
-                } else {
-                    auto up_arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(up_obj);
-                    double* ptr = up_arr.data();
-                    up = Vec3{ptr[0], ptr[1], ptr[2]};
-                }
-            }
-            double* eye_ptr = eye.data();
-            double* target_ptr = target.data();
-            return GeneralPose3::looking_at(
-                Vec3{eye_ptr[0], eye_ptr[1], eye_ptr[2]},
-                Vec3{target_ptr[0], target_ptr[1], target_ptr[2]},
-                up
-            );
-        }, nb::arg("eye"), nb::arg("target"), nb::arg("up_vec") = nb::none())
         .def_static("lerp",
                     static_cast<GeneralPose3 (*)(const GeneralPose3&, const GeneralPose3&, double)>(&lerp),
                     "Linear interpolation between GeneralPose3 (with scale)")
-        .def_static("from_matrix", [](nb::ndarray<double, nb::c_contig, nb::device::cpu> mat) {
-            double* buf = mat.data();
+        .def_static("from_matrix", [](const Mat44& mat) {
+            double buf[16];
+            for (int row = 0; row < 4; ++row) {
+                for (int col = 0; col < 4; ++col) {
+                    buf[row * 4 + col] = mat(col, row);
+                }
+            }
             // Extract translation from 4th column
             Vec3 lin{buf[0 * 4 + 3], buf[1 * 4 + 3], buf[2 * 4 + 3]};
 

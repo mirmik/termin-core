@@ -1,11 +1,9 @@
 #pragma once
 
 #include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
 #include <nanobind/operators.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
-#include <tcbase/tc_log.hpp>
 #include <nanobind/stl/optional.h>
 
 #include <termin/geom/geom.hpp>
@@ -14,48 +12,66 @@ namespace nb = nanobind;
 
 namespace termin {
 
-// Helper to create numpy array from Vec3
-inline nb::ndarray<nb::numpy, double, nb::shape<3>> vec3_to_numpy(const Vec3& v) {
-    double* data = new double[3]{v.x, v.y, v.z};
-    nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<double*>(p); });
-    return nb::ndarray<nb::numpy, double, nb::shape<3>>(data, {3}, owner);
-}
-
-// Helper to create Vec3 from numpy array
-inline Vec3 numpy_to_vec3(nb::ndarray<double, nb::c_contig, nb::device::cpu> arr) {
-    double* ptr = arr.data();
-    return {ptr[0], ptr[1], ptr[2]};
-}
-
-// Helper to create numpy array from Quat
-inline nb::ndarray<nb::numpy, double, nb::shape<4>> quat_to_numpy(const Quat& q) {
-    double* data = new double[4]{q.x, q.y, q.z, q.w};
-    nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<double*>(p); });
-    return nb::ndarray<nb::numpy, double, nb::shape<4>>(data, {4}, owner);
-}
-
-// Helper to create Quat from numpy array
-inline Quat numpy_to_quat(nb::ndarray<double, nb::c_contig, nb::device::cpu> arr) {
-    double* ptr = arr.data();
-    return {ptr[0], ptr[1], ptr[2], ptr[3]};
-}
-
-// Helper to convert any array-like Python object to Vec3
-inline Vec3 py_to_vec3(nb::object obj) {
-    if (nb::isinstance<Vec3>(obj)) {
-        return nb::cast<Vec3>(obj);
-    }
-    // Try ndarray
-    try {
-        auto arr = nb::cast<nb::ndarray<double, nb::c_contig, nb::device::cpu>>(obj);
-        double* ptr = arr.data();
-        return Vec3{ptr[0], ptr[1], ptr[2]};
-    } catch (...) {
-        tc::Log::debug("Failed to cast object as ndarray for Vec3 conversion, falling back to sequence protocol");
-    }
-    // Try sequence protocol
+inline Vec3 sequence_to_vec3(nb::handle obj) {
     nb::sequence seq = nb::cast<nb::sequence>(obj);
-    return Vec3{nb::cast<double>(seq[0]), nb::cast<double>(seq[1]), nb::cast<double>(seq[2])};
+    return Vec3{
+        nb::cast<double>(seq[0]),
+        nb::cast<double>(seq[1]),
+        nb::cast<double>(seq[2]),
+    };
+}
+
+inline Quat sequence_to_quat(nb::handle obj) {
+    nb::sequence seq = nb::cast<nb::sequence>(obj);
+    return Quat{
+        nb::cast<double>(seq[0]),
+        nb::cast<double>(seq[1]),
+        nb::cast<double>(seq[2]),
+        nb::cast<double>(seq[3]),
+    };
+}
+
+inline Vec4 sequence_to_vec4(nb::handle obj) {
+    nb::sequence seq = nb::cast<nb::sequence>(obj);
+    return Vec4{
+        nb::cast<double>(seq[0]),
+        nb::cast<double>(seq[1]),
+        nb::cast<double>(seq[2]),
+        nb::cast<double>(seq[3]),
+    };
+}
+
+inline nb::tuple vec3_tuple(const Vec3& v) {
+    return nb::make_tuple(v.x, v.y, v.z);
+}
+
+inline nb::tuple quat_tuple(const Quat& q) {
+    return nb::make_tuple(q.x, q.y, q.z, q.w);
+}
+
+inline nb::tuple mat33_row_tuple(const double* data) {
+    return nb::make_tuple(
+        nb::make_tuple(data[0], data[1], data[2]),
+        nb::make_tuple(data[3], data[4], data[5]),
+        nb::make_tuple(data[6], data[7], data[8])
+    );
+}
+
+inline nb::tuple mat34_row_tuple(const double* data) {
+    return nb::make_tuple(
+        nb::make_tuple(data[0], data[1], data[2], data[3]),
+        nb::make_tuple(data[4], data[5], data[6], data[7]),
+        nb::make_tuple(data[8], data[9], data[10], data[11])
+    );
+}
+
+inline nb::tuple mat44_row_tuple(const double* data) {
+    return nb::make_tuple(
+        nb::make_tuple(data[0], data[1], data[2], data[3]),
+        nb::make_tuple(data[4], data[5], data[6], data[7]),
+        nb::make_tuple(data[8], data[9], data[10], data[11]),
+        nb::make_tuple(data[12], data[13], data[14], data[15])
+    );
 }
 
 // Forward declarations for binding functions

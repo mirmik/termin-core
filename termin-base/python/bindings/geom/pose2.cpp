@@ -6,17 +6,6 @@ namespace termin {
 
 namespace {
 
-Vec2 object_to_vec2(nb::handle obj) {
-    if (nb::isinstance<Vec2>(obj)) {
-        return nb::cast<Vec2>(obj);
-    }
-    nb::sequence seq = nb::cast<nb::sequence>(obj);
-    if (nb::len(seq) != 2) {
-        throw nb::value_error("Input vector must be of shape (2,)");
-    }
-    return Vec2{nb::cast<double>(seq[0]), nb::cast<double>(seq[1])};
-}
-
 nb::tuple vec2_tuple(const Vec2& v) {
     return nb::make_tuple(v.x, v.y);
 }
@@ -27,14 +16,10 @@ void bind_pose2(nb::module_& m) {
     nb::class_<Pose2>(m, "Pose2")
         .def(nb::init<>())
         .def(nb::init<double, const Vec2&>(), nb::arg("ang") = 0.0, nb::arg("lin") = Vec2::zero())
-        .def("__init__", [](Pose2* self, double ang, nb::object lin) {
-            Vec2 pos = lin.is_none() ? Vec2::zero() : object_to_vec2(lin);
-            new (self) Pose2{ang, pos};
-        }, nb::arg("ang") = 0.0, nb::arg("lin") = nb::none())
         .def_rw("ang", &Pose2::ang)
         .def_prop_rw("lin",
             [](const Pose2& p) { return p.lin; },
-            [](Pose2& p, nb::object lin) { p.lin = object_to_vec2(lin); })
+            [](Pose2& p, const Vec2& lin) { p.lin = lin; })
         .def_prop_rw("x",
             [](const Pose2& p) { return p.lin.x; },
             [](Pose2& p, double x) { p.lin.x = x; })
@@ -46,23 +31,23 @@ void bind_pose2(nb::module_& m) {
         .def("compose", [](const Pose2& a, const Pose2& b) { return a * b; })
         .def("copy", &Pose2::copy)
         .def("inverse", &Pose2::inverse)
-        .def("transform_point", [](const Pose2& p, nb::object point) {
-            return p.transform_point(object_to_vec2(point));
+        .def("transform_point", [](const Pose2& p, const Vec2& point) {
+            return p.transform_point(point);
         })
-        .def("transform_vector", [](const Pose2& p, nb::object vec) {
-            return p.transform_vector(object_to_vec2(vec));
+        .def("transform_vector", [](const Pose2& p, const Vec2& vec) {
+            return p.transform_vector(vec);
         })
-        .def("rotate_vector", [](const Pose2& p, nb::object vec) {
-            return p.rotate_vector(object_to_vec2(vec));
+        .def("rotate_vector", [](const Pose2& p, const Vec2& vec) {
+            return p.rotate_vector(vec);
         })
-        .def("inverse_transform_point", [](const Pose2& p, nb::object point) {
-            return p.inverse_transform_point(object_to_vec2(point));
+        .def("inverse_transform_point", [](const Pose2& p, const Vec2& point) {
+            return p.inverse_transform_point(point);
         })
-        .def("inverse_rotate_vector", [](const Pose2& p, nb::object vec) {
-            return p.inverse_rotate_vector(object_to_vec2(vec));
+        .def("inverse_rotate_vector", [](const Pose2& p, const Vec2& vec) {
+            return p.inverse_rotate_vector(vec);
         })
-        .def("inverse_transform_vector", [](const Pose2& p, nb::object vec) {
-            return p.inverse_transform_vector(object_to_vec2(vec));
+        .def("inverse_transform_vector", [](const Pose2& p, const Vec2& vec) {
+            return p.inverse_transform_vector(vec);
         })
         .def("rotation_matrix", [](const Pose2& p) {
             double c = std::cos(p.ang);

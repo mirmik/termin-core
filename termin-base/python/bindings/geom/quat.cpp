@@ -6,9 +6,8 @@ void bind_quat(nb::module_& m) {
     nb::class_<Quat>(m, "Quat")
         .def(nb::init<>())
         .def(nb::init<double, double, double, double>())
-        .def("__init__", [](Quat* self, nb::ndarray<double, nb::c_contig, nb::device::cpu> arr) {
-            double* ptr = arr.data();
-            new (self) Quat{ptr[0], ptr[1], ptr[2], ptr[3]};
+        .def("__init__", [](Quat* self, nb::object obj) {
+            new (self) Quat(sequence_to_quat(obj));
         })
         .def_rw("x", &Quat::x)
         .def_rw("y", &Quat::y)
@@ -47,7 +46,6 @@ void bind_quat(nb::module_& m) {
         .def_static("slerp", &Quat::slerp,
             nb::arg("a"), nb::arg("b"), nb::arg("t"),
             "Spherical linear interpolation between quaternions")
-        .def("to_numpy", &quat_to_numpy)
         .def("tolist", [](const Quat& q) {
             nb::list lst;
             lst.append(q.x);

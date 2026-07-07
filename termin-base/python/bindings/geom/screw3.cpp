@@ -2,21 +2,6 @@
 
 namespace termin {
 
-namespace {
-
-Vec3 sequence_to_vec3(nb::sequence seq) {
-    if (nb::len(seq) != 3) {
-        throw nb::value_error("Input vector must be of shape (3,)");
-    }
-    return Vec3(
-        nb::cast<double>(seq[0]),
-        nb::cast<double>(seq[1]),
-        nb::cast<double>(seq[2])
-    );
-}
-
-} // namespace
-
 void bind_screw3(nb::module_& m) {
     nb::class_<Screw3>(m, "Screw3")
         .def(nb::init<>())
@@ -68,21 +53,9 @@ void bind_screw3(nb::module_& m) {
         .def("coadjoint_inv", nb::overload_cast<const Vec3&>(&Screw3::coadjoint_inv, nb::const_))
         // Aliases for compatibility
         .def("kinematic_carry", nb::overload_cast<const Vec3&>(&Screw3::adjoint, nb::const_))
-        .def("kinematic_carry", [](const Screw3& self, nb::sequence arm) {
-            return self.adjoint(sequence_to_vec3(arm));
-        })
         .def("twist_carry", nb::overload_cast<const Vec3&>(&Screw3::adjoint, nb::const_))
-        .def("twist_carry", [](const Screw3& self, nb::sequence arm) {
-            return self.adjoint(sequence_to_vec3(arm));
-        })
         .def("force_carry", nb::overload_cast<const Vec3&>(&Screw3::coadjoint, nb::const_))
-        .def("force_carry", [](const Screw3& self, nb::sequence arm) {
-            return self.coadjoint(sequence_to_vec3(arm));
-        })
         .def("wrench_carry", nb::overload_cast<const Vec3&>(&Screw3::coadjoint, nb::const_))
-        .def("wrench_carry", [](const Screw3& self, nb::sequence arm) {
-            return self.coadjoint(sequence_to_vec3(arm));
-        })
         .def_static("zero", &Screw3::zero)
         .def_static("from_vector_vw_order", [](nb::sequence seq) {
             if (nb::len(seq) != 6) {

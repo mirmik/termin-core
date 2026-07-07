@@ -1,7 +1,11 @@
 import unittest
 import numpy as np
 import math
-from termin.geombase import Pose2
+from termin.geombase import Pose2, Vec2
+
+
+def v2(x: float, y: float) -> Vec2:
+    return Vec2(x, y)
 
 
 class TestPose2(unittest.TestCase):
@@ -32,10 +36,10 @@ class TestPose2(unittest.TestCase):
     def test_transform_point(self):
         """Тест трансформации точки"""
         # Поворот на 90 градусов против часовой стрелки + сдвиг на (1, 2)
-        pose = Pose2(ang=math.pi/2, lin=np.array([1.0, 2.0]))
+        pose = Pose2(ang=math.pi / 2, lin=v2(1.0, 2.0))
         
         # Точка (1, 0) после поворота на 90° становится (0, 1), потом сдвиг -> (1, 3)
-        point = np.array([1.0, 0.0])
+        point = v2(1.0, 0.0)
         transformed = pose.transform_point(point)
         
         expected = np.array([1.0, 3.0])
@@ -44,10 +48,10 @@ class TestPose2(unittest.TestCase):
     def test_transform_vector(self):
         """Тест трансформации вектора (без сдвига)"""
         # Поворот на 90 градусов + сдвиг (сдвиг не должен влиять на вектор)
-        pose = Pose2(ang=math.pi/2, lin=np.array([1.0, 2.0]))
+        pose = Pose2(ang=math.pi / 2, lin=v2(1.0, 2.0))
         
         # Вектор (1, 0) после поворота на 90° становится (0, 1)
-        vector = np.array([1.0, 0.0])
+        vector = v2(1.0, 0.0)
         transformed = pose.transform_vector(vector)
         
         expected = np.array([0.0, 1.0])
@@ -55,7 +59,7 @@ class TestPose2(unittest.TestCase):
 
     def test_inverse(self):
         """Тест инверсии позы"""
-        pose = Pose2(ang=math.pi/4, lin=np.array([1.0, 2.0]))
+        pose = Pose2(ang=math.pi / 4, lin=v2(1.0, 2.0))
         inv_pose = pose.inverse()
         
         # Композиция позы с её инверсией должна дать единичную позу
@@ -67,10 +71,10 @@ class TestPose2(unittest.TestCase):
     def test_composition(self):
         """Тест композиции поз"""
         # Первая поза: поворот на 45° + сдвиг на (1, 0)
-        pose1 = Pose2(ang=math.pi/4, lin=np.array([1.0, 0.0]))
+        pose1 = Pose2(ang=math.pi / 4, lin=v2(1.0, 0.0))
         
         # Вторая поза: поворот на 45° + сдвиг на (0, 1)
-        pose2 = Pose2(ang=math.pi/4, lin=np.array([0.0, 1.0]))
+        pose2 = Pose2(ang=math.pi / 4, lin=v2(0.0, 1.0))
         
         # Композиция
         composed = pose1 * pose2
@@ -80,7 +84,7 @@ class TestPose2(unittest.TestCase):
         self.assertAlmostEqual(composed.ang, expected_ang)
         
         # Проверка трансформации точки
-        point = np.array([1.0, 0.0])
+        point = v2(1.0, 0.0)
         
         # Применяем композицию
         p_composed = composed.transform_point(point)
@@ -99,7 +103,7 @@ class TestPose2(unittest.TestCase):
         np.testing.assert_array_equal(list(pose.lin), np.array([3.0, 4.0]))
         
         # Проверка трансформации точки
-        point = np.array([1.0, 2.0])
+        point = v2(1.0, 2.0)
         transformed = pose.transform_point(point)
         np.testing.assert_array_equal(list(transformed), np.array([4.0, 6.0]))
 
@@ -113,7 +117,7 @@ class TestPose2(unittest.TestCase):
 
     def test_as_matrix(self):
         """Тест получения матрицы трансформации 3x3"""
-        pose = Pose2(ang=math.pi/2, lin=np.array([1.0, 2.0]))
+        pose = Pose2(ang=math.pi / 2, lin=v2(1.0, 2.0))
         mat = pose.as_matrix()
         mat_arr = np.asarray(mat)
         
@@ -130,19 +134,19 @@ class TestPose2(unittest.TestCase):
 
     def test_inverse_transform_point(self):
         """Тест обратной трансформации точки"""
-        pose = Pose2(ang=math.pi/4, lin=np.array([1.0, 2.0]))
+        pose = Pose2(ang=math.pi / 4, lin=v2(1.0, 2.0))
         
         # Прямая и обратная трансформация должны компенсировать друг друга
-        original = np.array([3.0, 4.0])
+        original = v2(3.0, 4.0)
         transformed = pose.transform_point(original)
         restored = pose.inverse_transform_point(transformed)
         
-        np.testing.assert_array_almost_equal(list(restored), original)
+        np.testing.assert_array_almost_equal(list(restored), list(original))
 
     def test_lerp(self):
         """Тест линейной интерполяции"""
-        pose1 = Pose2(ang=0.0, lin=np.array([0.0, 0.0]))
-        pose2 = Pose2(ang=math.pi/2, lin=np.array([2.0, 4.0]))
+        pose1 = Pose2(ang=0.0, lin=v2(0.0, 0.0))
+        pose2 = Pose2(ang=math.pi / 2, lin=v2(2.0, 4.0))
         
         # Интерполяция в середине
         mid = Pose2.lerp(pose1, pose2, 0.5)
@@ -162,7 +166,7 @@ class TestPose2(unittest.TestCase):
 
     def test_properties(self):
         """Тест свойств x и y"""
-        pose = Pose2(lin=np.array([3.0, 4.0]))
+        pose = Pose2(lin=v2(3.0, 4.0))
         
         self.assertEqual(pose.x, 3.0)
         self.assertEqual(pose.y, 4.0)

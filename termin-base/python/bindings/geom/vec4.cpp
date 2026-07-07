@@ -6,6 +6,9 @@ void bind_vec4(nb::module_& m) {
     nb::class_<Vec4>(m, "Vec4")
         .def(nb::init<>())
         .def(nb::init<double, double, double, double>())
+        .def("__init__", [](Vec4* self, nb::object obj) {
+            new (self) Vec4(sequence_to_vec4(obj));
+        })
         .def_rw("x", &Vec4::x)
         .def_rw("y", &Vec4::y)
         .def_rw("z", &Vec4::z)

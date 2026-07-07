@@ -248,13 +248,13 @@ class TestPose3(unittest.TestCase):
             ang=Quat(0.0, 0.0, math.sin(math.pi/4), math.cos(math.pi/4)),
             lin=Vec3(1.0, 2.0, 3.0)
         )
-        mat34 = pose.as_matrix34()
+        mat34 = numpy.asarray(pose.as_matrix34())
 
         # Check shape
         self.assertEqual(mat34.shape, (3, 4))
 
         # Check that rotation part matches 3x3 rotation matrix
-        rot_mat = pose.rotation_matrix()
+        rot_mat = numpy.asarray(pose.rotation_matrix())
         numpy.testing.assert_array_almost_equal(mat34[:, :3], rot_mat)
 
         # Check that translation part is correct

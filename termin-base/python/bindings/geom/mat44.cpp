@@ -3,6 +3,24 @@
 
 namespace termin {
 
+static Vec4 mat44_transform_vec4(const Mat44& m, const Vec4& v) {
+    return Vec4{
+        m(0, 0) * v.x + m(1, 0) * v.y + m(2, 0) * v.z + m(3, 0) * v.w,
+        m(0, 1) * v.x + m(1, 1) * v.y + m(2, 1) * v.z + m(3, 1) * v.w,
+        m(0, 2) * v.x + m(1, 2) * v.y + m(2, 2) * v.z + m(3, 2) * v.w,
+        m(0, 3) * v.x + m(1, 3) * v.y + m(2, 3) * v.z + m(3, 3) * v.w,
+    };
+}
+
+static Vec4 mat44f_transform_vec4(const Mat44f& m, const Vec4& v) {
+    return Vec4{
+        m(0, 0) * v.x + m(1, 0) * v.y + m(2, 0) * v.z + m(3, 0) * v.w,
+        m(0, 1) * v.x + m(1, 1) * v.y + m(2, 1) * v.z + m(3, 1) * v.w,
+        m(0, 2) * v.x + m(1, 2) * v.y + m(2, 2) * v.z + m(3, 2) * v.w,
+        m(0, 3) * v.x + m(1, 3) * v.y + m(2, 3) * v.z + m(3, 3) * v.w,
+    };
+}
+
 void bind_mat44(nb::module_& m) {
     nb::class_<Mat44>(m, "Mat44")
         .def(nb::init<>())
@@ -16,27 +34,10 @@ void bind_mat44(nb::module_& m) {
         .def(nb::self * nb::self)
         .def("__matmul__", [](const Mat44& a, const Mat44& b) { return a * b; })
         .def("__matmul__", [](const Mat44& m, const Vec3& v) { return m.transform_point(v); })
-        // Mat44 @ numpy 4-vector -> numpy 4-vector (homogeneous transform)
-        .def("__matmul__", [](const Mat44& m, nb::ndarray<nb::numpy, double, nb::shape<4>> v) {
-            double x = m(0, 0) * v(0) + m(1, 0) * v(1) + m(2, 0) * v(2) + m(3, 0) * v(3);
-            double y = m(0, 1) * v(0) + m(1, 1) * v(1) + m(2, 1) * v(2) + m(3, 1) * v(3);
-            double z = m(0, 2) * v(0) + m(1, 2) * v(1) + m(2, 2) * v(2) + m(3, 2) * v(3);
-            double w = m(0, 3) * v(0) + m(1, 3) * v(1) + m(2, 3) * v(2) + m(3, 3) * v(3);
-            double* data = new double[4]{x, y, z, w};
-            nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<double*>(p); });
-            return nb::ndarray<nb::numpy, double, nb::shape<4>>(data, {4}, owner);
-        })
-        .def("__matmul__", [](const Mat44& m, nb::ndarray<nb::numpy, float, nb::shape<4>> v) {
-            float x = static_cast<float>(m(0, 0) * v(0) + m(1, 0) * v(1) + m(2, 0) * v(2) + m(3, 0) * v(3));
-            float y = static_cast<float>(m(0, 1) * v(0) + m(1, 1) * v(1) + m(2, 1) * v(2) + m(3, 1) * v(3));
-            float z = static_cast<float>(m(0, 2) * v(0) + m(1, 2) * v(1) + m(2, 2) * v(2) + m(3, 2) * v(3));
-            float w = static_cast<float>(m(0, 3) * v(0) + m(1, 3) * v(1) + m(2, 3) * v(2) + m(3, 3) * v(3));
-            float* data = new float[4]{x, y, z, w};
-            nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<float*>(p); });
-            return nb::ndarray<nb::numpy, float, nb::shape<4>>(data, {4}, owner);
-        })
+        .def("__matmul__", [](const Mat44& m, const Vec4& v) { return mat44_transform_vec4(m, v); })
         .def("transform_point", &Mat44::transform_point)
         .def("transform_direction", &Mat44::transform_direction)
+        .def("transform_vec4", &mat44_transform_vec4)
         .def("transposed", &Mat44::transposed)
         .def("inverse", &Mat44::inverse)
         .def("get_translation", &Mat44::get_translation)
@@ -64,25 +65,19 @@ void bind_mat44(nb::module_& m) {
         .def_static("compose", &Mat44::compose,
             nb::arg("translation"), nb::arg("rotation"), nb::arg("scale"),
             "Compose TRS matrix")
-        .def("to_numpy", [](const Mat44& mat) {
-            double* data = new double[16];
-            // Column-major to row-major for numpy
+        .def("to_rows", [](const Mat44& mat) {
+            double data[16];
             for (int row = 0; row < 4; ++row)
                 for (int col = 0; col < 4; ++col)
                     data[row * 4 + col] = mat(col, row);
-            nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<double*>(p); });
-            size_t shape[2] = {4, 4};
-            return nb::ndarray<nb::numpy, double, nb::shape<4, 4>>(data, 2, shape, owner);
+            return mat44_row_tuple(data);
         })
-        .def("to_numpy_f32", [](const Mat44& mat) {
-            float* data = new float[16];
-            // Column-major to row-major for numpy
+        .def("tolist", [](const Mat44& mat) {
+            double data[16];
             for (int row = 0; row < 4; ++row)
                 for (int col = 0; col < 4; ++col)
-                    data[row * 4 + col] = static_cast<float>(mat(col, row));
-            nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<float*>(p); });
-            size_t shape[2] = {4, 4};
-            return nb::ndarray<nb::numpy, float, nb::shape<4, 4>>(data, 2, shape, owner);
+                    data[row * 4 + col] = mat(col, row);
+            return mat44_row_tuple(data);
         })
         .def("__repr__", [](const Mat44& m) {
             return "<Mat44>";
@@ -102,8 +97,10 @@ void bind_mat44(nb::module_& m) {
         .def(nb::self * nb::self)
         .def("__matmul__", [](const Mat44f& a, const Mat44f& b) { return a * b; })
         .def("__matmul__", [](const Mat44f& m, const Vec3& v) { return m.transform_point(v); })
+        .def("__matmul__", [](const Mat44f& m, const Vec4& v) { return mat44f_transform_vec4(m, v); })
         .def("transform_point", &Mat44f::transform_point)
         .def("transform_direction", &Mat44f::transform_direction)
+        .def("transform_vec4", &mat44f_transform_vec4)
         .def("transposed", &Mat44f::transposed)
         .def("inverse", &Mat44f::inverse)
         .def("get_translation", &Mat44f::get_translation)
@@ -127,15 +124,19 @@ void bind_mat44(nb::module_& m) {
             nb::arg("eye"), nb::arg("target"), nb::arg("up") = Vec3::unit_z())
         .def_static("compose", &Mat44f::compose,
             nb::arg("translation"), nb::arg("rotation"), nb::arg("scale"))
-        .def("to_numpy", [](const Mat44f& mat) {
-            float* data = new float[16];
-            // Column-major to row-major for numpy
+        .def("to_rows", [](const Mat44f& mat) {
+            double data[16];
             for (int row = 0; row < 4; ++row)
                 for (int col = 0; col < 4; ++col)
                     data[row * 4 + col] = mat(col, row);
-            nb::capsule owner(data, [](void* p) noexcept { delete[] static_cast<float*>(p); });
-            size_t shape[2] = {4, 4};
-            return nb::ndarray<nb::numpy, float, nb::shape<4, 4>>(data, 2, shape, owner);
+            return mat44_row_tuple(data);
+        })
+        .def("tolist", [](const Mat44f& mat) {
+            double data[16];
+            for (int row = 0; row < 4; ++row)
+                for (int col = 0; col < 4; ++col)
+                    data[row * 4 + col] = mat(col, row);
+            return mat44_row_tuple(data);
         })
         .def("__repr__", [](const Mat44f& m) {
             return "<Mat44f>";

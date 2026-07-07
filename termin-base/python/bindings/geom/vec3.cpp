@@ -6,9 +6,8 @@ void bind_vec3(nb::module_& m) {
     nb::class_<Vec3>(m, "Vec3")
         .def(nb::init<>())
         .def(nb::init<double, double, double>())
-        .def("__init__", [](Vec3* self, nb::ndarray<double, nb::c_contig, nb::device::cpu> arr) {
-            double* ptr = arr.data();
-            new (self) Vec3{ptr[0], ptr[1], ptr[2]};
+        .def("__init__", [](Vec3* self, nb::object obj) {
+            new (self) Vec3(sequence_to_vec3(obj));
         })
         .def_rw("x", &Vec3::x)
         .def_rw("y", &Vec3::y)
@@ -46,7 +45,6 @@ void bind_vec3(nb::module_& m) {
         .def_static("angle_degrees", &Vec3::angle_degrees,
             nb::arg("a"), nb::arg("b"),
             "Angle between two vectors in degrees")
-        .def("to_numpy", &vec3_to_numpy)
         .def("tolist", [](const Vec3& v) {
             nb::list lst;
             lst.append(v.x);

@@ -32,8 +32,8 @@ void bind_orbit_camera(nb::module_& m) {
             [](const OrbitCamera& c) {
                 return vec3f_to_vec3(c.target);
             },
-            [](OrbitCamera& c, nb::object target) {
-                c.target = vec3_to_vec3f(py_to_vec3(target));
+            [](OrbitCamera& c, const Vec3& target) {
+                c.target = vec3_to_vec3f(target);
             })
         .def_rw("distance", &OrbitCamera::distance)
         .def_rw("azimuth", &OrbitCamera::azimuth)
@@ -66,10 +66,10 @@ void bind_orbit_camera(nb::module_& m) {
         .def("pan", &OrbitCamera::pan, nb::arg("dx"), nb::arg("dy"))
         .def("fit_bounds",
              [](OrbitCamera& c,
-                nb::object bounds_min,
-                nb::object bounds_max) {
-                 c.fit_bounds(vec3_to_vec3f(py_to_vec3(bounds_min)),
-                              vec3_to_vec3f(py_to_vec3(bounds_max)));
+                const Vec3& bounds_min,
+                const Vec3& bounds_max) {
+                 c.fit_bounds(vec3_to_vec3f(bounds_min),
+                              vec3_to_vec3f(bounds_max));
              },
              nb::arg("bounds_min"), nb::arg("bounds_max"))
         .def("screen_ray",

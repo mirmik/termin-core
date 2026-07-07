@@ -1,6 +1,7 @@
 """Tests for GeneralPose3 - pose with scale."""
 
 import math
+import numpy as np
 import pytest
 
 from termin.geombase import GeneralPose3, Pose3, Vec3, Quat
@@ -280,7 +281,7 @@ class TestGeneralPose3Matrix:
     def test_as_matrix_identity(self):
         import numpy as np
         gp = GeneralPose3.identity()
-        mat = gp.as_matrix()
+        mat = np.asarray(gp.as_matrix())
         expected = np.eye(4)
         assert mat.shape == (4, 4)
         for i in range(4):
@@ -289,7 +290,7 @@ class TestGeneralPose3Matrix:
 
     def test_as_matrix_scale(self):
         gp = GeneralPose3(scale=Vec3(2, 3, 4))
-        mat = gp.as_matrix()
+        mat = np.asarray(gp.as_matrix())
 
         # Scale should be in diagonal of rotation part
         assert mat[0, 0] == pytest.approx(2)
@@ -297,16 +298,8 @@ class TestGeneralPose3Matrix:
         assert mat[2, 2] == pytest.approx(4)
 
     def test_from_matrix_extracts_scale(self):
-        import numpy as np
-        # Create matrix with scale
-        mat = np.array([
-            [2, 0, 0, 1],
-            [0, 3, 0, 2],
-            [0, 0, 4, 3],
-            [0, 0, 0, 1]
-        ], dtype=float)
-
-        gp = GeneralPose3.from_matrix(mat)
+        source = GeneralPose3(lin=Vec3(1, 2, 3), scale=Vec3(2, 3, 4))
+        gp = GeneralPose3.from_matrix(source.as_mat44())
 
         assert_vec3_approx(gp.lin, (1, 2, 3))
         assert_vec3_approx(gp.scale, (2, 3, 4))
@@ -317,8 +310,7 @@ class TestGeneralPose3Matrix:
             ang=GeneralPose3.rotateZ(0.5).ang,
             scale=Vec3(2, 3, 4)
         )
-        mat = gp.as_matrix()
-        gp2 = GeneralPose3.from_matrix(mat)
+        gp2 = GeneralPose3.from_matrix(gp.as_mat44())
 
         assert_vec3_approx(gp2.lin, (gp.lin.x, gp.lin.y, gp.lin.z), eps=1e-5)
         assert_vec3_approx(gp2.scale, (gp.scale.x, gp.scale.y, gp.scale.z), eps=1e-5)
