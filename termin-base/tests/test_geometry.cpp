@@ -2,7 +2,10 @@
 #include <type_traits>
 
 #include <tcbase/tc_types.h>
+#include <termin/geom/color.hpp>
 #include <termin/geom/ray3.hpp>
+#include <termin/geom/rect2.hpp>
+#include <termin/geom/size2.hpp>
 
 #include "guard_main.h"
 
@@ -35,6 +38,25 @@ TEST_CASE("Ray3 is tc_ray3 alias and normalizes direction") {
     CHECK(std::abs(point.x - 1.0) < 1.0e-12);
     CHECK(std::abs(point.y - 2.0) < 1.0e-12);
     CHECK(std::abs(point.z - 5.0) < 1.0e-12);
+}
+
+TEST_CASE("base geometry value types preserve simple construction semantics") {
+    termin::Color4 color = termin::Color4::green();
+    CHECK(color.r == 0.0f);
+    CHECK(color.g == 1.0f);
+    CHECK(color.b == 0.0f);
+    CHECK(color.a == 1.0f);
+
+    termin::Size2i size{320, 240};
+    termin::Rect2i rect = termin::Rect2i::from_size(size);
+
+    CHECK(size == termin::Size2i(320, 240));
+    CHECK(rect.x0 == 0);
+    CHECK(rect.y0 == 0);
+    CHECK(rect.x1 == 320);
+    CHECK(rect.y1 == 240);
+    CHECK(rect.width() == 320);
+    CHECK(rect.height() == 240);
 }
 
 GUARD_TEST_MAIN();
