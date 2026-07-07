@@ -16,6 +16,7 @@ from ._geom_native import (
     Vec2f,
     Vec2i,
     Vec3,
+    Vec3f,
     Vec3i,
     Vec4,
     Bounds2f,
@@ -38,6 +39,7 @@ from .transform_aabb import TransformAABB
 
 __all__ = [
     'Vec3',
+    'Vec3f',
     'Vec2',
     'Vec2f',
     'Vec2i',

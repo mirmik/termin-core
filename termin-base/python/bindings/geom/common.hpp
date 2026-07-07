@@ -21,6 +21,15 @@ inline Vec3 sequence_to_vec3(nb::handle obj) {
     };
 }
 
+inline Vec3f sequence_to_vec3f(nb::handle obj) {
+    nb::sequence seq = nb::cast<nb::sequence>(obj);
+    return Vec3f{
+        nb::cast<float>(seq[0]),
+        nb::cast<float>(seq[1]),
+        nb::cast<float>(seq[2]),
+    };
+}
+
 inline Quat sequence_to_quat(nb::handle obj) {
     nb::sequence seq = nb::cast<nb::sequence>(obj);
     return Quat{

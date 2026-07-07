@@ -1,5 +1,8 @@
 #include "common.hpp"
 
+#include <cmath>
+#include <string>
+
 namespace termin {
 
 void bind_vec3(nb::module_& m) {
@@ -69,6 +72,63 @@ void bind_vec3(nb::module_& m) {
                    std::to_string(v.y) + ", " + std::to_string(v.z) + ")";
         });
 
+    nb::class_<Vec3f>(m, "Vec3f")
+        .def(nb::init<>())
+        .def(nb::init<float, float, float>())
+        .def("__init__", [](Vec3f* self, nb::object obj) {
+            new (self) Vec3f(sequence_to_vec3f(obj));
+        })
+        .def_rw("x", &Vec3f::x)
+        .def_rw("y", &Vec3f::y)
+        .def_rw("z", &Vec3f::z)
+        .def("__getitem__", [](const Vec3f& v, int i) { return v[i]; })
+        .def("__setitem__", [](Vec3f& v, int i, float val) { v[i] = val; })
+        .def("__len__", [](const Vec3f&) { return 3; })
+        .def("__iter__", [](const Vec3f& v) {
+            return nb::iter(nb::make_tuple(v.x, v.y, v.z));
+        })
+        .def(nb::self + nb::self)
+        .def(nb::self - nb::self)
+        .def(nb::self * float())
+        .def(float() * nb::self)
+        .def(nb::self / float())
+        .def(-nb::self)
+        .def("dot", &Vec3f::dot)
+        .def("cross", &Vec3f::cross)
+        .def("norm", &Vec3f::norm)
+        .def("norm_squared", &Vec3f::norm_squared)
+        .def("normalized", &Vec3f::normalized)
+        .def("to_double", &Vec3f::to_double)
+        .def_static("zero", &Vec3f::zero)
+        .def_static("unit_x", &Vec3f::unit_x)
+        .def_static("unit_y", &Vec3f::unit_y)
+        .def_static("unit_z", &Vec3f::unit_z)
+        .def_static("right", &Vec3f::right)
+        .def_static("left", &Vec3f::left)
+        .def_static("forward", &Vec3f::forward)
+        .def_static("backward", &Vec3f::backward)
+        .def_static("up", &Vec3f::up)
+        .def_static("down", &Vec3f::down)
+        .def("tolist", [](const Vec3f& v) {
+            nb::list lst;
+            lst.append(v.x);
+            lst.append(v.y);
+            lst.append(v.z);
+            return lst;
+        })
+        .def("copy", [](const Vec3f& v) { return v; })
+        .def("__eq__", &Vec3f::operator==)
+        .def("__ne__", &Vec3f::operator!=)
+        .def("approx_eq", [](const Vec3f& a, const Vec3f& b, float eps) {
+            return std::abs(a.x - b.x) < eps &&
+                   std::abs(a.y - b.y) < eps &&
+                   std::abs(a.z - b.z) < eps;
+        }, nb::arg("other"), nb::arg("eps") = 1e-6f)
+        .def("__repr__", [](const Vec3f& v) {
+            return "Vec3f(" + std::to_string(v.x) + ", " +
+                   std::to_string(v.y) + ", " + std::to_string(v.z) + ")";
+        });
+
     nb::class_<Vec3i>(m, "Vec3i")
         .def(nb::init<>())
         .def(nb::init<int, int, int>())
@@ -90,6 +150,7 @@ void bind_vec3(nb::module_& m) {
         .def("dot", &Vec3i::dot)
         .def("cross", &Vec3i::cross)
         .def("to_double", &Vec3i::to_double)
+        .def("to_float", &Vec3i::to_float)
         .def_static("zero", &Vec3i::zero)
         .def_static("unit_x", &Vec3i::unit_x)
         .def_static("unit_y", &Vec3i::unit_y)
