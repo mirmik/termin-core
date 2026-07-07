@@ -41,6 +41,10 @@ TEST_CASE("Ray3 is tc_ray3 alias and normalizes direction") {
 }
 
 TEST_CASE("base geometry value types preserve simple construction semantics") {
+    static_assert(std::is_standard_layout_v<termin::Color4>);
+    static_assert(std::is_standard_layout_v<termin::Size2i>);
+    static_assert(std::is_standard_layout_v<termin::Rect2i>);
+
     termin::Color4 color = termin::Color4::green();
     CHECK(color.r == 0.0f);
     CHECK(color.g == 1.0f);
