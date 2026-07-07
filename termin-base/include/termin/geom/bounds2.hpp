@@ -25,4 +25,18 @@ struct Bounds2i {
     }
 };
 
+// 2D bounds with floating-point min/max coordinates.
+struct Bounds2f {
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+
+    Bounds2f() = default;
+    Bounds2f(float x0, float y0, float x1, float y1) : x0(x0), y0(y0), x1(x1), y1(y1) {}
+
+    float width() const { return x1 - x0; }
+    float height() const { return y1 - y0; }
+};
+
 } // namespace termin

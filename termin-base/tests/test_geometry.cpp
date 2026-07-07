@@ -45,7 +45,9 @@ TEST_CASE("base geometry value types preserve simple construction semantics") {
     static_assert(std::is_standard_layout_v<termin::Color4>);
     static_assert(std::is_standard_layout_v<termin::Size2i>);
     static_assert(std::is_standard_layout_v<termin::Bounds2i>);
+    static_assert(std::is_standard_layout_v<termin::Bounds2f>);
     static_assert(std::is_standard_layout_v<termin::Rect2i>);
+    static_assert(std::is_standard_layout_v<termin::Rect2f>);
 
     termin::Color4 color = termin::Color4::green();
     CHECK(color.r == 0.0f);
@@ -69,6 +71,15 @@ TEST_CASE("base geometry value types preserve simple construction semantics") {
     CHECK(viewport.y == 20);
     CHECK(viewport.width == 320);
     CHECK(viewport.height == 240);
+
+    termin::Rect2f rect_f{1.5f, 2.0f, 3.25f, 4.5f};
+    termin::Bounds2f bounds_f = rect_f.bounds();
+    CHECK(bounds_f.x0 == 1.5f);
+    CHECK(bounds_f.y0 == 2.0f);
+    CHECK(bounds_f.x1 == 4.75f);
+    CHECK(bounds_f.y1 == 6.5f);
+    CHECK(bounds_f.width() == 3.25f);
+    CHECK(bounds_f.height() == 4.5f);
 }
 
 GUARD_TEST_MAIN();
