@@ -52,6 +52,18 @@ struct InspectContext {
     void* user_context = nullptr;
 };
 
+struct InspectFieldSpec {
+    const char* type_name = "";
+    const char* path = "";
+    const char* label = "";
+    const char* kind = "";
+    double min = -1e9;
+    double max = 1e9;
+    double step = 0.01;
+    bool is_serializable = true;
+    bool is_inspectable = true;
+};
+
 // ============================================================================
 // InspectFieldInfo - field metadata + callbacks (C++ only)
 // ============================================================================
@@ -88,6 +100,46 @@ struct InspectFieldInfo {
         out->choice_count = 0;
     }
 };
+
+inline InspectFieldSpec inspect_field_spec(
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind,
+    double min = -1e9,
+    double max = 1e9,
+    double step = 0.01)
+{
+    return {type_name, path, label, kind, min, max, step};
+}
+
+inline InspectFieldSpec inspect_accessor_field_spec(
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind,
+    bool is_serializable = true,
+    bool is_inspectable = true)
+{
+    InspectFieldSpec spec = inspect_field_spec(type_name, path, label, kind);
+    spec.is_serializable = is_serializable;
+    spec.is_inspectable = is_inspectable;
+    return spec;
+}
+
+inline InspectFieldInfo make_inspect_field_info(const InspectFieldSpec& spec) {
+    InspectFieldInfo info;
+    info.type_name = spec.type_name ? spec.type_name : "";
+    info.path = spec.path ? spec.path : "";
+    info.label = spec.label ? spec.label : "";
+    info.kind = spec.kind ? spec.kind : "";
+    info.min = spec.min;
+    info.max = spec.max;
+    info.step = spec.step;
+    info.is_serializable = spec.is_serializable;
+    info.is_inspectable = spec.is_inspectable;
+    return info;
+}
 
 // ============================================================================
 // InspectRegistry - C++ only version
@@ -487,28 +539,19 @@ public:
     // ========================================================================
 
     template<typename C, typename T>
-    void add(const char* type_name, T C::*member,
-             const char* path, const char* label, const char* kind_str,
-             double min = 0.0, double max = 1.0, double step = 0.01)
+    void add(T C::*member, const InspectFieldSpec& spec)
     {
-        InspectFieldInfo info;
-        info.type_name = type_name;
-        info.path = path;
-        info.label = label;
-        info.kind = kind_str;
-        info.min = min;
-        info.max = max;
-        info.step = step;
+        InspectFieldInfo info = make_inspect_field_info(spec);
 
-        std::string kind_copy = kind_str;
+        std::string kind_copy = info.kind;
 
         info.getter = [member, kind_copy](void* obj) -> tc_value {
             T val = static_cast<C*>(obj)->*member;
             return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
         };
 
-        std::string type_copy = type_name;
-        std::string path_copy = path;
+        std::string type_copy = info.type_name;
+        std::string path_copy = info.path;
 
         info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
             std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
@@ -523,41 +566,53 @@ public:
             }
         };
 
-        register_field(type_name, std::move(info), true, "field registration");
+        const std::string registered_type = info.type_name;
+        register_field(registered_type, std::move(info), true, "field registration");
     }
 
-    template<typename C, typename T>
-    void add_with_callbacks(
+    template<typename C, typename T, typename... RangeArgs>
+    void add(
         const char* type_name,
+        T C::*member,
         const char* path,
         const char* label,
         const char* kind_str,
-        std::function<T&(C*)> getter_fn,
-        std::function<void(C*, const T&)> setter_fn,
-        double min_val = -1e9,
-        double max_val = 1e9,
-        double step_val = 0.01
+        RangeArgs&&... range_args)
+    {
+        add<C, T>(
+            member,
+            inspect_field_spec(
+                type_name,
+                path,
+                label,
+                kind_str,
+                std::forward<RangeArgs>(range_args)...));
+    }
+
+    template<typename C, typename T, typename GetterFn, typename SetterFn>
+    void add_with_callbacks(
+        const InspectFieldSpec& spec,
+        GetterFn getter_fn,
+        SetterFn setter_fn
     ) {
-        InspectFieldInfo info;
-        info.type_name = type_name;
-        info.path = path;
-        info.label = label;
-        info.kind = kind_str;
-        info.min = min_val;
-        info.max = max_val;
-        info.step = step_val;
+        InspectFieldInfo info = make_inspect_field_info(spec);
 
-        std::string kind_copy = kind_str;
+        std::string kind_copy = info.kind;
 
-        info.getter = [getter_fn, kind_copy](void* obj) -> tc_value {
+        info.getter = [getter_fn = std::move(getter_fn), kind_copy](void* obj) -> tc_value {
             T val = getter_fn(static_cast<C*>(obj));
             return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
         };
 
-        std::string type_copy = type_name;
-        std::string path_copy = path;
+        std::string type_copy = info.type_name;
+        std::string path_copy = info.path;
 
-        info.setter = [setter_fn, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+        info.setter = [
+            setter_fn = std::move(setter_fn),
+            kind_copy,
+            type_copy,
+            path_copy
+        ](void* obj, tc_value value, void* context) {
             std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
             if (val.has_value()) {
                 try {
@@ -570,7 +625,29 @@ public:
             }
         };
 
-        register_field(type_name, std::move(info), true, "field registration");
+        const std::string registered_type = info.type_name;
+        register_field(registered_type, std::move(info), true, "field registration");
+    }
+
+    template<typename C, typename T, typename GetterFn, typename SetterFn, typename... RangeArgs>
+    void add_with_callbacks(
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind_str,
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        RangeArgs&&... range_args)
+    {
+        add_with_callbacks<C, T>(
+            inspect_field_spec(
+                type_name,
+                path,
+                label,
+                kind_str,
+                std::forward<RangeArgs>(range_args)...),
+            std::move(getter_fn),
+            std::move(setter_fn));
     }
 
     template<typename C, typename T>
@@ -825,24 +902,28 @@ TC_INSPECT_API void init_cpp_inspect_vtable();
 template<typename C, typename T>
 void register_inspect_field(
     T C::*member,
+    const InspectFieldSpec& spec
+) {
+    InspectRegistry::instance().add<C, T>(member, spec);
+}
+
+template<typename C, typename T, typename... RangeArgs>
+void register_inspect_field(
+    T C::*member,
     const char* type_name,
     const char* path,
     const char* label,
     const char* kind,
-    double min = -1e9,
-    double max = 1e9,
-    double step = 0.01
-) {
-    InspectRegistry::instance().add<C, T>(
-        type_name,
+    RangeArgs&&... range_args)
+{
+    register_inspect_field<C, T>(
         member,
-        path,
-        label,
-        kind,
-        min,
-        max,
-        step
-    );
+        inspect_field_spec(
+            type_name,
+            path,
+            label,
+            kind,
+            std::forward<RangeArgs>(range_args)...));
 }
 
 template<typename C, typename T>
@@ -929,71 +1010,91 @@ void register_inspect_button_method(
 
 template<typename C, typename T>
 struct InspectFieldRegistrar {
-    InspectFieldRegistrar(T C::*member, const char* type_name,
-                          const char* path, const char* label, const char* kind,
-                          double min = -1e9, double max = 1e9, double step = 0.01) {
+    InspectFieldRegistrar(T C::*member, const InspectFieldSpec& spec) {
+        register_inspect_field<C, T>(member, spec);
+    }
+
+    template<typename... RangeArgs>
+    InspectFieldRegistrar(
+        T C::*member,
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind,
+        RangeArgs&&... range_args)
+    {
         register_inspect_field<C, T>(
             member,
-            type_name,
-            path,
-            label,
-            kind,
-            min,
-            max,
-            step
-        );
+            inspect_field_spec(
+                type_name,
+                path,
+                label,
+                kind,
+                std::forward<RangeArgs>(range_args)...));
     }
 };
 
 template<typename C, typename T>
 struct InspectFieldCallbackRegistrar {
+    template<typename GetterFn, typename SetterFn>
+    InspectFieldCallbackRegistrar(
+        const InspectFieldSpec& spec,
+        GetterFn getter,
+        SetterFn setter
+    ) {
+        InspectRegistry::instance().add_with_callbacks<C, T>(
+            spec,
+            std::move(getter),
+            std::move(setter));
+    }
+
+    template<typename GetterFn, typename SetterFn, typename... RangeArgs>
     InspectFieldCallbackRegistrar(
         const char* type_name,
         const char* path,
         const char* label,
         const char* kind,
-        std::function<T&(C*)> getter,
-        std::function<void(C*, const T&)> setter,
-        double min_val = -1e9,
-        double max_val = 1e9,
-        double step_val = 0.01
-    ) {
+        GetterFn getter,
+        SetterFn setter,
+        RangeArgs&&... range_args)
+    {
         InspectRegistry::instance().add_with_callbacks<C, T>(
-            type_name, path, label, kind, getter, setter, min_val, max_val, step_val
-        );
+            inspect_field_spec(
+                type_name,
+                path,
+                label,
+                kind,
+                std::forward<RangeArgs>(range_args)...),
+            std::move(getter),
+            std::move(setter));
     }
 };
 
 template<typename C, typename T>
 struct InspectAccessorFieldRegistrar {
+    template<typename GetterFn, typename SetterFn>
     InspectAccessorFieldRegistrar(
-        const char* type_name,
-        const char* path,
-        const char* label,
-        const char* kind,
-        std::function<T(C*)> getter_fn,
-        std::function<void(C*, T)> setter_fn,
-        bool is_serializable = true,
-        bool is_inspectable = true
+        const InspectFieldSpec& spec,
+        GetterFn getter_fn,
+        SetterFn setter_fn
     ) {
-        InspectFieldInfo info;
-        info.type_name = type_name;
-        info.path = path;
-        info.label = label;
-        info.kind = kind;
-        info.is_serializable = is_serializable;
-        info.is_inspectable = is_inspectable;
+        InspectFieldInfo info = make_inspect_field_info(spec);
 
-        std::string kind_copy = kind;
-        std::string type_copy = type_name;
-        std::string path_copy = path;
+        std::string kind_copy = info.kind;
+        std::string type_copy = info.type_name;
+        std::string path_copy = info.path;
 
-        info.getter = [getter_fn, kind_copy](void* obj) -> tc_value {
+        info.getter = [getter_fn = std::move(getter_fn), kind_copy](void* obj) -> tc_value {
             T val = getter_fn(static_cast<C*>(obj));
             return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
         };
 
-        info.setter = [setter_fn, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+        info.setter = [
+            setter_fn = std::move(setter_fn),
+            kind_copy,
+            type_copy,
+            path_copy
+        ](void* obj, tc_value value, void* context) {
             std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
             if (val.has_value()) {
                 try {
@@ -1006,30 +1107,41 @@ struct InspectAccessorFieldRegistrar {
             }
         };
 
-        InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+        const std::string registered_type = info.type_name;
+        InspectRegistry::instance().add_field_with_choices(registered_type, std::move(info));
     }
-};
 
-template<typename C, typename T>
-struct InspectAccessorFieldChoicesRegistrar {
-    InspectAccessorFieldChoicesRegistrar(
+    template<typename GetterFn, typename SetterFn, typename... FlagArgs>
+    InspectAccessorFieldRegistrar(
         const char* type_name,
         const char* path,
         const char* label,
         const char* kind,
-        std::function<T(C*)> getter_fn,
-        std::function<void(C*, T)> setter_fn,
-        std::initializer_list<std::pair<const char*, const char*>> choices_list,
-        bool is_serializable = true,
-        bool is_inspectable = true
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        FlagArgs&&... flag_args)
+        : InspectAccessorFieldRegistrar(
+              inspect_accessor_field_spec(
+                  type_name,
+                  path,
+                  label,
+                  kind,
+                  std::forward<FlagArgs>(flag_args)...),
+              std::move(getter_fn),
+              std::move(setter_fn))
+    {}
+};
+
+template<typename C, typename T>
+struct InspectAccessorFieldChoicesRegistrar {
+    template<typename GetterFn, typename SetterFn>
+    InspectAccessorFieldChoicesRegistrar(
+        const InspectFieldSpec& spec,
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        std::initializer_list<std::pair<const char*, const char*>> choices_list
     ) {
-        InspectFieldInfo info;
-        info.type_name = type_name;
-        info.path = path;
-        info.label = label;
-        info.kind = kind;
-        info.is_serializable = is_serializable;
-        info.is_inspectable = is_inspectable;
+        InspectFieldInfo info = make_inspect_field_info(spec);
 
         for (const auto& [value, choice_label] : choices_list) {
             EnumChoice choice;
@@ -1038,16 +1150,21 @@ struct InspectAccessorFieldChoicesRegistrar {
             info.choices.push_back(std::move(choice));
         }
 
-        std::string kind_copy = kind;
-        std::string type_copy = type_name;
-        std::string path_copy = path;
+        std::string kind_copy = info.kind;
+        std::string type_copy = info.type_name;
+        std::string path_copy = info.path;
 
-        info.getter = [getter_fn, kind_copy](void* obj) -> tc_value {
+        info.getter = [getter_fn = std::move(getter_fn), kind_copy](void* obj) -> tc_value {
             T val = getter_fn(static_cast<C*>(obj));
             return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
         };
 
-        info.setter = [setter_fn, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
+        info.setter = [
+            setter_fn = std::move(setter_fn),
+            kind_copy,
+            type_copy,
+            path_copy
+        ](void* obj, tc_value value, void* context) {
             std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
             if (val.has_value()) {
                 try {
@@ -1060,8 +1177,25 @@ struct InspectAccessorFieldChoicesRegistrar {
             }
         };
 
-        InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+        const std::string registered_type = info.type_name;
+        InspectRegistry::instance().add_field_with_choices(registered_type, std::move(info));
     }
+
+    template<typename GetterFn, typename SetterFn>
+    InspectAccessorFieldChoicesRegistrar(
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind,
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        std::initializer_list<std::pair<const char*, const char*>> choices_list)
+        : InspectAccessorFieldChoicesRegistrar(
+              inspect_field_spec(type_name, path, label, kind),
+              std::move(getter_fn),
+              std::move(setter_fn),
+              choices_list)
+    {}
 };
 
 template<typename C, typename T>
@@ -1139,23 +1273,43 @@ struct InspectTypeMetadataRegistrar {
 
 #define INSPECT_FIELD(cls, field, label, kind, ...) \
     inline static ::tc::InspectFieldRegistrar<cls, decltype(cls::field)> \
-        _inspect_reg_##cls##_##field{&cls::field, #cls, #field, label, kind, ##__VA_ARGS__};
+        _inspect_reg_##cls##_##field{ \
+            &cls::field, \
+            ::tc::InspectFieldSpec{#cls, #field, label, kind, ##__VA_ARGS__}};
 
 #define INSPECT_FIELD_RANGE(cls, field, label, kind, min_val, max_val) \
     inline static ::tc::InspectFieldRegistrar<cls, decltype(cls::field)> \
-        _inspect_reg_##cls##_##field{&cls::field, #cls, #field, label, kind, min_val, max_val, 0.01};
+        _inspect_reg_##cls##_##field{ \
+            &cls::field, \
+            ::tc::InspectFieldSpec{#cls, #field, label, kind, min_val, max_val, 0.01}};
+
+#define INSPECT_FIELD_NAMED(cls, field, path, label, kind, ...) \
+    inline static ::tc::InspectFieldRegistrar<cls, decltype(cls::field)> \
+        _inspect_reg_##cls##_##field{ \
+            &cls::field, \
+            ::tc::InspectFieldSpec{#cls, path, label, kind, ##__VA_ARGS__}};
 
 #define INSPECT_FIELD_CALLBACK(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
     inline static ::tc::InspectFieldCallbackRegistrar<cls, type> \
-        _inspect_reg_##cls##_##name{#cls, #name, label, kind, getter_fn, setter_fn, ##__VA_ARGS__};
+        _inspect_reg_##cls##_##name{ \
+            ::tc::InspectFieldSpec{#cls, #name, label, kind, ##__VA_ARGS__}, \
+            getter_fn, \
+            setter_fn};
 
 #define INSPECT_FIELD_ACCESSORS(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
     inline static ::tc::InspectAccessorFieldRegistrar<cls, type> \
-        _inspect_reg_##cls##_##name{#cls, #name, label, kind, getter_fn, setter_fn, ##__VA_ARGS__};
+        _inspect_reg_##cls##_##name{ \
+            ::tc::InspectFieldSpec{#cls, #name, label, kind, ##__VA_ARGS__}, \
+            getter_fn, \
+            setter_fn};
 
 #define INSPECT_FIELD_ACCESSORS_CHOICES(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
     inline static ::tc::InspectAccessorFieldChoicesRegistrar<cls, type> \
-        _inspect_reg_##cls##_##name{#cls, #name, label, kind, getter_fn, setter_fn, {__VA_ARGS__}};
+        _inspect_reg_##cls##_##name{ \
+            ::tc::InspectFieldSpec{#cls, #name, label, kind}, \
+            getter_fn, \
+            setter_fn, \
+            {__VA_ARGS__}};
 
 #define SERIALIZABLE_FIELD(cls, name, getter_expr, setter_expr) \
     inline static ::tc::SerializableFieldRegistrar<cls> \
@@ -1169,7 +1323,7 @@ struct InspectTypeMetadataRegistrar {
 
 #define TC_MODULE_INSPECT_FIELD(cls, field, label, kind, ...) \
     ::tc::register_inspect_field<cls, decltype(cls::field)>( \
-        &cls::field, #cls, #field, label, kind, ##__VA_ARGS__)
+        &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, ##__VA_ARGS__})
 
 #define TC_MODULE_INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
     ::tc::register_inspect_field_choices<cls, decltype(cls::field)>( \

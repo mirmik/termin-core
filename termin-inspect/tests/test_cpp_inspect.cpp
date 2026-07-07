@@ -359,10 +359,7 @@ TEST_CASE("C++ inspect choices support string enum fields") {
         {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}},
     };
     tc::InspectAccessorFieldChoicesRegistrar<CppChoiceComponent, int> accessor_reg{
-        "CppChoiceComponent",
-        "accessor_mode",
-        "Accessor Mode",
-        "enum",
+        tc::InspectFieldSpec{"CppChoiceComponent", "accessor_mode", "Accessor Mode", "enum"},
         [](CppChoiceComponent* self) -> int { return self->accessor_mode; },
         [](CppChoiceComponent* self, int value) { self->accessor_mode = value; },
         {{"0", "Zero"}, {"2", "Two"}},
