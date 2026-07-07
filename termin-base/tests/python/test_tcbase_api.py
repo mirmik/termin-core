@@ -34,3 +34,22 @@ def test_settings_roundtrip_with_groups(tmp_path: Path):
     assert s2.get("ui/theme", None) == "dark"
     assert s2.get("ui/width", None) == 1280
     assert s2.contains("ui/theme")
+
+
+def test_intern_string_diagnostics_api():
+    stats = tcbase.intern_string_get_stats()
+    assert set(stats) == {
+        "entry_count",
+        "bucket_count",
+        "non_empty_bucket_count",
+        "max_bucket_depth",
+        "load_factor",
+    }
+    assert stats["entry_count"] >= 0
+    assert stats["bucket_count"] >= 0
+
+    rows = tcbase.intern_string_get_all_info()
+    assert isinstance(rows, list)
+    if rows:
+        row = rows[0]
+        assert {"string", "bucket", "depth"} <= set(row)

@@ -2,6 +2,7 @@
 #include <nanobind/stl/string.h>
 #include <tcbase/input_enums.hpp>
 #include <tcbase/tc_log.hpp>
+#include <tcbase/tc_string.h>
 #include <tcbase/settings.h>
 #include "trent_helpers.hpp"
 
@@ -131,6 +132,44 @@ static void bind_log(nb::module_& m) {
     }, nb::arg("message"), nb::arg("exc_info"), "Log warning message with optional traceback");
 }
 
+static nb::dict intern_stats_to_dict(tc_intern_string_stats stats) {
+    nb::dict result;
+    result["entry_count"] = stats.entry_count;
+    result["bucket_count"] = stats.bucket_count;
+    result["non_empty_bucket_count"] = stats.non_empty_bucket_count;
+    result["max_bucket_depth"] = stats.max_bucket_depth;
+    result["load_factor"] = stats.bucket_count == 0
+        ? 0.0
+        : static_cast<double>(stats.entry_count) / static_cast<double>(stats.bucket_count);
+    return result;
+}
+
+static void append_intern_string_info(
+    const char* string,
+    size_t bucket_index,
+    size_t depth_in_bucket,
+    void* user_data
+) {
+    nb::list* rows = static_cast<nb::list*>(user_data);
+    nb::dict row;
+    row["string"] = string ? string : "";
+    row["bucket"] = bucket_index;
+    row["depth"] = depth_in_bucket;
+    rows->append(row);
+}
+
+static void bind_intern_strings(nb::module_& m) {
+    m.def("intern_string_get_stats", []() {
+        return intern_stats_to_dict(tc_intern_string_get_stats());
+    }, "Return process-wide intern string table stats");
+
+    m.def("intern_string_get_all_info", []() {
+        nb::list rows;
+        tc_intern_string_foreach(append_intern_string_info, &rows);
+        return rows;
+    }, "Return all interned strings with their bucket position");
+}
+
 NB_MODULE(_tcbase_native, m) {
     m.doc() = "Base types shared between termin libraries";
 
@@ -156,6 +195,7 @@ NB_MODULE(_tcbase_native, m) {
     // Logging submodule
     auto log_module = m.def_submodule("log", "Logging module");
     bind_log(log_module);
+    bind_intern_strings(m);
 
     // Profiler submodule — hierarchical CPU section timing backed by
     // tc_profiler. Lives here so non-termin hosts (tcgui standalone

@@ -149,3 +149,42 @@ void tc_intern_cleanup(void) {
     g_intern_bucket_count = 0;
     g_intern_entry_count = 0;
 }
+
+tc_intern_string_stats tc_intern_string_get_stats(void) {
+    tc_intern_string_stats stats = {0};
+    stats.entry_count = g_intern_entry_count;
+    stats.bucket_count = g_intern_bucket_count;
+
+    if (!g_intern_buckets) {
+        return stats;
+    }
+
+    for (size_t i = 0; i < g_intern_bucket_count; ++i) {
+        size_t depth = 0;
+        for (tc_intern_entry* entry = g_intern_buckets[i]; entry; entry = entry->next) {
+            ++depth;
+        }
+        if (depth > 0) {
+            ++stats.non_empty_bucket_count;
+        }
+        if (depth > stats.max_bucket_depth) {
+            stats.max_bucket_depth = depth;
+        }
+    }
+
+    return stats;
+}
+
+void tc_intern_string_foreach(tc_intern_string_foreach_fn callback, void* user_data) {
+    if (!callback || !g_intern_buckets) {
+        return;
+    }
+
+    for (size_t bucket = 0; bucket < g_intern_bucket_count; ++bucket) {
+        size_t depth = 0;
+        for (tc_intern_entry* entry = g_intern_buckets[bucket]; entry; entry = entry->next) {
+            callback(entry->str, bucket, depth, user_data);
+            ++depth;
+        }
+    }
+}
