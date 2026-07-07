@@ -60,12 +60,14 @@ inline Vec3 py_to_vec3(nb::object obj) {
 
 // Forward declarations for binding functions
 void bind_vec2(nb::module_& m);
+void bind_pose2(nb::module_& m);
 void bind_vec3(nb::module_& m);
 void bind_vec4(nb::module_& m);
 void bind_quat(nb::module_& m);
 void bind_mat44(nb::module_& m);
 void bind_pose3(nb::module_& m);
 void bind_general_pose3(nb::module_& m);
+void bind_screw2(nb::module_& m);
 void bind_screw3(nb::module_& m);
 void bind_ray3(nb::module_& m);
 void bind_aabb(nb::module_& m);

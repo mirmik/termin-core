@@ -42,7 +42,7 @@ setup(
             "lib/cmake/termin_base/*.cmake",
         ],
     },
-    install_requires=["termin-nanobind", "numpy"],
+    install_requires=["termin-nanobind"],
     ext_modules=native_extensions_for_source(_DIR),
     cmdclass={"build": TerminCMakeBuild, "build_ext": BuildExt},
     zip_safe=False,

@@ -22,16 +22,17 @@ from ._geom_native import (
     Mat44,
     Mat44f,
     Pose3,
+    Pose2,
     GeneralPose3,
+    Screw2,
     Screw3,
     Ray3,
     AABB,
     OrbitCamera,
 )
 
-from .pose2 import Pose2
 from .quaternion import deg2rad, qinv, qmul, qmul_vector, qrot, qslerp
-from .screw import Screw, Screw2
+from .screw import Screw
 from .transform_aabb import TransformAABB
 
 __all__ = [

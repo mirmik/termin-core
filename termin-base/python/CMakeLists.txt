@@ -11,12 +11,14 @@ target_link_libraries(_tcbase_native PRIVATE termin_base)
 nanobind_add_module(_geom_native NB_SHARED
     bindings/geom/geom_module.cpp
     bindings/geom/vec2.cpp
+    bindings/geom/pose2.cpp
     bindings/geom/vec3.cpp
     bindings/geom/vec4.cpp
     bindings/geom/quat.cpp
     bindings/geom/mat44.cpp
     bindings/geom/pose3.cpp
     bindings/geom/general_pose3.cpp
+    bindings/geom/screw2.cpp
     bindings/geom/screw3.cpp
     bindings/geom/ray3.cpp
     bindings/geom/aabb.cpp

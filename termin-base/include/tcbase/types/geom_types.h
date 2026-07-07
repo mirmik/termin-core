@@ -15,6 +15,50 @@ struct Mat44;
 
 #ifdef __cplusplus
 
+struct tc_vec2 {
+    double x = 0.0;
+    double y = 0.0;
+
+    constexpr tc_vec2() noexcept = default;
+    constexpr tc_vec2(double x, double y) noexcept : x(x), y(y) {}
+
+    double& operator[](int i) { return (&x)[i]; }
+    double operator[](int i) const { return (&x)[i]; }
+
+    tc_vec2 operator+(const tc_vec2& v) const { return {x + v.x, y + v.y}; }
+    tc_vec2 operator-(const tc_vec2& v) const { return {x - v.x, y - v.y}; }
+    tc_vec2 operator*(double s) const { return {x * s, y * s}; }
+    tc_vec2 operator/(double s) const { return {x / s, y / s}; }
+    tc_vec2 operator-() const { return {-x, -y}; }
+
+    tc_vec2& operator+=(const tc_vec2& v) { x += v.x; y += v.y; return *this; }
+    tc_vec2& operator-=(const tc_vec2& v) { x -= v.x; y -= v.y; return *this; }
+    tc_vec2& operator*=(double s) { x *= s; y *= s; return *this; }
+    tc_vec2& operator/=(double s) { x /= s; y /= s; return *this; }
+
+    bool operator==(const tc_vec2& v) const { return x == v.x && y == v.y; }
+    bool operator!=(const tc_vec2& v) const { return !(*this == v); }
+
+    double dot(const tc_vec2& v) const { return x * v.x + y * v.y; }
+    double cross(const tc_vec2& v) const { return x * v.y - y * v.x; }
+
+    double norm() const { return std::sqrt(x * x + y * y); }
+    double norm_squared() const { return x * x + y * y; }
+
+    tc_vec2 normalized() const {
+        double n = norm();
+        return n > 1e-10 ? *this / n : tc_vec2{1.0, 0.0};
+    }
+
+    static tc_vec2 zero() { return {0.0, 0.0}; }
+    static tc_vec2 unit_x() { return {1.0, 0.0}; }
+    static tc_vec2 unit_y() { return {0.0, 1.0}; }
+};
+
+extern "C++" {
+inline tc_vec2 operator*(double s, const tc_vec2& v) { return v * s; }
+}
+
 struct tc_vec3 {
     double x = 0.0;
     double y = 0.0;
@@ -321,6 +365,38 @@ struct tc_quatf {
     float w;
 };
 
+struct tc_pose2 {
+    double ang = 0.0;
+    tc_vec2 lin;
+
+    constexpr tc_pose2() noexcept = default;
+    constexpr tc_pose2(double ang, const tc_vec2& lin) noexcept : ang(ang), lin(lin) {}
+
+    static tc_pose2 identity();
+
+    tc_pose2 operator*(const tc_pose2& other) const;
+    tc_pose2 inverse() const;
+
+    tc_vec2 transform_point(const tc_vec2& p) const;
+    tc_vec2 transform_vector(const tc_vec2& v) const;
+    tc_vec2 rotate_vector(const tc_vec2& v) const;
+    tc_vec2 inverse_transform_point(const tc_vec2& p) const;
+    tc_vec2 inverse_rotate_vector(const tc_vec2& v) const;
+    tc_vec2 inverse_transform_vector(const tc_vec2& v) const;
+
+    tc_pose2 copy() const;
+    void normalize_angle();
+
+    static tc_pose2 rotation(double angle);
+    static tc_pose2 translation(double x, double y);
+    static tc_pose2 move(double dx, double dy);
+    static tc_pose2 move_x(double distance);
+    static tc_pose2 move_y(double distance);
+    static tc_pose2 right(double distance);
+    static tc_pose2 forward(double distance);
+    static tc_pose2 lerp(const tc_pose2& a, const tc_pose2& b, double t);
+};
+
 struct tc_pose3 {
     tc_quat ang;
     tc_vec3 lin;
@@ -507,6 +583,50 @@ extern "C++" {
 inline tc_screw3 operator*(double k, const tc_screw3& s) { return s * k; }
 }
 
+struct tc_screw2 {
+    double ang = 0.0;
+    tc_vec2 lin;
+
+    constexpr tc_screw2() noexcept = default;
+    constexpr tc_screw2(double ang, const tc_vec2& lin) noexcept : ang(ang), lin(lin) {}
+
+    static tc_screw2 zero();
+
+    tc_screw2 operator+(const tc_screw2& s) const;
+    tc_screw2 operator-(const tc_screw2& s) const;
+    tc_screw2 operator*(double k) const;
+    tc_screw2 operator/(double k) const;
+    tc_screw2 operator-() const;
+
+    tc_screw2& operator+=(const tc_screw2& s);
+    tc_screw2& operator-=(const tc_screw2& s);
+    tc_screw2& operator*=(double k);
+    tc_screw2& operator/=(double k);
+
+    double moment() const;
+    tc_vec2 vector() const;
+    tc_screw2 kinematic_carry(const tc_vec2& arm) const;
+    tc_screw2 force_carry(const tc_vec2& arm) const;
+    tc_screw2 twist_carry(const tc_vec2& arm) const;
+    tc_screw2 wrench_carry(const tc_vec2& arm) const;
+    tc_screw2 transform_by(const tc_pose2& pose) const;
+    tc_screw2 rotated_by(const tc_pose2& pose) const;
+    tc_screw2 inverse_transform_by(const tc_pose2& pose) const;
+    tc_screw2 transform_as_twist_by(const tc_pose2& pose) const;
+    tc_screw2 inverse_transform_as_twist_by(const tc_pose2& pose) const;
+    tc_screw2 transform_as_wrench_by(const tc_pose2& pose) const;
+    tc_screw2 inverse_transform_as_wrench_by(const tc_pose2& pose) const;
+    tc_pose2 to_pose() const;
+    tc_screw2 copy() const;
+
+    static tc_screw2 from_vector_vw_order(const double* data);
+    static tc_screw2 from_vector_wv_order(const double* data);
+};
+
+extern "C++" {
+inline tc_screw2 operator*(double k, const tc_screw2& s) { return s * k; }
+}
+
 struct tc_aabb {
     tc_vec3 min_point;
     tc_vec3 max_point;
@@ -538,6 +658,10 @@ struct tc_mat44 {
 
 #else
 
+typedef struct tc_vec2 {
+    double x, y;
+} tc_vec2;
+
 typedef struct tc_vec3 {
     double x, y, z;
 } tc_vec3;
@@ -559,6 +683,11 @@ typedef struct tc_quatf {
     float x, y, z, w;
 } tc_quatf;
 
+typedef struct tc_pose2 {
+    double ang;
+    tc_vec2 lin;
+} tc_pose2;
+
 typedef struct tc_pose3 {
     tc_quat ang;
     tc_vec3 lin;
@@ -574,6 +703,11 @@ typedef struct tc_screw3 {
     tc_vec3 ang;
     tc_vec3 lin;
 } tc_screw3;
+
+typedef struct tc_screw2 {
+    double ang;
+    tc_vec2 lin;
+} tc_screw2;
 
 typedef struct tc_aabb {
     tc_vec3 min_point;

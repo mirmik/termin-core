@@ -1,59 +1,13 @@
 #pragma once
 
+#include <tcbase/tc_types.h>
 #include <cmath>
+#include <cstddef>
+#include <type_traits>
 
 namespace termin {
 
-
-// ============================================================================
-// Vec2 (double)
-// ============================================================================
-
-struct Vec2 {
-    double x, y;
-
-    Vec2() : x(0), y(0) {}
-    Vec2(double x, double y) : x(x), y(y) {}
-
-    double& operator[](int i) { return (&x)[i]; }
-    double operator[](int i) const { return (&x)[i]; }
-
-    Vec2 operator+(const Vec2& v) const { return {x + v.x, y + v.y}; }
-    Vec2 operator-(const Vec2& v) const { return {x - v.x, y - v.y}; }
-    Vec2 operator*(double s) const { return {x * s, y * s}; }
-    Vec2 operator/(double s) const { return {x / s, y / s}; }
-    Vec2 operator-() const { return {-x, -y}; }
-
-    Vec2& operator+=(const Vec2& v) { x += v.x; y += v.y; return *this; }
-    Vec2& operator-=(const Vec2& v) { x -= v.x; y -= v.y; return *this; }
-    Vec2& operator*=(double s) { x *= s; y *= s; return *this; }
-    Vec2& operator/=(double s) { x /= s; y /= s; return *this; }
-
-    bool operator==(const Vec2& v) const { return x == v.x && y == v.y; }
-    bool operator!=(const Vec2& v) const { return !(*this == v); }
-
-    double dot(const Vec2& v) const { return x * v.x + y * v.y; }
-    double cross(const Vec2& v) const { return x * v.y - y * v.x; }
-
-    double norm() const { return std::sqrt(x * x + y * y); }
-    double norm_squared() const { return x * x + y * y; }
-
-    Vec2 normalized() const {
-        double n = norm();
-        return n > 1e-10 ? *this / n : Vec2{1, 0};
-    }
-
-    static Vec2 zero() { return {0, 0}; }
-    static Vec2 unit_x() { return {1, 0}; }
-    static Vec2 unit_y() { return {0, 1}; }
-};
-
-inline Vec2 operator*(double s, const Vec2& v) { return v * s; }
-
-
-// ============================================================================
-// Vec2f (float)
-// ============================================================================
+using Vec2 = ::tc_vec2;
 
 struct Vec2f {
     float x, y;
@@ -99,11 +53,6 @@ struct Vec2f {
 
 inline Vec2f operator*(float s, const Vec2f& v) { return v * s; }
 
-
-// ============================================================================
-// Vec2i (int)
-// ============================================================================
-
 struct Vec2i {
     int x, y;
 
@@ -140,5 +89,12 @@ struct Vec2i {
 
 inline Vec2i operator*(int s, const Vec2i& v) { return v * s; }
 
+static_assert(std::is_same<Vec2, ::tc_vec2>::value, "termin::Vec2 must alias tc_vec2");
+static_assert(std::is_standard_layout<Vec2>::value, "Vec2 must stay ABI-friendly");
+static_assert(std::is_trivially_copyable<Vec2>::value, "Vec2 must stay trivially copyable");
+static_assert(sizeof(Vec2) == sizeof(double) * 2, "Vec2 must stay a packed xy tuple");
+static_assert(alignof(Vec2) == alignof(double), "Vec2 alignment must match double");
+static_assert(offsetof(Vec2, x) == 0, "Vec2.x offset changed");
+static_assert(offsetof(Vec2, y) == sizeof(double), "Vec2.y offset changed");
 
 } // namespace termin
