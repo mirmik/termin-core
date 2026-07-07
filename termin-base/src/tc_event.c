@@ -1,5 +1,5 @@
 #include <tcbase/tc_event.h>
-#include <tcbase/tgfx_intern_string.h>
+#include <tcbase/tc_string.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -65,7 +65,7 @@ tc_event_subscription tc_event_bus_subscribe(
 
     tc_event_subscription_record* record = &bus->records[bus->count++];
     record->id = id;
-    record->type = tgfx_intern_string(type);
+    record->type = tc_intern_string(type);
     record->handler = handler;
     record->user_data = user_data;
     record->active = true;
@@ -92,7 +92,7 @@ bool tc_event_bus_unsubscribe(tc_event_bus* bus, tc_event_subscription subscript
 void tc_event_bus_publish(tc_event_bus* bus, const tc_event* event) {
     if (!bus || !event || !event->type) return;
 
-    tc_event_type type = tgfx_intern_string(event->type);
+    tc_event_type type = tc_intern_string(event->type);
     for (size_t i = 0; i < bus->count; ++i) {
         tc_event_subscription_record* record = &bus->records[i];
         if (!record->active || !record->handler || record->type != type) {

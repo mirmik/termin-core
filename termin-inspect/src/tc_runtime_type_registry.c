@@ -2,7 +2,7 @@
 
 #include <tcbase/tc_log.h>
 #include <tcbase/tc_resource_map.h>
-#include <tcbase/tgfx_intern_string.h>
+#include <tcbase/tc_string.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -106,7 +106,7 @@ static tc_runtime_type_record* ensure_record(const char* type_name) {
         return NULL;
     }
 
-    record->name = tgfx_intern_string(type_name);
+    record->name = tc_intern_string(type_name);
     record->owner = g_runtime_type_registry.current_owner;
     record->parent = NULL;
     record->generation = 1;
@@ -205,7 +205,7 @@ static bool prepare_record_unload(tc_runtime_type_record* record, void* context)
 
 void tc_runtime_type_registry_set_registration_owner(const char* owner) {
     g_runtime_type_registry.current_owner =
-        (owner && owner[0]) ? tgfx_intern_string(owner) : NULL;
+        (owner && owner[0]) ? tc_intern_string(owner) : NULL;
 }
 
 const char* tc_runtime_type_registry_get_registration_owner(void) {
@@ -296,7 +296,7 @@ size_t tc_runtime_type_registry_unregister_owner_with_context(
     }
 
     unregister_owner_ctx ctx = {
-        tgfx_intern_string(owner),
+        tc_intern_string(owner),
         NULL,
         0,
         0
@@ -336,7 +336,7 @@ bool tc_runtime_type_registry_set_owner(
         return false;
     }
 
-    const char* interned_owner = tgfx_intern_string(owner);
+    const char* interned_owner = tc_intern_string(owner);
     if (!record->owner) {
         if (!allow_existing_unowned) {
             return false;
@@ -376,7 +376,7 @@ bool tc_runtime_type_registry_set_parent(const char* type_name, const char* pare
     }
 
     const char* parent = (parent_name && parent_name[0])
-        ? tgfx_intern_string(parent_name)
+        ? tc_intern_string(parent_name)
         : NULL;
     if (record->parent == parent ||
         (record->parent && parent && strcmp(record->parent, parent) == 0)) {
