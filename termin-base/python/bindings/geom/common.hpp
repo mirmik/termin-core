@@ -79,6 +79,7 @@ void bind_vec2(nb::module_& m);
 void bind_pose2(nb::module_& m);
 void bind_vec3(nb::module_& m);
 void bind_vec4(nb::module_& m);
+void bind_bounds2(nb::module_& m);
 void bind_quat(nb::module_& m);
 void bind_mat44(nb::module_& m);
 void bind_pose3(nb::module_& m);

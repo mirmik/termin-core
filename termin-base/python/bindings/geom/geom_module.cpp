@@ -10,6 +10,7 @@ NB_MODULE(_geom_native, m) {
     bind_pose2(m);
     bind_vec3(m);
     bind_vec4(m);
+    bind_bounds2(m);
     bind_quat(m);
     bind_mat44(m);
     bind_pose3(m);
