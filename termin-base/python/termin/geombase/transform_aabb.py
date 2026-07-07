@@ -1,6 +1,4 @@
 """TransformAABB - AABB associated with a Transform."""
-
-import numpy
 from weakref import WeakKeyDictionary
 from ._geom_native import AABB
 
@@ -43,10 +41,7 @@ class TransformAABB:
         inspected_version = self._transform._version_for_walking_to_proximal
         if self._last_inspected_version == inspected_version:
             return self._my_world_aabb
-        matrix = self._transform.global_pose().as_matrix()[:3, :]  # 3x4 from 4x4
-        corners = self._my_aabb.get_corners_homogeneous()
-        transformed_corners = numpy.dot(matrix, corners.T).T
-        new_aabb = AABB.from_points(transformed_corners)
+        new_aabb = self._my_aabb.transformed_by(self._transform.global_pose())
         self._my_world_aabb = new_aabb
         self._last_inspected_version = inspected_version
         return new_aabb

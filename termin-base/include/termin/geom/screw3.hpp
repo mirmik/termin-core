@@ -1,157 +1,144 @@
 #pragma once
 
-#include "vec3.hpp"
 #include "pose3.hpp"
-#include <cmath>
+#include "vec3.hpp"
+#include <cstddef>
+#include <type_traits>
+
+inline tc_screw3 tc_screw3::zero() {
+    return {};
+}
+
+inline tc_screw3 tc_screw3::operator+(const tc_screw3& s) const {
+    return {ang + s.ang, lin + s.lin};
+}
+
+inline tc_screw3 tc_screw3::operator-(const tc_screw3& s) const {
+    return {ang - s.ang, lin - s.lin};
+}
+
+inline tc_screw3 tc_screw3::operator*(double k) const {
+    return {ang * k, lin * k};
+}
+
+inline tc_screw3 tc_screw3::operator-() const {
+    return {-ang, -lin};
+}
+
+inline tc_screw3& tc_screw3::operator+=(const tc_screw3& s) {
+    ang += s.ang;
+    lin += s.lin;
+    return *this;
+}
+
+inline tc_screw3& tc_screw3::operator-=(const tc_screw3& s) {
+    ang -= s.ang;
+    lin -= s.lin;
+    return *this;
+}
+
+inline tc_screw3& tc_screw3::operator*=(double k) {
+    ang *= k;
+    lin *= k;
+    return *this;
+}
+
+inline tc_screw3 tc_screw3::scaled(double k) const {
+    return {ang * k, lin * k};
+}
+
+inline double tc_screw3::dot(const tc_screw3& s) const {
+    return ang.dot(s.ang) + lin.dot(s.lin);
+}
+
+inline tc_screw3 tc_screw3::cross_motion(const tc_screw3& s) const {
+    return {
+        ang.cross(s.ang),
+        ang.cross(s.lin) + lin.cross(s.ang)
+    };
+}
+
+inline tc_screw3 tc_screw3::cross_force(const tc_screw3& s) const {
+    return {
+        ang.cross(s.ang) + lin.cross(s.lin),
+        ang.cross(s.lin)
+    };
+}
+
+inline tc_screw3 tc_screw3::transform_by(const tc_pose3& pose) const {
+    return {
+        pose.transform_vector(ang),
+        pose.transform_vector(lin)
+    };
+}
+
+inline tc_screw3 tc_screw3::inverse_transform_by(const tc_pose3& pose) const {
+    return {
+        pose.inverse_transform_vector(ang),
+        pose.inverse_transform_vector(lin)
+    };
+}
+
+inline tc_screw3 tc_screw3::adjoint(const tc_pose3& pose) const {
+    tc_vec3 ang_world = pose.transform_vector(ang);
+    tc_vec3 lin_world = pose.transform_vector(lin) + pose.lin.cross(ang_world);
+    return {ang_world, lin_world};
+}
+
+inline tc_screw3 tc_screw3::adjoint(const tc_vec3& arm) const {
+    return {ang, lin + ang.cross(arm)};
+}
+
+inline tc_screw3 tc_screw3::adjoint_inv(const tc_pose3& pose) const {
+    tc_vec3 ang_body = pose.inverse_transform_vector(ang);
+    tc_vec3 lin_body = pose.inverse_transform_vector(lin - pose.lin.cross(ang));
+    return {ang_body, lin_body};
+}
+
+inline tc_screw3 tc_screw3::adjoint_inv(const tc_vec3& arm) const {
+    return {ang, lin - ang.cross(arm)};
+}
+
+inline tc_screw3 tc_screw3::coadjoint(const tc_pose3& pose) const {
+    tc_vec3 lin_world = pose.transform_vector(lin);
+    tc_vec3 ang_world = pose.transform_vector(ang) + pose.lin.cross(lin_world);
+    return {ang_world, lin_world};
+}
+
+inline tc_screw3 tc_screw3::coadjoint(const tc_vec3& arm) const {
+    return {ang - arm.cross(lin), lin};
+}
+
+inline tc_screw3 tc_screw3::coadjoint_inv(const tc_pose3& pose) const {
+    tc_vec3 lin_body = pose.inverse_transform_vector(lin);
+    tc_vec3 ang_body = pose.inverse_transform_vector(ang - pose.lin.cross(lin));
+    return {ang_body, lin_body};
+}
+
+inline tc_screw3 tc_screw3::coadjoint_inv(const tc_vec3& arm) const {
+    return {ang + arm.cross(lin), lin};
+}
+
+inline tc_pose3 tc_screw3::to_pose() const {
+    double theta = ang.norm();
+    if (theta < 1e-8) {
+        return {tc_quat::identity(), lin};
+    }
+
+    tc_vec3 axis = ang / theta;
+    return {tc_quat::from_axis_angle(axis, theta), lin};
+}
 
 namespace termin {
 
+using Screw3 = ::tc_screw3;
 
-struct Screw3 {
-    Vec3 ang;  // Angular part (omega)
-    Vec3 lin;  // Linear part (v)
-
-    Screw3() : ang(Vec3::zero()), lin(Vec3::zero()) {}
-    Screw3(const Vec3& ang, const Vec3& lin) : ang(ang), lin(lin) {}
-
-    static Screw3 zero() { return {}; }
-
-    // Arithmetic
-    Screw3 operator+(const Screw3& s) const { return {ang + s.ang, lin + s.lin}; }
-    Screw3 operator-(const Screw3& s) const { return {ang - s.ang, lin - s.lin}; }
-    Screw3 operator*(double k) const { return {ang * k, lin * k}; }
-    Screw3 operator-() const { return {-ang, -lin}; }
-
-    Screw3& operator+=(const Screw3& s) { ang += s.ang; lin += s.lin; return *this; }
-    Screw3& operator-=(const Screw3& s) { ang -= s.ang; lin -= s.lin; return *this; }
-    Screw3& operator*=(double k) { ang *= k; lin *= k; return *this; }
-
-    // Scale (for v_body * dt)
-    Screw3 scaled(double k) const { return {ang * k, lin * k}; }
-
-    // Dot product (for power: wrench · twist)
-    double dot(const Screw3& s) const {
-        return ang.dot(s.ang) + lin.dot(s.lin);
-    }
-
-    // Spatial cross product for motion vectors (twist × twist)
-    // [ω₁ × ω₂, ω₁ × v₂ + v₁ × ω₂]
-    Screw3 cross_motion(const Screw3& s) const {
-        return {
-            ang.cross(s.ang),
-            ang.cross(s.lin) + lin.cross(s.ang)
-        };
-    }
-
-    // Spatial cross product for force vectors (twist ×* wrench)
-    // [ω × τ + v × f, ω × f]
-    Screw3 cross_force(const Screw3& s) const {
-        return {
-            ang.cross(s.ang) + lin.cross(s.lin),
-            ang.cross(s.lin)
-        };
-    }
-
-    // Transform by pose (rotate both parts)
-    Screw3 transform_by(const Pose3& pose) const {
-        return {
-            pose.transform_vector(ang),
-            pose.transform_vector(lin)
-        };
-    }
-
-    // Inverse transform by pose
-    Screw3 inverse_transform_by(const Pose3& pose) const {
-        return {
-            pose.inverse_transform_vector(ang),
-            pose.inverse_transform_vector(lin)
-        };
-    }
-
-    // Adjoint transform (body -> world) for spatial velocity
-    // ω_world = R * ω_body
-    // v_world = R * v_body + p × ω_world
-    Screw3 adjoint(const Pose3& pose) const {
-        Vec3 ang_world = pose.transform_vector(ang);
-        Vec3 lin_world = pose.transform_vector(lin) + pose.lin.cross(ang_world);
-        return {ang_world, lin_world};
-    }
-
-    // Adjoint transform by translation only (kinematic_carry)
-    // ω_out = ω
-    // v_out = v + ω × arm
-    Screw3 adjoint(const Vec3& arm) const {
-        return {ang, lin + ang.cross(arm)};
-    }
-
-    // Inverse adjoint (world -> body) for spatial velocity
-    // ω_body = R^T * ω_world
-    // v_body = R^T * (v_world - p × ω_world)
-    Screw3 adjoint_inv(const Pose3& pose) const {
-        Vec3 ang_body = pose.inverse_transform_vector(ang);
-        Vec3 lin_body = pose.inverse_transform_vector(lin - pose.lin.cross(ang));
-        return {ang_body, lin_body};
-    }
-
-    // Inverse adjoint by translation only
-    // ω_out = ω
-    // v_out = v - ω × arm
-    Screw3 adjoint_inv(const Vec3& arm) const {
-        return {ang, lin - ang.cross(arm)};
-    }
-
-    // Coadjoint transform (body -> world) for wrench (force vectors)
-    // f_world = R * f_body
-    // τ_world = R * τ_body + p × f_world
-    Screw3 coadjoint(const Pose3& pose) const {
-        Vec3 lin_world = pose.transform_vector(lin);
-        Vec3 ang_world = pose.transform_vector(ang) + pose.lin.cross(lin_world);
-        return {ang_world, lin_world};
-    }
-
-    // Coadjoint by translation only (force_carry)
-    // f_out = f
-    // τ_out = τ + arm × f
-    Screw3 coadjoint(const Vec3& arm) const {
-        return {ang + arm.cross(lin), lin};
-    }
-
-    // Inverse coadjoint (world -> body) for wrench
-    // f_body = R^T * f_world
-    // τ_body = R^T * (τ_world - p × f_world)
-    Screw3 coadjoint_inv(const Pose3& pose) const {
-        Vec3 lin_body = pose.inverse_transform_vector(lin);
-        Vec3 ang_body = pose.inverse_transform_vector(ang - pose.lin.cross(lin));
-        return {ang_body, lin_body};
-    }
-
-    // Inverse coadjoint by translation only
-    // f_out = f
-    // τ_out = τ - arm × f
-    Screw3 coadjoint_inv(const Vec3& arm) const {
-        return {ang - arm.cross(lin), lin};
-    }
-
-    // Convert to Pose3 (exponential map for small motions)
-    Pose3 to_pose() const {
-        double theta = ang.norm();
-        if (theta < 1e-8) {
-            return {Quat::identity(), lin};
-        }
-
-        Vec3 axis = ang / theta;
-        double half = theta * 0.5;
-        Quat q = {
-            axis.x * std::sin(half),
-            axis.y * std::sin(half),
-            axis.z * std::sin(half),
-            std::cos(half)
-        };
-        return {q, lin};
-    }
-};
-
-inline Screw3 operator*(double k, const Screw3& s) { return s * k; }
-
+static_assert(std::is_same<Screw3, ::tc_screw3>::value, "termin::Screw3 must alias tc_screw3");
+static_assert(std::is_standard_layout<Screw3>::value, "Screw3 must stay ABI-friendly");
+static_assert(std::is_trivially_copyable<Screw3>::value, "Screw3 must stay trivially copyable");
+static_assert(sizeof(Screw3) == sizeof(Vec3) * 2, "Screw3 must stay two Vec3 values");
+static_assert(alignof(Screw3) == alignof(Vec3), "Screw3 alignment must match Vec3");
+static_assert(offsetof(Screw3, ang) == 0, "Screw3.ang offset changed");
+static_assert(offsetof(Screw3, lin) == sizeof(Vec3), "Screw3.lin offset changed");
 
 } // namespace termin
