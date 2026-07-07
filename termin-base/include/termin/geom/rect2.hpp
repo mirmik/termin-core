@@ -1,28 +1,16 @@
 #pragma once
 
-#include "size2.hpp"
-
 namespace termin {
 
-// 2D rectangle with integer min/max coordinates.
+// 2D rectangle with integer origin and extent.
 struct Rect2i {
-    int x0 = 0;
-    int y0 = 0;
-    int x1 = 0;
-    int y1 = 0;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
 
     Rect2i() = default;
-    Rect2i(int x0, int y0, int x1, int y1) : x0(x0), y0(y0), x1(x1), y1(y1) {}
-
-    int width() const { return x1 - x0; }
-    int height() const { return y1 - y0; }
-
-    static Rect2i from_size(int width, int height) {
-        return {0, 0, width, height};
-    }
-    static Rect2i from_size(Size2i size) {
-        return {0, 0, size.width, size.height};
-    }
+    Rect2i(int x, int y, int width, int height) : x(x), y(y), width(width), height(height) {}
 };
 
 } // namespace termin

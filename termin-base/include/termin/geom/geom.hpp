@@ -7,6 +7,7 @@
 #include "vec4.hpp"
 #include "color.hpp"
 #include "size2.hpp"
+#include "bounds2.hpp"
 #include "rect2.hpp"
 #include "quat.hpp"
 #include "mat33.hpp"
