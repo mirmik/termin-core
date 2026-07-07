@@ -1,36 +1,21 @@
 #pragma once
 
 #include "vec3.hpp"
-#include <cmath>
+#include <cstddef>
+#include <type_traits>
 
 namespace termin {
 
 
-/**
- * Луч в 3D пространстве.
- * origin — начало луча
- * direction — нормализованное направление
- */
-struct Ray3 {
-    Vec3 origin;
-    Vec3 direction;  // всегда нормализовано
+using Ray3 = ::tc_ray3;
 
-    Ray3() : origin(0, 0, 0), direction(0, 0, 1) {}
-
-    Ray3(const Vec3& origin, const Vec3& dir)
-        : origin(origin)
-    {
-        double n = dir.norm();
-        direction = (n > 1e-10) ? dir / n : Vec3(0, 0, 1);
-    }
-
-    /**
-     * Точка на луче при параметре t: P(t) = origin + direction * t
-     */
-    Vec3 point_at(double t) const {
-        return origin + direction * t;
-    }
-};
+static_assert(std::is_same<Ray3, ::tc_ray3>::value, "termin::Ray3 must alias tc_ray3");
+static_assert(std::is_standard_layout<Ray3>::value, "Ray3 must stay ABI-friendly");
+static_assert(std::is_trivially_copyable<Ray3>::value, "Ray3 must stay trivially copyable");
+static_assert(sizeof(Ray3) == sizeof(Vec3) * 2, "Ray3 must stay a packed origin/direction pair");
+static_assert(alignof(Ray3) == alignof(Vec3), "Ray3 alignment must match Vec3");
+static_assert(offsetof(Ray3, origin) == 0, "Ray3.origin offset changed");
+static_assert(offsetof(Ray3, direction) == sizeof(Vec3), "Ray3.direction offset changed");
 
 
 } // namespace termin

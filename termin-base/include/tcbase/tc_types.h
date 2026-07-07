@@ -104,6 +104,25 @@ extern "C++" {
 inline tc_vec3 operator*(double s, const tc_vec3& v) { return v * s; }
 }
 
+struct tc_ray3 {
+    tc_vec3 origin;
+    tc_vec3 direction;
+
+    constexpr tc_ray3() noexcept
+        : origin(0.0, 0.0, 0.0)
+        , direction(0.0, 0.0, 1.0) {}
+
+    tc_ray3(const tc_vec3& origin, const tc_vec3& dir)
+        : origin(origin) {
+        double n = dir.norm();
+        direction = (n > 1e-10) ? dir / n : tc_vec3{0.0, 0.0, 1.0};
+    }
+
+    tc_vec3 point_at(double t) const {
+        return origin + direction * t;
+    }
+};
+
 struct tc_quat {
     double x = 0.0;
     double y = 0.0;
@@ -487,6 +506,11 @@ struct tc_pipeline;
 typedef struct tc_vec3 {
     double x, y, z;
 } tc_vec3;
+
+typedef struct tc_ray3 {
+    tc_vec3 origin;
+    tc_vec3 direction;
+} tc_ray3;
 
 typedef struct tc_quat {
     double x, y, z, w;

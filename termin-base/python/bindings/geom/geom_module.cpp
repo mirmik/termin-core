@@ -14,6 +14,7 @@ NB_MODULE(_geom_native, m) {
     bind_pose3(m);
     bind_general_pose3(m);
     bind_screw3(m);
+    bind_ray3(m);
     bind_aabb(m);
     bind_orbit_camera(m);
 }
