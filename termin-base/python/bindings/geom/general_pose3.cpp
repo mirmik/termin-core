@@ -66,7 +66,6 @@ void bind_general_pose3(nb::module_& m) {
             double data[16];
             double m_arr[16];
             p.matrix4(m_arr);  // Column-major
-            // Column-major to row-major for numpy
             for (int row = 0; row < 4; row++)
                 for (int col = 0; col < 4; col++)
                     data[row * 4 + col] = m_arr[col * 4 + row];
@@ -103,7 +102,6 @@ void bind_general_pose3(nb::module_& m) {
             double data[12];
             double m_arr[12];
             p.matrix34(m_arr);  // Column-major (4 cols x 3 rows)
-            // Column-major to row-major for numpy (3 rows x 4 cols)
             for (int row = 0; row < 3; row++)
                 for (int col = 0; col < 4; col++)
                     data[row * 4 + col] = m_arr[col * 3 + row];
@@ -113,7 +111,6 @@ void bind_general_pose3(nb::module_& m) {
             double data[16];
             double m_arr[16];
             p.inverse_matrix4(m_arr);  // Column-major
-            // Column-major to row-major for numpy
             for (int row = 0; row < 4; row++)
                 for (int col = 0; col < 4; col++)
                     data[row * 4 + col] = m_arr[col * 4 + row];
