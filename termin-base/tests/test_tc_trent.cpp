@@ -1,6 +1,8 @@
 #include <string>
 #include <type_traits>
 
+#include <tcbase/tc_trent_json.hpp>
+#include <tcbase/tc_trent_yaml.hpp>
 #include <tcbase/tc_trent.hpp>
 
 #include "guard_main.h"
@@ -132,6 +134,36 @@ TEST_CASE("tc trent list and dict ranges expose borrowed views") {
     }
     CHECK(saw_numbers);
     CHECK(saw_flag);
+}
+
+TEST_CASE("tc trent json facade parses and dumps tree data") {
+    tc::trent data = tc::json::parse(R"({"name":"root","values":[1,2],"enabled":true})");
+
+    CHECK(data["name"].as_string() == "root");
+    CHECK(data["values"].is_list());
+    CHECK(data["values"][0].as_integer() == 1);
+    CHECK(data["enabled"].as_bool());
+
+    const std::string dumped = tc::json::dump(data);
+    tc::trent reparsed = tc::json::parse(dumped);
+    CHECK(reparsed["name"].as_string() == "root");
+    CHECK(reparsed["values"][1].as_integer() == 2);
+}
+
+TEST_CASE("tc trent yaml facade parses and prints tree data") {
+    tc::trent data = tc::yaml::parse(
+        "name: root\n"
+        "values: [1, 2]\n"
+        "enabled: true\n"
+    );
+
+    CHECK(data["name"].as_string() == "root");
+    CHECK(data["values"][0].as_integer() == 1);
+    CHECK(data["enabled"].as_bool());
+
+    const std::string dumped = tc::yaml::to_string(data);
+    CHECK(dumped.find("name") != std::string::npos);
+    CHECK(dumped.find("root") != std::string::npos);
 }
 
 GUARD_TEST_MAIN();

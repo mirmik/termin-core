@@ -223,6 +223,10 @@ public:
         return at(index);
     }
 
+    trent_view operator[](int index) const noexcept {
+        return index >= 0 ? at(static_cast<std::size_t>(index)) : trent_view();
+    }
+
     trent_view operator[](const char* key) const noexcept {
         return get(key);
     }
@@ -560,6 +564,14 @@ public:
 
     trent_view operator[](std::size_t index) const noexcept {
         return at(index);
+    }
+
+    trent_ref operator[](int index) noexcept {
+        return index >= 0 ? at(static_cast<std::size_t>(index)) : trent_ref();
+    }
+
+    trent_view operator[](int index) const noexcept {
+        return index >= 0 ? at(static_cast<std::size_t>(index)) : trent_view();
     }
 
     void push_back(trent&& value) noexcept;
@@ -938,6 +950,8 @@ public:
     trent_view list_at(std::size_t index) const noexcept { return view().list_at(index); }
     trent_ref operator[](std::size_t index) noexcept { return ref()[index]; }
     trent_view operator[](std::size_t index) const noexcept { return view()[index]; }
+    trent_ref operator[](int index) noexcept { return ref()[index]; }
+    trent_view operator[](int index) const noexcept { return view()[index]; }
 
     void push_back(trent&& value) noexcept { ref().push_back(std::move(value)); }
     void push_back(const trent& value) noexcept { ref().push_back(value); }
