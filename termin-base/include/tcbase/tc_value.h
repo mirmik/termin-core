@@ -69,6 +69,7 @@ TC_API void tc_value_free(tc_value* v);
 TC_API tc_value tc_value_copy(const tc_value* v);
 TC_API bool tc_value_equals(const tc_value* a, const tc_value* b);
 
+// Container setters take ownership of item, including on insertion failure.
 TC_API void tc_value_list_push(tc_value* list, tc_value item);
 TC_API tc_value* tc_value_list_get(tc_value* list, size_t index);
 TC_API size_t tc_value_list_size(const tc_value* list);
