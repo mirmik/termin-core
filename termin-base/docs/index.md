@@ -15,6 +15,7 @@ Python-пакет: `tcbase`.
 - `tc_log` - общий C/C++ logging API.
 - `tc_pool` - handle/generation pool primitive.
 - `tc_resource_map` - generic resource map.
+- `tc_tensor` - ABI-friendly typed strided memory descriptor для bulk buffers.
 - `tc_value` - C tagged-union value type для сериализации и межмодульных данных.
 - `tc_dlist` - intrusive doubly-linked list utility.
 - `Settings` - JSON-backed settings API, доступный из C++/Python.
@@ -29,6 +30,24 @@ Python-пакет: `tcbase`.
 
 C/C++ headers лежат в `include/tcbase/`, `include/tc_profiler.h`,
 `include/termin/geom/` и `include/termin/camera/`.
+
+`tc_tensor` описывает typed memory block/view: dtype, shape, byte strides,
+optional owner/deleter и readonly flag. Это не math tensor library; конкретные
+API должны явно решать, принимают ли strided view или требуют contiguous copy.
+
+```cpp
+#include <tcbase/tc_tensor.h>
+
+size_t shape[2] = {vertex_count, 3};
+tc_tensor positions = tc_tensor_empty();
+
+if (tc_tensor_init_owned(&positions, TC_DTYPE_F32, 2, shape, 0)) {
+    float* data = (float*)positions.data;
+    data[0] = 1.0f;
+}
+
+tc_tensor_free(&positions);
+```
 
 Python API экспортируется из `tcbase`:
 

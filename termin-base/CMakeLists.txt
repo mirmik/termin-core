@@ -12,6 +12,7 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 add_library(termin_base SHARED
     src/tc_log.c
     src/tc_profiler.c
+    src/tc_tensor.c
     src/tc_value.c
     src/tc_pool.c
     src/tc_event.c
@@ -72,6 +73,14 @@ if(TERMIN_BASE_BUILD_TESTS)
     )
     target_link_libraries(termin_base_string_test PRIVATE termin_base)
     add_test(NAME termin_base_string_test COMMAND termin_base_string_test)
+
+    add_executable(termin_base_tensor_test tests/test_tc_tensor.c)
+    set_target_properties(termin_base_tensor_test PROPERTIES LINKER_LANGUAGE CXX)
+    target_include_directories(termin_base_tensor_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
+    target_link_libraries(termin_base_tensor_test PRIVATE termin_base)
+    add_test(NAME termin_base_tensor_test COMMAND termin_base_tensor_test)
 
     add_executable(termin_base_orbit_camera_test tests/test_orbit_camera.cpp)
     target_include_directories(termin_base_orbit_camera_test PRIVATE
