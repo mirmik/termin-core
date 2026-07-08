@@ -1,5 +1,7 @@
 #include <tcbase/tc_value.h>
 
+#include <tcbase/tc_log.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,31 +11,41 @@
 #define tc_strdup strdup
 #endif
 
-static void list_ensure_capacity(tc_value_list* list, size_t needed) {
-    if (!list || list->capacity >= needed) return;
+static bool list_ensure_capacity(tc_value_list* list, size_t needed) {
+    if (!list) return false;
+    if (list->capacity >= needed) return true;
 
     size_t new_cap = list->capacity == 0 ? 4 : list->capacity * 2;
     while (new_cap < needed) new_cap *= 2;
 
     tc_value* new_items = (tc_value*)realloc(list->items, new_cap * sizeof(tc_value));
-    if (!new_items) return;
+    if (!new_items) {
+        tc_log(TC_LOG_ERROR, "tc_value: failed to grow list to %zu items", needed);
+        return false;
+    }
 
     list->items = new_items;
     list->capacity = new_cap;
+    return true;
 }
 
-static void dict_ensure_capacity(tc_value_dict* dict, size_t needed) {
-    if (!dict || dict->capacity >= needed) return;
+static bool dict_ensure_capacity(tc_value_dict* dict, size_t needed) {
+    if (!dict) return false;
+    if (dict->capacity >= needed) return true;
 
     size_t new_cap = dict->capacity == 0 ? 8 : dict->capacity * 2;
     while (new_cap < needed) new_cap *= 2;
 
     tc_value_dict_entry* new_entries =
         (tc_value_dict_entry*)realloc(dict->entries, new_cap * sizeof(tc_value_dict_entry));
-    if (!new_entries) return;
+    if (!new_entries) {
+        tc_log(TC_LOG_ERROR, "tc_value: failed to grow dict to %zu entries", needed);
+        return false;
+    }
 
     dict->entries = new_entries;
     dict->capacity = new_cap;
+    return true;
 }
 
 tc_value tc_value_nil(void) {
@@ -195,8 +207,15 @@ bool tc_value_equals(const tc_value* a, const tc_value* b) {
 }
 
 void tc_value_list_push(tc_value* list, tc_value item) {
-    if (!list || list->type != TC_VALUE_LIST) return;
-    list_ensure_capacity(&list->data.list, list->data.list.count + 1);
+    if (!list || list->type != TC_VALUE_LIST) {
+        tc_log(TC_LOG_ERROR, "tc_value_list_push: target is not a list");
+        tc_value_free(&item);
+        return;
+    }
+    if (!list_ensure_capacity(&list->data.list, list->data.list.count + 1)) {
+        tc_value_free(&item);
+        return;
+    }
     list->data.list.items[list->data.list.count++] = item;
 }
 
@@ -212,7 +231,11 @@ size_t tc_value_list_size(const tc_value* list) {
 }
 
 void tc_value_dict_set(tc_value* dict, const char* key, tc_value item) {
-    if (!dict || dict->type != TC_VALUE_DICT || !key) return;
+    if (!dict || dict->type != TC_VALUE_DICT || !key) {
+        tc_log(TC_LOG_ERROR, "tc_value_dict_set: target is not a dict or key is null");
+        tc_value_free(&item);
+        return;
+    }
 
     for (size_t i = 0; i < dict->data.dict.count; i++) {
         if (strcmp(dict->data.dict.entries[i].key, key) == 0) {
@@ -222,10 +245,29 @@ void tc_value_dict_set(tc_value* dict, const char* key, tc_value item) {
         }
     }
 
-    dict_ensure_capacity(&dict->data.dict, dict->data.dict.count + 1);
+    if (!dict_ensure_capacity(&dict->data.dict, dict->data.dict.count + 1)) {
+        tc_value_free(&item);
+        return;
+    }
+
+    char* key_copy = tc_strdup(key);
+    if (!key_copy) {
+        tc_log(TC_LOG_ERROR, "tc_value_dict_set: failed to copy key '%s'", key);
+        tc_value_free(&item);
+        return;
+    }
+
+    tc_value* value_copy = (tc_value*)malloc(sizeof(tc_value));
+    if (!value_copy) {
+        tc_log(TC_LOG_ERROR, "tc_value_dict_set: failed to allocate value for key '%s'", key);
+        free(key_copy);
+        tc_value_free(&item);
+        return;
+    }
+
     tc_value_dict_entry* e = &dict->data.dict.entries[dict->data.dict.count++];
-    e->key = tc_strdup(key);
-    e->value = (tc_value*)malloc(sizeof(tc_value));
+    e->key = key_copy;
+    e->value = value_copy;
     *e->value = item;
 }
 

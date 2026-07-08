@@ -66,6 +66,13 @@ if(TERMIN_BASE_BUILD_TESTS)
 
     add_test(NAME termin_base_value_test COMMAND termin_base_value_test)
 
+    add_executable(termin_base_trent_test tests/test_tc_trent.cpp)
+    target_include_directories(termin_base_trent_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
+    target_link_libraries(termin_base_trent_test PRIVATE termin_base)
+    add_test(NAME termin_base_trent_test COMMAND termin_base_trent_test)
+
     add_executable(termin_base_string_test tests/test_tc_string.c)
     set_target_properties(termin_base_string_test PROPERTIES LINKER_LANGUAGE CXX)
     target_include_directories(termin_base_string_test PRIVATE
