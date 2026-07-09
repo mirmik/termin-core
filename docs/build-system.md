@@ -131,6 +131,32 @@ sdk/
 site-packages, а `--termin-info` печатает диагностический JSON с SDK root,
 Python ABI и активными путями.
 
+Runtime population разделён на build и install:
+
+- `build-system/python-sdk-build-requirements.txt` фиксирует инструменты
+  disposable build environment `build/python-runtime/build-env`;
+- `build-system/python-runtime-lock.txt` содержит exact pins только для
+  third-party runtime distributions;
+- external wheels материализуются в `build/python-runtime/external-wheels`
+  (sdist-only `pyassimp` собирается в wheel на этой стадии);
+- все Termin wheels собираются из `build-system/packages.json` в
+  `build/python-runtime/termin-wheels`;
+- SDK `site-packages` очищается и устанавливается одним offline-проходом с
+  `--no-index --no-deps`;
+- `sdk/python-runtime-manifest.json` фиксирует Python ABI, lock hash, полный
+  набор distributions и hashes их `RECORD`.
+
+SDK verification сверяет manifest с фактическими metadata и payload hashes и
+падает на лишнем, отсутствующем или изменённом distribution. Копирование
+runtime-пакетов из host `site-packages` запрещено. После первичного заполнения
+wheelhouse population можно проверить без сети:
+
+```bash
+TERMIN_PYTHON_RUNTIME_OFFLINE=1 \
+  PYTHONPATH=termin-build-tools \
+  python -m termin_build.sdk --repo-root . install-python
+```
+
 Developer/test environment не является вторым runtime venv. Команда
 
 ```bash

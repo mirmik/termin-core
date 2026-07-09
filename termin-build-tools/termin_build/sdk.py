@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
+import hashlib
 import json
 import os
 import re
@@ -15,6 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .package_manifest import PackageEntry, load_manifest, repo_root_from
+
+
+RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
+SDK_BUILD_REQUIREMENTS_RELATIVE = Path("build-system/python-sdk-build-requirements.txt")
+RUNTIME_MANIFEST_NAME = "python-runtime-manifest.json"
+RUNTIME_MANIFEST_SCHEMA = 1
 
 
 EXPECTED_SUBMODULE_FILES = {
@@ -105,17 +113,6 @@ PROFILES = {
         ),
     ),
 }
-
-EXTERNAL_PYTHON_PACKAGES = (
-    "numpy",
-    "sip",
-    "sipbuild",
-    "glfw",
-    "packaging",
-    "pyassimp",
-    "yaml",
-    "watchdog",
-)
 
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
     # Pillow used to be a runtime image dependency. termin-image now owns image
@@ -467,33 +464,6 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
     )
     _remove_linux_python_config_artifacts(bundled_py_dir)
 
-    sitepackages = [Path(str(path)) for path in info.get("sitepackages", [])]
-    for site_dir in sitepackages:
-        if not site_dir.is_dir():
-            continue
-        for package in EXTERNAL_PYTHON_PACKAGES:
-            package_dir = site_dir / package
-            if package_dir.is_dir():
-                shutil.copytree(
-                    package_dir,
-                    bundled_site_packages / package_dir.name,
-                    dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-                )
-            for dist_info in site_dir.glob(f"{package}*.dist-info"):
-                shutil.copytree(
-                    dist_info,
-                    bundled_site_packages / dist_info.name,
-                    dirs_exist_ok=True,
-                )
-        for pattern in ("*.so", "*.pyd", "numpy.libs"):
-            for item in site_dir.glob(pattern):
-                target = bundled_site_packages / item.name
-                if item.is_dir():
-                    shutil.copytree(item, target, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(item, target)
-
     return bundled_py_dir
 
 
@@ -722,22 +692,47 @@ def install_python_packages(
         shutil.rmtree(bundled_site_packages)
         bundled_site_packages.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    result = _install_bundled_runtime_requirements(
+    try:
+        termin_sdk = _resolve_sdk_prefix(repo_root, sdk_prefix)
+        bindings_dir = _resolve_bindings_dir(repo_root, build_dir)
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+
+    try:
+        build_python = _ensure_sdk_python_build_environment(repo_root)
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    external_wheels, local_wheels = _runtime_wheel_dirs(repo_root)
+    result = _prepare_external_runtime_wheels(repo_root, external_wheels, build_python)
+    if result != 0:
+        return result
+    result = _build_local_package_wheels(
         repo_root=repo_root,
-        bundled_site_packages=bundled_site_packages,
-        env=env,
+        termin_sdk=termin_sdk,
+        bindings_dir=bindings_dir,
+        wheel_dir=local_wheels,
+        force=True,
+        build_python=build_python,
     )
     if result != 0:
         return result
-    return install_pip_packages(
+    result = _install_prepared_runtime_wheels(
         repo_root=repo_root,
-        sdk_prefix=sdk_prefix,
-        build_dir=build_dir,
-        target_dir=bundled_site_packages,
-        editable=False,
-        force=True,
+        site_packages=bundled_site_packages,
+        external_wheels=external_wheels,
+        local_wheels=local_wheels,
+        build_python=build_python,
     )
+    if result != 0:
+        return result
+    try:
+        write_python_runtime_manifest(repo_root, sdk_prefix, bundled_site_packages)
+    except RuntimeError as error:
+        print(f"ERROR: failed to write SDK Python runtime manifest: {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def prepare_build_python_runtime(sdk_prefix: Path) -> int:
@@ -753,32 +748,159 @@ def prepare_build_python_runtime(sdk_prefix: Path) -> int:
     return 0
 
 
-def _install_bundled_runtime_requirements(
-    repo_root: Path,
-    bundled_site_packages: Path,
-    env: dict[str, str],
-) -> int:
-    requirements = repo_root / "termin-app" / "requirements.txt"
-    bundled_site_packages.mkdir(parents=True, exist_ok=True)
-    _clear_target_distribution_metadata(
-        bundled_site_packages,
-        _requirement_distribution_names(requirements),
+def _runtime_wheel_dirs(repo_root: Path) -> tuple[Path, Path]:
+    root = Path(
+        os.environ.get(
+            "TERMIN_PYTHON_RUNTIME_BUILD_DIR",
+            str(repo_root / "build" / "python-runtime"),
+        )
     )
-    _clear_legacy_bundled_runtime_packages(bundled_site_packages)
+    return root / "external-wheels", root / "termin-wheels"
+
+
+def _sdk_build_environment_root(repo_root: Path) -> Path:
+    return Path(
+        os.environ.get(
+            "TERMIN_PYTHON_BUILD_ENV",
+            str(repo_root / "build" / "python-runtime" / "build-env"),
+        )
+    )
+
+
+def _build_environment_python(environment_root: Path) -> Path:
+    if _is_windows():
+        return environment_root / "Scripts" / "python.exe"
+    return environment_root / "bin" / "python"
+
+
+def _ensure_sdk_python_build_environment(repo_root: Path) -> Path:
+    requirements = repo_root / SDK_BUILD_REQUIREMENTS_RELATIVE
+    if not requirements.is_file():
+        raise RuntimeError(f"SDK Python build requirements are missing: {requirements}")
+    environment_root = _sdk_build_environment_root(repo_root)
+    build_python = _build_environment_python(environment_root)
+    stamp = environment_root / "python-sdk-build-requirements.txt"
+    if not build_python.is_file():
+        result = _run(
+            [_python_executable(), "-m", "venv", str(environment_root)],
+            cwd=repo_root,
+            env=os.environ.copy(),
+        )
+        if result != 0:
+            raise RuntimeError(f"failed to create SDK Python build environment: {environment_root}")
+    current = stamp.is_file() and stamp.read_bytes() == requirements.read_bytes()
+    if not current:
+        result = _run(
+            [
+                str(build_python),
+                "-I",
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--no-deps",
+                "-r",
+                str(requirements),
+            ],
+            cwd=repo_root,
+            env=os.environ.copy(),
+        )
+        if result != 0:
+            raise RuntimeError("failed to install pinned SDK Python build tools")
+        shutil.copy2(requirements, stamp)
+    print(f"Using isolated SDK Python build environment: {environment_root}")
+    return build_python
+
+
+def _prepare_external_runtime_wheels(
+    repo_root: Path,
+    wheel_dir: Path,
+    build_python: Path,
+) -> int:
+    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    try:
+        _load_runtime_lock(repo_root)
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    wheel_dir.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("TERMIN_PYTHON_RUNTIME_OFFLINE") == "1":
+        print(f"Using offline SDK runtime wheelhouse: {wheel_dir}")
+        return 0
+    print(f"Preparing pinned SDK runtime wheels: {wheel_dir}")
     return _run(
         [
-            _python_executable(),
+            str(build_python),
+            "-m",
+            "pip",
+            "wheel",
+            "--no-build-isolation",
+            "--no-deps",
+            "--wheel-dir",
+            str(wheel_dir),
+            "-r",
+            str(lock_path),
+        ],
+        cwd=repo_root,
+        env=os.environ.copy(),
+    )
+
+
+def _install_prepared_runtime_wheels(
+    repo_root: Path,
+    site_packages: Path,
+    external_wheels: Path,
+    local_wheels: Path,
+    build_python: Path,
+) -> int:
+    wheels = sorted(local_wheels.glob("*.whl"))
+    expected_local_count = len(load_manifest(repo_root))
+    if len(wheels) != expected_local_count:
+        print(
+            f"ERROR: expected {expected_local_count} Termin wheels, found {len(wheels)} "
+            f"under {local_wheels}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        if site_packages.exists():
+            shutil.rmtree(site_packages)
+        site_packages.mkdir(parents=True)
+    except OSError as error:
+        print(
+            f"ERROR: cannot replace SDK Python site-packages {site_packages}: {error}",
+            file=sys.stderr,
+        )
+        if _is_windows():
+            print(
+                "Close Termin editor/player, pytest, and Python processes that may "
+                "hold SDK .pyd/.dll files, then retry.",
+                file=sys.stderr,
+            )
+        return 1
+
+    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    print("Installing SDK Python site-packages offline from prepared wheels")
+    return _run(
+        [
+            str(build_python),
             "-m",
             "pip",
             "install",
-            "--upgrade",
+            "--no-index",
+            "--no-deps",
+            "--no-compile",
+            "--no-cache-dir",
+            "--find-links",
+            str(external_wheels),
             "--target",
-            str(bundled_site_packages),
+            str(site_packages),
             "-r",
-            str(requirements),
+            str(lock_path),
+            *(str(wheel) for wheel in wheels),
         ],
         cwd=repo_root,
-        env=env,
+        env=os.environ.copy(),
     )
 
 
@@ -890,15 +1012,19 @@ def _normalized_distribution_name(name: str) -> str:
 
 
 def _metadata_distribution_name(metadata_path: Path) -> str | None:
+    return _metadata_distribution_field(metadata_path, "name")
+
+
+def _metadata_distribution_field(metadata_path: Path, field: str) -> str | None:
     for metadata_file_name in ("METADATA", "PKG-INFO"):
         metadata_file = metadata_path / metadata_file_name
         if not metadata_file.is_file():
             continue
         text = metadata_file.read_text(encoding="utf-8", errors="replace")
         for line in text.splitlines():
-            if line.lower().startswith("name:"):
-                name = line.split(":", 1)[1].strip()
-                return name or None
+            if line.lower().startswith(field.lower() + ":"):
+                value = line.split(":", 1)[1].strip()
+                return value or None
     return None
 
 
@@ -922,6 +1048,38 @@ def _distribution_name_from_metadata_dir(metadata_path: Path) -> str | None:
 
 
 _REQUIREMENT_NAME_RE = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9_.-]*)")
+_EXACT_REQUIREMENT_RE = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9_.-]*)==([^\s;]+)$"
+)
+
+
+def _load_runtime_lock(repo_root: Path) -> dict[str, tuple[str, str]]:
+    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    if not lock_path.is_file():
+        raise RuntimeError(f"SDK Python runtime lock is missing: {lock_path}")
+
+    requirements: dict[str, tuple[str, str]] = {}
+    for line_number, raw_line in enumerate(
+        lock_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        requirement = raw_line.split("#", 1)[0].strip()
+        if not requirement:
+            continue
+        match = _EXACT_REQUIREMENT_RE.fullmatch(requirement)
+        if match is None:
+            raise RuntimeError(
+                f"runtime lock entry must use an exact name==version pin at "
+                f"{lock_path}:{line_number}: {requirement}"
+            )
+        name, version = match.groups()
+        normalized = _normalized_distribution_name(name)
+        if normalized in requirements:
+            raise RuntimeError(f"duplicate runtime lock distribution: {name}")
+        requirements[normalized] = (name, version)
+    if not requirements:
+        raise RuntimeError(f"SDK Python runtime lock is empty: {lock_path}")
+    return requirements
 
 
 def _requirement_distribution_names(requirements_path: Path) -> set[str]:
@@ -936,6 +1094,151 @@ def _requirement_distribution_names(requirements_path: Path) -> set[str]:
         if match is not None:
             names.add(match.group(1))
     return names
+
+
+def _distribution_metadata_paths(site_packages: Path) -> list[Path]:
+    if not site_packages.is_dir():
+        return []
+    return sorted(
+        child
+        for child in site_packages.iterdir()
+        if child.is_dir()
+        and (child.name.endswith(".dist-info") or child.name.endswith(".egg-info"))
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _target_record_path(site_packages: Path, recorded: str) -> Path:
+    parts = list(Path(recorded).parts)
+    while parts and parts[0] == "..":
+        parts.pop(0)
+    return (site_packages.joinpath(*parts)).resolve()
+
+
+def _verify_distribution_records(
+    site_packages: Path,
+    metadata_paths: list[Path],
+) -> list[str]:
+    expected_hashes: dict[tuple[Path, str], set[str]] = {}
+    display_paths: dict[Path, str] = {}
+    errors: list[str] = []
+    resolved_site = site_packages.resolve()
+    for metadata_path in metadata_paths:
+        record_path = metadata_path / "RECORD"
+        if not record_path.is_file():
+            continue
+        with record_path.open(newline="", encoding="utf-8") as record_file:
+            for row in csv.reader(record_file):
+                if not row or not row[0] or len(row) < 2 or not row[1]:
+                    continue
+                if row[0].endswith((".pyc", ".pyo")):
+                    continue
+                installed_path = _target_record_path(site_packages, row[0])
+                if not installed_path.is_relative_to(resolved_site):
+                    errors.append(f"RECORD path escapes site-packages: {row[0]}")
+                    continue
+                try:
+                    algorithm, expected = row[1].split("=", 1)
+                    hashlib.new(algorithm)
+                except (ValueError, TypeError):
+                    errors.append(f"unsupported RECORD hash: {row[1]}")
+                    continue
+                expected_hashes.setdefault((installed_path, algorithm), set()).add(expected)
+                display_paths[installed_path] = installed_path.relative_to(resolved_site).as_posix()
+
+    for (installed_path, algorithm), allowed_hashes in expected_hashes.items():
+        display = display_paths[installed_path]
+        if not installed_path.is_file():
+            errors.append(f"recorded file is missing: {display}")
+            continue
+        digest = hashlib.new(algorithm)
+        with installed_path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        actual = base64.urlsafe_b64encode(digest.digest()).rstrip(b"=").decode("ascii")
+        if actual not in allowed_hashes:
+            errors.append(f"recorded file hash mismatch: {display}")
+    return errors
+
+
+def _runtime_distribution_entries(
+    site_packages: Path,
+    runtime_lock: dict[str, tuple[str, str]],
+    local_names: set[str],
+) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    allowed = set(runtime_lock) | local_names
+    for metadata_path in _distribution_metadata_paths(site_packages):
+        name = _distribution_name_from_metadata_dir(metadata_path)
+        version = _metadata_distribution_field(metadata_path, "version")
+        if name is None or version is None:
+            raise RuntimeError(f"invalid distribution metadata: {metadata_path}")
+        normalized = _normalized_distribution_name(name)
+        if normalized in seen:
+            raise RuntimeError(f"duplicate SDK Python distribution: {name}")
+        if normalized not in allowed:
+            raise RuntimeError(f"undeclared SDK Python distribution: {name}=={version}")
+        if normalized in runtime_lock and runtime_lock[normalized][1] != version:
+            raise RuntimeError(
+                f"runtime distribution version mismatch: {name}=={version}, "
+                f"locked {runtime_lock[normalized][1]}"
+            )
+        record_path = metadata_path / "RECORD"
+        if not record_path.is_file():
+            raise RuntimeError(f"SDK Python distribution has no RECORD: {name}")
+        entries.append(
+            {
+                "name": name,
+                "version": version,
+                "kind": "runtime" if normalized in runtime_lock else "termin",
+                "metadata": metadata_path.relative_to(site_packages).as_posix(),
+                "record_sha256": _sha256_file(record_path),
+            }
+        )
+        seen.add(normalized)
+    missing = allowed - seen
+    if missing:
+        rendered = ", ".join(sorted(missing))
+        raise RuntimeError(f"missing SDK Python distributions: {rendered}")
+    return sorted(entries, key=lambda entry: _normalized_distribution_name(entry["name"]))
+
+
+def write_python_runtime_manifest(
+    repo_root: Path,
+    sdk_prefix: Path,
+    site_packages: Path,
+) -> Path:
+    runtime_lock = _load_runtime_lock(repo_root)
+    local_names = {
+        _normalized_distribution_name(package.distribution)
+        for package in load_manifest(repo_root)
+    }
+    entries = _runtime_distribution_entries(site_packages, runtime_lock, local_names)
+    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    installed_lock = sdk_prefix / "python-runtime-lock.txt"
+    shutil.copy2(lock_path, installed_lock)
+    python_info = _python_version_and_paths(_python_executable())
+    manifest = {
+        "schema": RUNTIME_MANIFEST_SCHEMA,
+        "python_abi": str(python_info["version"]),
+        "platform": sys.platform,
+        "runtime_lock": installed_lock.relative_to(sdk_prefix).as_posix(),
+        "runtime_lock_sha256": _sha256_file(installed_lock),
+        "site_packages": site_packages.relative_to(sdk_prefix).as_posix(),
+        "distributions": entries,
+    }
+    output = sdk_prefix / RUNTIME_MANIFEST_NAME
+    output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote Python runtime manifest: {output}")
+    return output
 
 
 def _remove_metadata_path(path: Path) -> None:
@@ -1316,9 +1619,42 @@ def build_wheelhouse(
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
+    print(f"Using TERMIN_SDK={termin_sdk}")
+    print(f"Using TERMIN_BINDINGS_DIR={bindings_dir}")
+    print(f"Wheelhouse: {wheel_dir}")
+    try:
+        build_python = _ensure_sdk_python_build_environment(repo_root)
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    result = _build_local_package_wheels(
+        repo_root=repo_root,
+        termin_sdk=termin_sdk,
+        bindings_dir=bindings_dir,
+        wheel_dir=wheel_dir,
+        force=force,
+        build_python=build_python,
+    )
+    if result != 0:
+        return result
+
+    print("")
+    print("========================================")
+    print(f"  SDK wheelhouse ready: {wheel_dir}")
+    print("========================================")
+    return 0
+
+
+def _build_local_package_wheels(
+    repo_root: Path,
+    termin_sdk: Path,
+    bindings_dir: Path,
+    wheel_dir: Path,
+    force: bool,
+    build_python: Path,
+) -> int:
     wheel_dir.mkdir(parents=True, exist_ok=True)
     wheel_dir = wheel_dir.resolve()
-
     env = os.environ.copy()
     env.update(
         {
@@ -1326,55 +1662,39 @@ def build_wheelhouse(
             "TERMIN_BINDINGS_DIR": str(bindings_dir),
             "TERMIN_PIP_BUNDLE_LIBS": "0",
             "TERMIN_PIP_COPY_TO_SOURCE": "0",
-            "PYTHONPATH": (
-                str(repo_root / "termin-build-tools")
-                + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
-            ),
         }
     )
-    pip_cmd = [_python_bin(), "-m", "pip"]
-
-    print(f"Using TERMIN_SDK={termin_sdk}")
-    print(f"Using TERMIN_BINDINGS_DIR={bindings_dir}")
+    _add_build_tools_pythonpath(env, repo_root)
+    pip_cmd = [str(build_python), "-m", "pip"]
     print("Using pip: " + " ".join(pip_cmd))
-    print(f"Wheelhouse: {wheel_dir}")
     print("TERMIN_PIP_BUNDLE_LIBS=0")
     print("TERMIN_PIP_COPY_TO_SOURCE=0")
-
     if force:
         print("--force: clearing wheelhouse and per-package pip build caches")
         for wheel in wheel_dir.glob("*.whl"):
             wheel.unlink()
         _clear_python_package_build_caches(repo_root)
 
-    for package in load_manifest(repo_root):
-        print("")
-        print("========================================")
-        print(f"  Building wheel: {package.path}")
-        print("========================================")
-        print("")
-        result = _run(
-            [
-                *pip_cmd,
-                "wheel",
-                "--no-build-isolation",
-                "--no-deps",
-                "--no-cache-dir",
-                "--wheel-dir",
-                str(wheel_dir),
-                str(repo_root / package.path),
-            ],
-            cwd=repo_root,
-            env=env,
-        )
-        if result != 0:
-            return result
-
+    packages = load_manifest(repo_root)
     print("")
     print("========================================")
-    print(f"  SDK wheelhouse ready: {wheel_dir}")
+    print(f"  Building {len(packages)} Termin wheels")
     print("========================================")
-    return 0
+    print("")
+    return _run(
+        [
+            *pip_cmd,
+            "wheel",
+            "--no-build-isolation",
+            "--no-deps",
+            "--no-cache-dir",
+            "--wheel-dir",
+            str(wheel_dir),
+            *(str(repo_root / package.path) for package in packages),
+        ],
+        cwd=repo_root,
+        env=env,
+    )
 
 
 def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
@@ -1571,11 +1891,98 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
     return 0
 
 
+def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
+    print("Verifying: SDK Python runtime manifest")
+    manifest_path = sdk_prefix / RUNTIME_MANIFEST_NAME
+    if not manifest_path.is_file():
+        print(f"FAILED: Python runtime manifest is missing: {manifest_path}", file=sys.stderr)
+        return 1
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"FAILED: invalid Python runtime manifest: {error}", file=sys.stderr)
+        return 1
+    if manifest.get("schema") != RUNTIME_MANIFEST_SCHEMA:
+        print("FAILED: unsupported Python runtime manifest schema", file=sys.stderr)
+        return 1
+
+    lock_path = (sdk_prefix / str(manifest.get("runtime_lock", ""))).resolve()
+    if not lock_path.is_relative_to(sdk_prefix.resolve()) or not lock_path.is_file():
+        print("FAILED: runtime lock referenced by manifest is missing", file=sys.stderr)
+        return 1
+    if _sha256_file(lock_path) != manifest.get("runtime_lock_sha256"):
+        print("FAILED: installed Python runtime lock hash mismatch", file=sys.stderr)
+        return 1
+
+    site_packages = (sdk_prefix / str(manifest.get("site_packages", ""))).resolve()
+    if not site_packages.is_relative_to(sdk_prefix.resolve()) or not site_packages.is_dir():
+        print("FAILED: site-packages referenced by runtime manifest is missing", file=sys.stderr)
+        return 1
+
+    declared_entries = manifest.get("distributions")
+    if not isinstance(declared_entries, list):
+        print("FAILED: runtime manifest distributions must be a list", file=sys.stderr)
+        return 1
+    declared: dict[str, dict[str, str]] = {}
+    for entry in declared_entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            print("FAILED: invalid runtime manifest distribution entry", file=sys.stderr)
+            return 1
+        normalized = _normalized_distribution_name(entry["name"])
+        if normalized in declared:
+            print(f"FAILED: duplicate manifest distribution: {entry['name']}", file=sys.stderr)
+            return 1
+        declared[normalized] = entry
+
+    actual_metadata = _distribution_metadata_paths(site_packages)
+    actual_names: set[str] = set()
+    errors: list[str] = []
+    for metadata_path in actual_metadata:
+        name = _distribution_name_from_metadata_dir(metadata_path)
+        version = _metadata_distribution_field(metadata_path, "version")
+        if name is None or version is None:
+            errors.append(f"invalid distribution metadata: {metadata_path.name}")
+            continue
+        normalized = _normalized_distribution_name(name)
+        actual_names.add(normalized)
+        entry = declared.get(normalized)
+        if entry is None:
+            errors.append(f"undeclared distribution: {name}=={version}")
+            continue
+        if entry.get("version") != version:
+            errors.append(
+                f"distribution version mismatch: {name}=={version}, "
+                f"manifest {entry.get('version')}"
+            )
+        expected_metadata = entry.get("metadata")
+        if expected_metadata != metadata_path.relative_to(site_packages).as_posix():
+            errors.append(f"distribution metadata path mismatch: {name}")
+        record_path = metadata_path / "RECORD"
+        if not record_path.is_file():
+            errors.append(f"distribution has no RECORD: {name}")
+        elif _sha256_file(record_path) != entry.get("record_sha256"):
+            errors.append(f"distribution RECORD hash mismatch: {name}")
+    for normalized, entry in declared.items():
+        if normalized not in actual_names:
+            errors.append(f"manifest distribution is missing: {entry['name']}")
+    errors.extend(_verify_distribution_records(site_packages, actual_metadata))
+    if errors:
+        for error in errors[:50]:
+            print(f"  {error}", file=sys.stderr)
+        print(f"FAILED: {len(errors)} Python runtime manifest error(s)", file=sys.stderr)
+        return 1
+    print(f"  OK: {len(declared)} declared distributions and RECORD hashes verified")
+    return 0
+
+
 def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
     result = verify_no_duplicate_libraries(sdk_prefix)
     if result != 0:
         return result
     result = verify_sdk_artifacts(sdk_prefix, build_dir)
+    if result != 0:
+        return result
+    result = verify_python_runtime_manifest(sdk_prefix)
     if result != 0:
         return result
     return verify_sdk_python_launcher(sdk_prefix)

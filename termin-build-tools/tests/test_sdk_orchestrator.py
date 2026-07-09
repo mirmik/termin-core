@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
@@ -9,6 +11,30 @@ from setuptools.config.pyprojecttoml import apply_configuration
 from termin_build import sdk
 from termin_build.package_manifest import NativeExtension, PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
+
+
+def _write_test_distribution(
+    site_packages: Path,
+    name: str,
+    version: str,
+    module_name: str,
+) -> Path:
+    module_path = site_packages / f"{module_name}.py"
+    module_path.write_text("VALUE = 1\n", encoding="utf-8")
+    digest = base64.urlsafe_b64encode(hashlib.sha256(module_path.read_bytes()).digest())
+    encoded = digest.rstrip(b"=").decode("ascii")
+    metadata = site_packages / f"{name.replace('-', '_')}-{version}.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        f"Name: {name}\nVersion: {version}\n",
+        encoding="utf-8",
+    )
+    (metadata / "RECORD").write_text(
+        f"{module_path.name},sha256={encoded},{module_path.stat().st_size}\n"
+        f"{metadata.name}/RECORD,,\n",
+        encoding="utf-8",
+    )
+    return module_path
 
 
 def test_build_tools_package_config_excludes_generated_build_tree():
@@ -82,15 +108,18 @@ def test_native_extensions_for_source_reads_manifest():
 
 def test_base_sdk_runtime_seed_excludes_heavy_optional_packages():
     repo_root = sdk.repo_root_from(Path(__file__))
-    runtime_requirement_names = sdk._requirement_distribution_names(
-        repo_root / "termin-app" / "requirements.txt"
-    )
+    runtime_requirement_names = set(sdk._load_runtime_lock(repo_root))
 
-    assert "scipy" not in sdk.EXTERNAL_PYTHON_PACKAGES
     assert "scipy" not in runtime_requirement_names
-    assert "OpenGL" not in sdk.EXTERNAL_PYTHON_PACKAGES
-    assert "pyopengl" not in sdk.EXTERNAL_PYTHON_PACKAGES
-    assert "PyOpenGL" not in runtime_requirement_names
+    assert "pyopengl" not in runtime_requirement_names
+    assert runtime_requirement_names == {
+        "glfw",
+        "numpy",
+        "packaging",
+        "pyassimp",
+        "pyyaml",
+        "watchdog",
+    }
 
 
 def test_repo_installs_umbrella_termin_cmake_package():
@@ -265,37 +294,12 @@ def test_force_package_cache_cleanup_removes_plain_build_lib_and_nested_egg_info
     assert not nested_egg_info.exists()
 
 
-def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, monkeypatch):
+def test_external_runtime_wheels_are_built_from_exact_lock(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
-    requirements = repo_root / "termin-app" / "requirements.txt"
-    requirements.parent.mkdir(parents=True)
-    requirements.write_text(
-        "numpy\n"
-        "watchdog>=4.0\n"
-        "# comment\n"
-        "PyYAML>=6.0\n",
-        encoding="utf-8",
-    )
-    target_dir = tmp_path / "sdk" / "lib" / "python3.10" / "site-packages"
-    target_dir.mkdir(parents=True)
-    stale_numpy = target_dir / "numpy-1.26.4.dist-info"
-    stale_numpy.mkdir()
-    (stale_numpy / "METADATA").write_text("Name: numpy\n", encoding="utf-8")
-    stale_watchdog = target_dir / "watchdog-4.0.0.dist-info"
-    stale_watchdog.mkdir()
-    (stale_watchdog / "METADATA").write_text("Name: watchdog\n", encoding="utf-8")
-    legacy_pillow_metadata = target_dir / "pillow-12.3.0.dist-info"
-    legacy_pillow_metadata.mkdir()
-    (legacy_pillow_metadata / "METADATA").write_text("Name: Pillow\n", encoding="utf-8")
-    legacy_pil_package = target_dir / "PIL"
-    legacy_pil_package.mkdir()
-    (legacy_pil_package / "__init__.py").write_text("VALUE = 'old pillow'\n", encoding="utf-8")
-    legacy_pillow_libs = target_dir / "pillow.libs"
-    legacy_pillow_libs.mkdir()
-    (legacy_pillow_libs / "libjpeg.so").write_text("", encoding="utf-8")
-    unrelated = target_dir / "unrelated-1.0.0.dist-info"
-    unrelated.mkdir()
-    (unrelated / "METADATA").write_text("Name: unrelated\n", encoding="utf-8")
+    lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("numpy==2.2.6\nwatchdog==6.0.0\n", encoding="utf-8")
+    wheel_dir = repo_root / "build" / "python-runtime" / "external-wheels"
     commands = []
 
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
@@ -305,32 +309,61 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
         lambda command, **_kwargs: commands.append(command) or 0,
     )
 
-    result = sdk._install_bundled_runtime_requirements(
-        repo_root=repo_root,
-        bundled_site_packages=target_dir,
-        env={},
-    )
+    result = sdk._prepare_external_runtime_wheels(repo_root, wheel_dir, Path("python"))
 
     assert result == 0
-    assert not stale_numpy.exists()
-    assert not stale_watchdog.exists()
-    assert not legacy_pillow_metadata.exists()
-    assert not legacy_pil_package.exists()
-    assert not legacy_pillow_libs.exists()
-    assert unrelated.is_dir()
     assert commands == [
         [
             "python",
             "-m",
             "pip",
+            "wheel",
+            "--no-build-isolation",
+            "--no-deps",
+            "--wheel-dir",
+            str(wheel_dir),
+            "-r",
+            str(lock_path),
+        ]
+    ]
+
+
+def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    requirements = repo_root / sdk.SDK_BUILD_REQUIREMENTS_RELATIVE
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("pip==26.1.2\nsetuptools==83.0.0\n", encoding="utf-8")
+    environment_root = repo_root / "build" / "python-runtime" / "build-env"
+    build_python = environment_root / "bin" / "python"
+    build_python.parent.mkdir(parents=True)
+    build_python.touch()
+    commands = []
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+
+    result = sdk._ensure_sdk_python_build_environment(repo_root)
+
+    assert result == build_python
+    assert commands == [
+        [
+            str(build_python),
+            "-I",
+            "-m",
+            "pip",
             "install",
             "--upgrade",
-            "--target",
-            str(target_dir),
+            "--no-deps",
             "-r",
             str(requirements),
         ]
     ]
+    assert (environment_root / "python-sdk-build-requirements.txt").read_bytes() == (
+        requirements.read_bytes()
+    )
 
 
 def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifacts(
@@ -380,15 +413,13 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
     site_packages = bundled_py_dir / "site-packages"
     host_libdir = tmp_path / "host" / "lib"
     config_dir = bundled_py_dir / "config-3.10-x86_64-linux-gnu"
-    requirements = repo_root / "termin-app" / "requirements.txt"
     (bundled_py_dir / "ensurepip").mkdir(parents=True)
     site_packages.mkdir()
     config_dir.mkdir()
     (config_dir / "libpython3.10.a").write_bytes(b"static")
     host_libdir.mkdir(parents=True)
     (host_libdir / "libpython3.10.so.1.0").write_bytes(b"shared")
-    requirements.parent.mkdir(parents=True)
-    requirements.write_text("watchdog>=3.0\n", encoding="utf-8")
+    (build_dir / "bin").mkdir(parents=True)
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
@@ -403,8 +434,15 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
         },
     )
     monkeypatch.setattr(sdk, "ensure_bundled_python_cli", lambda _sdk_prefix: None)
-    monkeypatch.setattr(sdk, "_run", lambda _command, **_kwargs: 0)
-    monkeypatch.setattr(sdk, "install_pip_packages", lambda **_kwargs: 0)
+    monkeypatch.setattr(
+        sdk,
+        "_ensure_sdk_python_build_environment",
+        lambda _root: Path("build-python"),
+    )
+    monkeypatch.setattr(sdk, "_prepare_external_runtime_wheels", lambda *_args: 0)
+    monkeypatch.setattr(sdk, "_build_local_package_wheels", lambda **_kwargs: 0)
+    monkeypatch.setattr(sdk, "_install_prepared_runtime_wheels", lambda **_kwargs: 0)
+    monkeypatch.setattr(sdk, "write_python_runtime_manifest", lambda *_args: Path("manifest"))
 
     result = sdk.install_python_packages(
         repo_root=repo_root,
@@ -636,7 +674,7 @@ def test_editable_install_failure_reports_windows_native_lock_context(
         (True, ("python", "Lib")),
     ],
 )
-def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
+def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manifest(
     tmp_path,
     monkeypatch,
     is_windows,
@@ -647,12 +685,11 @@ def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
     build_dir = repo_root / "build" / "Release"
     bundled_py_dir = sdk_prefix.joinpath(*bundled_python_parts)
     site_packages = bundled_py_dir / "site-packages"
-    requirements = repo_root / "termin-app" / "requirements.txt"
     (bundled_py_dir / "ensurepip").mkdir(parents=True)
+    (sdk_prefix / "lib").mkdir(exist_ok=True)
+    (build_dir / "bin").mkdir(parents=True)
     if not is_windows:
         (sdk_prefix / "lib" / "libpython3.10.so").write_bytes(b"shared")
-    requirements.parent.mkdir(parents=True)
-    requirements.write_text("watchdog>=3.0\n", encoding="utf-8")
 
     calls = []
 
@@ -671,15 +708,33 @@ def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
     monkeypatch.setattr(sdk, "ensure_bundled_python_cli", lambda _sdk_prefix: None)
     monkeypatch.setattr(
         sdk,
-        "_run",
-        lambda command, **_kwargs: calls.append(("run", command)) or 0,
+        "_ensure_sdk_python_build_environment",
+        lambda _root: Path("build-python"),
     )
-
-    def fake_install_pip_packages(**kwargs):
-        calls.append(("install_pip_packages", kwargs))
-        return 0
-
-    monkeypatch.setattr(sdk, "install_pip_packages", fake_install_pip_packages)
+    monkeypatch.setattr(sdk, "_runtime_wheel_dirs", lambda _root: (Path("external"), Path("local")))
+    monkeypatch.setattr(
+        sdk,
+        "_prepare_external_runtime_wheels",
+        lambda root, wheels, python: calls.append(
+            ("external", root, wheels, python)
+        )
+        or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_build_local_package_wheels",
+        lambda **kwargs: calls.append(("build", kwargs)) or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_install_prepared_runtime_wheels",
+        lambda **kwargs: calls.append(("install", kwargs)) or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "write_python_runtime_manifest",
+        lambda *args: calls.append(("manifest", args)) or Path("manifest"),
+    )
 
     result = sdk.install_python_packages(
         repo_root=repo_root,
@@ -688,28 +743,11 @@ def test_sdk_python_install_includes_runtime_requirements_before_local_packages(
     )
 
     assert result == 0
-    assert calls[0] == (
-        "run",
-        [
-            "python",
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "--target",
-            str(site_packages),
-            "-r",
-            str(requirements),
-        ],
-    )
-    install_call = calls[1]
-    assert install_call[0] == "install_pip_packages"
-    assert install_call[1]["repo_root"] == repo_root
-    assert install_call[1]["sdk_prefix"] == sdk_prefix
-    assert install_call[1]["build_dir"] == build_dir
-    assert install_call[1]["target_dir"] == site_packages
-    assert install_call[1]["editable"] is False
-    assert install_call[1]["force"] is True
+    assert [call[0] for call in calls] == ["external", "build", "install", "manifest"]
+    assert calls[2][1]["site_packages"] == site_packages
+    assert calls[2][1]["external_wheels"] == Path("external")
+    assert calls[2][1]["local_wheels"] == Path("local")
+    assert calls[3][1] == (repo_root, sdk_prefix, site_packages)
 
 
 def test_install_packages_rejects_unknown_options(capsys):
@@ -725,6 +763,74 @@ def test_install_packages_rejects_unknown_options(capsys):
     captured = capsys.readouterr()
     assert result == 1
     assert "unknown install-packages option" in captured.err
+
+
+def test_runtime_manifest_records_declared_distributions_and_verifies_hashes(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
+    site_packages.mkdir(parents=True)
+    lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")
+    _write_test_distribution(site_packages, "numpy", "2.2.6", "numpy_stub")
+    _write_test_distribution(
+        site_packages,
+        "termin-example",
+        "0.1.0",
+        "termin_example",
+    )
+    monkeypatch.setattr(
+        sdk,
+        "load_manifest",
+        lambda _root: [PackageEntry("example", "termin-example", (), ())],
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _python: {"version": "3.10"},
+    )
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+
+    output = sdk.write_python_runtime_manifest(repo_root, sdk_prefix, site_packages)
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data["python_abi"] == "3.10"
+    assert [entry["kind"] for entry in data["distributions"]] == [
+        "runtime",
+        "termin",
+    ]
+    assert sdk.verify_python_runtime_manifest(sdk_prefix) == 0
+
+
+def test_runtime_manifest_rejects_undeclared_and_modified_distributions(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
+    site_packages.mkdir(parents=True)
+    lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")
+    payload = _write_test_distribution(site_packages, "numpy", "2.2.6", "numpy_stub")
+    monkeypatch.setattr(sdk, "load_manifest", lambda _root: [])
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _python: {"version": "3.10"},
+    )
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    sdk.write_python_runtime_manifest(repo_root, sdk_prefix, site_packages)
+
+    payload.write_text("VALUE = 2\n", encoding="utf-8")
+    _write_test_distribution(site_packages, "unexpected", "1.0", "unexpected")
+
+    assert sdk.verify_python_runtime_manifest(sdk_prefix) == 1
 
 
 def test_sdk_doctor_profile_checks_copy_backend(tmp_path, monkeypatch, capsys):

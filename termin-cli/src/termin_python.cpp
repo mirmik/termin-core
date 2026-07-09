@@ -150,6 +150,7 @@ void print_info(const PythonLayout& layout, const LauncherOptions& options) {
         << "  \"schema\": 1,\n"
         << "  \"sdk_root\": \"" << json_escape(layout.sdk_root.string()) << "\",\n"
         << "  \"python_home\": \"" << json_escape(layout.python_home.string()) << "\",\n"
+        << "  \"python_abi\": \"" << PY_MAJOR_VERSION << "." << PY_MINOR_VERSION << "\",\n"
         << "  \"stdlib\": \"" << json_escape(layout.stdlib.string()) << "\",\n"
         << "  \"site_packages\": \"" << json_escape(layout.site_packages.string()) << "\",\n"
         << "  \"isolated\": true,\n"
