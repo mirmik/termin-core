@@ -90,6 +90,7 @@ void bind_vec3(nb::module_& m);
 void bind_vec4(nb::module_& m);
 void bind_bounds2(nb::module_& m);
 void bind_quat(nb::module_& m);
+void bind_mat33(nb::module_& m);
 void bind_mat44(nb::module_& m);
 void bind_pose3(nb::module_& m);
 void bind_general_pose3(nb::module_& m);

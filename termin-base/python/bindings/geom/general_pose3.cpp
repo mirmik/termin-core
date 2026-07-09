@@ -62,6 +62,15 @@ void bind_general_pose3(nb::module_& m) {
             p.rotation_matrix(data);
             return mat33_row_tuple(data);
         })
+        .def("rotation_mat33", [](const GeneralPose3& p) {
+            double data[9];
+            p.rotation_matrix(data);
+            Mat33 mat;
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 3; ++col)
+                    mat(col, row) = data[row * 3 + col];
+            return mat;
+        })
         .def("as_matrix", [](const GeneralPose3& p) {
             double data[16];
             double m_arr[16];

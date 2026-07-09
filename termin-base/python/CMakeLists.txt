@@ -16,6 +16,7 @@ nanobind_add_module(_geom_native NB_SHARED
     bindings/geom/vec4.cpp
     bindings/geom/bounds2.cpp
     bindings/geom/quat.cpp
+    bindings/geom/mat33.cpp
     bindings/geom/mat44.cpp
     bindings/geom/pose3.cpp
     bindings/geom/general_pose3.cpp

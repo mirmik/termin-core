@@ -80,6 +80,19 @@ def test_native_extensions_for_source_reads_manifest():
     ]
 
 
+def test_base_sdk_runtime_seed_excludes_heavy_optional_packages():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    runtime_requirement_names = sdk._requirement_distribution_names(
+        repo_root / "termin-app" / "requirements.txt"
+    )
+
+    assert "scipy" not in sdk.EXTERNAL_PYTHON_PACKAGES
+    assert "scipy" not in runtime_requirement_names
+    assert "OpenGL" not in sdk.EXTERNAL_PYTHON_PACKAGES
+    assert "pyopengl" not in sdk.EXTERNAL_PYTHON_PACKAGES
+    assert "PyOpenGL" not in runtime_requirement_names
+
+
 def test_repo_installs_umbrella_termin_cmake_package():
     repo_root = sdk.repo_root_from(Path(__file__))
     root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
@@ -160,7 +173,7 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
     requirements.parent.mkdir(parents=True)
     requirements.write_text(
         "numpy\n"
-        "Pillow>=9.0\n"
+        "watchdog>=4.0\n"
         "# comment\n"
         "PyYAML>=6.0\n",
         encoding="utf-8",
@@ -170,9 +183,18 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
     stale_numpy = target_dir / "numpy-1.26.4.dist-info"
     stale_numpy.mkdir()
     (stale_numpy / "METADATA").write_text("Name: numpy\n", encoding="utf-8")
-    stale_pillow = target_dir / "Pillow-8.0.0.dist-info"
-    stale_pillow.mkdir()
-    (stale_pillow / "METADATA").write_text("Name: Pillow\n", encoding="utf-8")
+    stale_watchdog = target_dir / "watchdog-4.0.0.dist-info"
+    stale_watchdog.mkdir()
+    (stale_watchdog / "METADATA").write_text("Name: watchdog\n", encoding="utf-8")
+    legacy_pillow_metadata = target_dir / "pillow-12.3.0.dist-info"
+    legacy_pillow_metadata.mkdir()
+    (legacy_pillow_metadata / "METADATA").write_text("Name: Pillow\n", encoding="utf-8")
+    legacy_pil_package = target_dir / "PIL"
+    legacy_pil_package.mkdir()
+    (legacy_pil_package / "__init__.py").write_text("VALUE = 'old pillow'\n", encoding="utf-8")
+    legacy_pillow_libs = target_dir / "pillow.libs"
+    legacy_pillow_libs.mkdir()
+    (legacy_pillow_libs / "libjpeg.so").write_text("", encoding="utf-8")
     unrelated = target_dir / "unrelated-1.0.0.dist-info"
     unrelated.mkdir()
     (unrelated / "METADATA").write_text("Name: unrelated\n", encoding="utf-8")
@@ -193,7 +215,10 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
 
     assert result == 0
     assert not stale_numpy.exists()
-    assert not stale_pillow.exists()
+    assert not stale_watchdog.exists()
+    assert not legacy_pillow_metadata.exists()
+    assert not legacy_pil_package.exists()
+    assert not legacy_pillow_libs.exists()
     assert unrelated.is_dir()
     assert commands == [
         [
@@ -949,22 +974,6 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     assert (sdk_prefix / "python" / "python.exe").is_file()
     assert (sdk_prefix / "python" / "pythonw.exe").is_file()
     assert (sdk_prefix / "python" / "python312.dll").is_file()
-    assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
-
-
-def test_verify_duplicate_libraries_allows_pysdl2_core_sdl_duplicate(
-    tmp_path,
-    monkeypatch,
-):
-    sdk_prefix = tmp_path / "sdk"
-    (sdk_prefix / "bin").mkdir(parents=True)
-    sdl2dll_dir = sdk_prefix / "python" / "Lib" / "site-packages" / "sdl2dll" / "dll"
-    sdl2dll_dir.mkdir(parents=True)
-    (sdk_prefix / "bin" / "SDL2.dll").write_text("sdk-sdl", encoding="utf-8")
-    (sdl2dll_dir / "SDL2.dll").write_text("pysdl2-sdl", encoding="utf-8")
-
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
-
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
 

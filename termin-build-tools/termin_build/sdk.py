@@ -20,6 +20,10 @@ EXPECTED_SUBMODULE_FILES = {
     "termin-thirdparty/manifold": ("CMakeLists.txt",),
     "termin-thirdparty/clipper2": ("CPP/CMakeLists.txt",),
     "termin-thirdparty/guard": ("guard_c.h", "guard_main.h"),
+    "termin-thirdparty/zlib": ("CMakeLists.txt", "zlib.h"),
+    "termin-thirdparty/libpng": ("CMakeLists.txt", "png.h"),
+    "termin-thirdparty/libjpeg-turbo": ("CMakeLists.txt", "src/jpeglib.h"),
+    "termin-thirdparty/libwebp": ("CMakeLists.txt", "src/webp/decode.h"),
     "termin-thirdparty/vulkan-memory-allocator": ("include/vk_mem_alloc.h",),
     "termin-thirdparty/openxr-sdk": ("include/openxr/openxr.h",),
     "termin-thirdparty/recastnavigation": (
@@ -48,6 +52,10 @@ PROFILES = {
             "termin-thirdparty/manifold",
             "termin-thirdparty/clipper2",
             "termin-thirdparty/recastnavigation",
+            "termin-thirdparty/zlib",
+            "termin-thirdparty/libpng",
+            "termin-thirdparty/libjpeg-turbo",
+            "termin-thirdparty/libwebp",
         ),
         needs_nanobind=True,
         needs_pip=True,
@@ -60,6 +68,10 @@ PROFILES = {
             "termin-thirdparty/manifold",
             "termin-thirdparty/clipper2",
             "termin-thirdparty/recastnavigation",
+            "termin-thirdparty/zlib",
+            "termin-thirdparty/libpng",
+            "termin-thirdparty/libjpeg-turbo",
+            "termin-thirdparty/libwebp",
         ),
         needs_sdk_writable=True,
     ),
@@ -69,6 +81,10 @@ PROFILES = {
             "termin-thirdparty/manifold",
             "termin-thirdparty/clipper2",
             "termin-thirdparty/recastnavigation",
+            "termin-thirdparty/zlib",
+            "termin-thirdparty/libpng",
+            "termin-thirdparty/libjpeg-turbo",
+            "termin-thirdparty/libwebp",
         ),
         needs_nanobind=True,
         needs_copy_backend=True,
@@ -81,6 +97,10 @@ PROFILES = {
             "termin-thirdparty/clipper2",
             "termin-thirdparty/guard",
             "termin-thirdparty/recastnavigation",
+            "termin-thirdparty/zlib",
+            "termin-thirdparty/libpng",
+            "termin-thirdparty/libjpeg-turbo",
+            "termin-thirdparty/libwebp",
         ),
     ),
 }
@@ -89,18 +109,18 @@ EXTERNAL_PYTHON_PACKAGES = (
     "numpy",
     "sip",
     "sipbuild",
-    "PIL",
-    "Pillow",
-    "scipy",
     "glfw",
-    "OpenGL",
     "packaging",
     "pyassimp",
-    "pyopengl",
-    "sdl2",
     "yaml",
     "watchdog",
 )
+
+LEGACY_BUNDLED_RUNTIME_PACKAGES = {
+    # Pillow used to be a runtime image dependency. termin-image now owns image
+    # decoding, but existing SDK trees may still contain the old package.
+    "Pillow": ("PIL", "pillow.libs", "Pillow.libs"),
+}
 
 LEGACY_SOURCE_NATIVE_ARTIFACTS = {
     # termin-app used to own the monolithic termin._native binding. Editable
@@ -465,7 +485,7 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
                     bundled_site_packages / dist_info.name,
                     dirs_exist_ok=True,
                 )
-        for pattern in ("*.so", "*.pyd", "numpy.libs", "scipy.libs", "pillow.libs", "Pillow.libs"):
+        for pattern in ("*.so", "*.pyd", "numpy.libs"):
             for item in site_dir.glob(pattern):
                 target = bundled_site_packages / item.name
                 if item.is_dir():
@@ -743,6 +763,7 @@ def _install_bundled_runtime_requirements(
         bundled_site_packages,
         _requirement_distribution_names(requirements),
     )
+    _clear_legacy_bundled_runtime_packages(bundled_site_packages)
     return _run(
         [
             _python_executable(),
@@ -943,6 +964,28 @@ def _clear_target_distribution_metadata(target_dir: Path, distribution_names: se
     if removed:
         print(
             "Removed stale target package metadata: "
+            + ", ".join(sorted(removed))
+        )
+
+
+def _clear_legacy_bundled_runtime_packages(target_dir: Path) -> None:
+    if not target_dir.is_dir():
+        return
+    removed = []
+    _clear_target_distribution_metadata(
+        target_dir,
+        set(LEGACY_BUNDLED_RUNTIME_PACKAGES),
+    )
+    for package_names in LEGACY_BUNDLED_RUNTIME_PACKAGES.values():
+        for package_name in package_names:
+            path = target_dir / package_name
+            if not path.exists():
+                continue
+            _remove_metadata_path(path)
+            removed.append(path.name)
+    if removed:
+        print(
+            "Removed legacy bundled runtime package artifacts: "
             + ", ".join(sorted(removed))
         )
 
@@ -1334,14 +1377,6 @@ def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
         # copies and as target-framework-specific lib/<TFM> assemblies.
         or is_csharp_managed_lib
         or "/csharp/runtimes/" in path_text
-        or "/site-packages/scipy/" in path_text
-        # The bundled Python keeps pysdl2-dll's extension DLLs available.
-        # Embedded hosts set PYSDL2_DLL_PATH with sdk/bin first, so PySDL2
-        # binds core SDL2 calls to the same SDK SDL2.dll as termin_display.
-        or (
-            _is_windows()
-            and lower_path.endswith("/site-packages/sdl2dll/dll/sdl2.dll")
-        )
         # PyGLFW ships backend-specific copies with the same basename.
         # They are selected by the Python package from distinct x11/wayland
         # directories and are not linked by Termin's native libraries.
