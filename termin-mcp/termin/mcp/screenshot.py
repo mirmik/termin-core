@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
 
 from tcbase import log
+from termin.image import write_png_rgba8_file
 
 
 def capture_surface_screenshot(
@@ -49,7 +49,7 @@ def capture_surface_screenshot(
         default_prefix=default_prefix,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgba8, mode="RGBA").save(path)
+    write_png_rgba8_file(path, rgba8)
     log.info(f"[{log_prefix}] captured screenshot: {path}")
 
     payload: dict[str, object] = {

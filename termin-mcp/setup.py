@@ -16,9 +16,9 @@ setup(
     install_requires=[
         "tcbase",
         "termin-assets",
+        "termin-image",
         "termin-scene",
         "numpy",
-        "Pillow",
     ],
     zip_safe=False,
 )

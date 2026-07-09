@@ -89,14 +89,18 @@ EXTERNAL_PYTHON_PACKAGES = (
     "numpy",
     "sip",
     "sipbuild",
-    "PIL",
-    "Pillow",
     "glfw",
     "packaging",
     "pyassimp",
     "yaml",
     "watchdog",
 )
+
+LEGACY_BUNDLED_RUNTIME_PACKAGES = {
+    # Pillow used to be a runtime image dependency. termin-image now owns image
+    # decoding, but existing SDK trees may still contain the old package.
+    "Pillow": ("PIL", "pillow.libs", "Pillow.libs"),
+}
 
 LEGACY_SOURCE_NATIVE_ARTIFACTS = {
     # termin-app used to own the monolithic termin._native binding. Editable
@@ -461,7 +465,7 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
                     bundled_site_packages / dist_info.name,
                     dirs_exist_ok=True,
                 )
-        for pattern in ("*.so", "*.pyd", "numpy.libs", "pillow.libs", "Pillow.libs"):
+        for pattern in ("*.so", "*.pyd", "numpy.libs"):
             for item in site_dir.glob(pattern):
                 target = bundled_site_packages / item.name
                 if item.is_dir():
@@ -739,6 +743,7 @@ def _install_bundled_runtime_requirements(
         bundled_site_packages,
         _requirement_distribution_names(requirements),
     )
+    _clear_legacy_bundled_runtime_packages(bundled_site_packages)
     return _run(
         [
             _python_executable(),
@@ -939,6 +944,28 @@ def _clear_target_distribution_metadata(target_dir: Path, distribution_names: se
     if removed:
         print(
             "Removed stale target package metadata: "
+            + ", ".join(sorted(removed))
+        )
+
+
+def _clear_legacy_bundled_runtime_packages(target_dir: Path) -> None:
+    if not target_dir.is_dir():
+        return
+    removed = []
+    _clear_target_distribution_metadata(
+        target_dir,
+        set(LEGACY_BUNDLED_RUNTIME_PACKAGES),
+    )
+    for package_names in LEGACY_BUNDLED_RUNTIME_PACKAGES.values():
+        for package_name in package_names:
+            path = target_dir / package_name
+            if not path.exists():
+                continue
+            _remove_metadata_path(path)
+            removed.append(path.name)
+    if removed:
+        print(
+            "Removed legacy bundled runtime package artifacts: "
             + ", ".join(sorted(removed))
         )
 

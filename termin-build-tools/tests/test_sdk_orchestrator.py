@@ -173,7 +173,7 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
     requirements.parent.mkdir(parents=True)
     requirements.write_text(
         "numpy\n"
-        "Pillow>=9.0\n"
+        "watchdog>=4.0\n"
         "# comment\n"
         "PyYAML>=6.0\n",
         encoding="utf-8",
@@ -183,9 +183,18 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
     stale_numpy = target_dir / "numpy-1.26.4.dist-info"
     stale_numpy.mkdir()
     (stale_numpy / "METADATA").write_text("Name: numpy\n", encoding="utf-8")
-    stale_pillow = target_dir / "Pillow-8.0.0.dist-info"
-    stale_pillow.mkdir()
-    (stale_pillow / "METADATA").write_text("Name: Pillow\n", encoding="utf-8")
+    stale_watchdog = target_dir / "watchdog-4.0.0.dist-info"
+    stale_watchdog.mkdir()
+    (stale_watchdog / "METADATA").write_text("Name: watchdog\n", encoding="utf-8")
+    legacy_pillow_metadata = target_dir / "pillow-12.3.0.dist-info"
+    legacy_pillow_metadata.mkdir()
+    (legacy_pillow_metadata / "METADATA").write_text("Name: Pillow\n", encoding="utf-8")
+    legacy_pil_package = target_dir / "PIL"
+    legacy_pil_package.mkdir()
+    (legacy_pil_package / "__init__.py").write_text("VALUE = 'old pillow'\n", encoding="utf-8")
+    legacy_pillow_libs = target_dir / "pillow.libs"
+    legacy_pillow_libs.mkdir()
+    (legacy_pillow_libs / "libjpeg.so").write_text("", encoding="utf-8")
     unrelated = target_dir / "unrelated-1.0.0.dist-info"
     unrelated.mkdir()
     (unrelated / "METADATA").write_text("Name: unrelated\n", encoding="utf-8")
@@ -206,7 +215,10 @@ def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, mo
 
     assert result == 0
     assert not stale_numpy.exists()
-    assert not stale_pillow.exists()
+    assert not stale_watchdog.exists()
+    assert not legacy_pillow_metadata.exists()
+    assert not legacy_pil_package.exists()
+    assert not legacy_pillow_libs.exists()
     assert unrelated.is_dir()
     assert commands == [
         [
