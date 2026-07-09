@@ -91,12 +91,9 @@ EXTERNAL_PYTHON_PACKAGES = (
     "sipbuild",
     "PIL",
     "Pillow",
-    "scipy",
     "glfw",
-    "OpenGL",
     "packaging",
     "pyassimp",
-    "pyopengl",
     "sdl2",
     "yaml",
     "watchdog",
@@ -465,7 +462,7 @@ def ensure_bundled_python_runtime(sdk_prefix: Path) -> Path:
                     bundled_site_packages / dist_info.name,
                     dirs_exist_ok=True,
                 )
-        for pattern in ("*.so", "*.pyd", "numpy.libs", "scipy.libs", "pillow.libs", "Pillow.libs"):
+        for pattern in ("*.so", "*.pyd", "numpy.libs", "pillow.libs", "Pillow.libs"):
             for item in site_dir.glob(pattern):
                 target = bundled_site_packages / item.name
                 if item.is_dir():
@@ -1334,7 +1331,6 @@ def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
         # copies and as target-framework-specific lib/<TFM> assemblies.
         or is_csharp_managed_lib
         or "/csharp/runtimes/" in path_text
-        or "/site-packages/scipy/" in path_text
         # The bundled Python keeps pysdl2-dll's extension DLLs available.
         # Embedded hosts set PYSDL2_DLL_PATH with sdk/bin first, so PySDL2
         # binds core SDL2 calls to the same SDK SDL2.dll as termin_display.

@@ -80,6 +80,19 @@ def test_native_extensions_for_source_reads_manifest():
     ]
 
 
+def test_base_sdk_runtime_seed_excludes_heavy_optional_packages():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    runtime_requirement_names = sdk._requirement_distribution_names(
+        repo_root / "termin-app" / "requirements.txt"
+    )
+
+    assert "scipy" not in sdk.EXTERNAL_PYTHON_PACKAGES
+    assert "scipy" not in runtime_requirement_names
+    assert "OpenGL" not in sdk.EXTERNAL_PYTHON_PACKAGES
+    assert "pyopengl" not in sdk.EXTERNAL_PYTHON_PACKAGES
+    assert "PyOpenGL" not in runtime_requirement_names
+
+
 def test_repo_installs_umbrella_termin_cmake_package():
     repo_root = sdk.repo_root_from(Path(__file__))
     root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
