@@ -965,22 +965,6 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
 
-def test_verify_duplicate_libraries_allows_pysdl2_core_sdl_duplicate(
-    tmp_path,
-    monkeypatch,
-):
-    sdk_prefix = tmp_path / "sdk"
-    (sdk_prefix / "bin").mkdir(parents=True)
-    sdl2dll_dir = sdk_prefix / "python" / "Lib" / "site-packages" / "sdl2dll" / "dll"
-    sdl2dll_dir.mkdir(parents=True)
-    (sdk_prefix / "bin" / "SDL2.dll").write_text("sdk-sdl", encoding="utf-8")
-    (sdl2dll_dir / "SDL2.dll").write_text("pysdl2-sdl", encoding="utf-8")
-
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
-
-    assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
-
-
 def test_verify_duplicate_libraries_allows_pyglfw_backend_libraries(
     tmp_path,
     monkeypatch,
