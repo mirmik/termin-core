@@ -117,9 +117,11 @@ sdk/
 ├── bin/            # Исполняемые файлы + shared libraries на Windows (.dll)
 ├── lib/            # Import libraries (.lib), shared libraries на Linux (.so), cmake configs
 │   ├── cmake/      # find_package() конфиги для каждого модуля
-│   └── python/     # Python-пакеты (native-модули + .py исходники)
+│   └── python3.10/site-packages/
+│       # Python-пакеты (native-модули + .py исходники) на Linux
 ├── include/        # C/C++ заголовки
-└── Lib/            # Bundled Python stdlib + site-packages (при BUNDLE_PYTHON=ON)
+└── python/Lib/site-packages/
+    # Python-пакеты на Windows; Windows stdlib живёт в sdk/python/Lib/
 ```
 
 ---
@@ -160,15 +162,19 @@ Python-пакет состоит из двух частей:
 repo path (`termin-graphics`, `termin-mesh`, `termin-base`) и не случайный
 import namespace.
 
-Обе части устанавливаются в `lib/python/<package>/` или `lib/python/termin/<package>/`:
+Обе части устанавливаются в versioned `site-packages`: на Linux в
+`lib/pythonX.Y/site-packages/<package>/`, на Windows в
+`python/Lib/site-packages/<package>/`. Старое staging-дерево
+`sdk/lib/python/termin/` удалено и не должно использоваться новыми install
+rules.
 
 ```cmake
 # Native-модуль
-install(TARGETS _mylib_native DESTINATION lib/python/termin/mylib)
+install(TARGETS _mylib_native DESTINATION lib/python${PYTHON_VERSION}/site-packages/termin/mylib)
 
 # Python-исходники (без этого пакет не будет импортироваться!)
 install(DIRECTORY python/termin/mylib/
-    DESTINATION lib/python/termin/mylib
+    DESTINATION lib/python${PYTHON_VERSION}/site-packages/termin/mylib
     PATTERN "__pycache__" EXCLUDE
     PATTERN "*.pyc" EXCLUDE
 )
@@ -258,14 +264,15 @@ mylib/
 ## Bundled Python
 
 Launcher и editor — это C++ исполняемые файлы, которые встраивают Python-интерпретатор. При сборке с `BUNDLE_PYTHON=ON` в SDK копируется:
-- Python stdlib (`Lib/` на Windows, `lib/pythonX.Y/` на Linux)
-- Внешние pip-пакеты в `Lib/site-packages/`
+- Python stdlib (`python/Lib/` на Windows, `lib/pythonX.Y/` на Linux)
+- Внешние pip-пакеты в `python/Lib/site-packages/` на Windows или
+  `lib/pythonX.Y/site-packages/` на Linux
 - DLL/so Python-рантайма
 
 Launcher при запуске:
 1. Определяет, есть ли bundled Python (ищет stdlib рядом с собой)
 2. Если есть — вызывает `Py_SetPythonHome()` чтобы Python использовал bundled stdlib
-3. Добавляет `lib/python/` и `Lib/site-packages/` в `sys.path`
+3. Добавляет bundled `site-packages` в `sys.path`
 4. Запускает Python-код приложения
 
 Текущий Stage 3 SDK build использует активный host Python и не полностью
@@ -443,5 +450,5 @@ MSVC-специфичные warnings (C4251 — STL-члены в dllexport-кл
 - [ ] MSVC: подавить C4251/C4275, добавить `_CRT_SECURE_NO_WARNINGS`
 - [ ] RPATH: использовать хелперы из `cmake/TerminRpath.cmake`
 - [ ] Python: установить и `.pyd`/`.so`, и `.py` файлы
-- [ ] Добавить в `modules.conf` в правильное место для pip/package workflow, если модуль имеет Python-пакет
+- [ ] Добавить модуль в `build-system/packages.json` в правильное место для pip/package workflow, если модуль имеет Python-пакет
 - [ ] Добавить модуль в корневой `CMakeLists.txt`, если он должен участвовать в SDK build graph
