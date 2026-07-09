@@ -131,6 +131,14 @@ def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     stale_pkg_a = target_dir / "pkg_a-0.1.0+old.dist-info"
     stale_pkg_a.mkdir(parents=True)
     (stale_pkg_a / "METADATA").write_text("Name: pkg-a\n", encoding="utf-8")
+    stale_pkg_a_module = target_dir / "pkg_a" / "removed_module.py"
+    stale_pkg_a_module.parent.mkdir()
+    stale_pkg_a_module.write_text("STALE = True\n", encoding="utf-8")
+    (stale_pkg_a / "RECORD").write_text(
+        "pkg_a/removed_module.py,,\n"
+        "pkg_a-0.1.0+old.dist-info/METADATA,,\n",
+        encoding="utf-8",
+    )
     stale_pkg_b = target_dir / "pkg_b.egg-info"
     stale_pkg_b.mkdir()
     (stale_pkg_b / "PKG-INFO").write_text("Name: pkg-b\n", encoding="utf-8")
@@ -163,8 +171,29 @@ def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     assert str(repo_root / "pkg-a") in command
     assert str(repo_root / "pkg-b") in command
     assert not stale_pkg_a.exists()
+    assert not stale_pkg_a_module.exists()
     assert not stale_pkg_b.exists()
     assert unrelated.is_dir()
+
+
+def test_target_metadata_cleanup_does_not_follow_record_paths_outside_target(
+    tmp_path,
+):
+    target_dir = tmp_path / "site-packages"
+    metadata = target_dir / "pkg_a-0.1.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Name: pkg-a\n", encoding="utf-8")
+    outside = tmp_path / "outside.py"
+    outside.write_text("KEEP = True\n", encoding="utf-8")
+    (metadata / "RECORD").write_text(
+        "../../outside.py,,\n",
+        encoding="utf-8",
+    )
+
+    sdk._clear_target_distribution_metadata(target_dir, {"pkg-a"})
+
+    assert outside.is_file()
+    assert not metadata.exists()
 
 
 def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, monkeypatch):

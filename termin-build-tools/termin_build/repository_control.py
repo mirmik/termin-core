@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
+import os
+import subprocess
 import sys
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -37,6 +41,7 @@ class ModuleEntry:
 class ProfileEntry:
     id: str
     description: str
+    pytest_mark_expression: str | None
 
 
 @dataclass(frozen=True)
@@ -52,10 +57,18 @@ class SuiteEntry:
 
 
 @dataclass(frozen=True)
+class PythonTestInventory:
+    patterns: tuple[str, ...]
+    exclude_roots: tuple[str, ...]
+    exclude_directory_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RepositoryCatalog:
     modules: tuple[ModuleEntry, ...]
     profiles: tuple[ProfileEntry, ...]
     suites: tuple[SuiteEntry, ...]
+    python_test_inventory: PythonTestInventory
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -79,6 +92,28 @@ def _required_string(raw: dict[str, object], field: str, context: str) -> str:
     return value
 
 
+def _string_with_default(
+    raw: dict[str, object],
+    field: str,
+    context: str,
+    defaults: dict[str, object],
+) -> str:
+    if field in raw:
+        return _required_string(raw, field, context)
+    return _required_string(defaults, field, f"{context} defaults")
+
+
+def _optional_string(
+    raw: dict[str, object], field: str, context: str
+) -> str | None:
+    value = raw.get(field)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{context}: {field} must be a non-empty string or null")
+    return value
+
+
 def _string_tuple(
     raw: dict[str, object],
     field: str,
@@ -97,6 +132,24 @@ def _string_tuple(
     if len(value) != len(set(value)):
         raise ManifestError(f"{context}: {field} contains duplicate values")
     return tuple(value)
+
+
+def _string_tuple_with_default(
+    raw: dict[str, object],
+    field: str,
+    context: str,
+    defaults: dict[str, object],
+    *,
+    required: bool = False,
+) -> tuple[str, ...]:
+    if field in raw:
+        return _string_tuple(raw, field, context, required=required)
+    return _string_tuple(
+        defaults,
+        field,
+        f"{context} defaults",
+        required=required,
+    )
 
 
 def _object_list(data: dict[str, object], field: str, path: Path) -> list[dict[str, object]]:
@@ -154,9 +207,33 @@ def load_modules(repo_root: Path) -> tuple[ModuleEntry, ...]:
 
 def load_profiles_and_suites(
     repo_root: Path,
-) -> tuple[tuple[ProfileEntry, ...], tuple[SuiteEntry, ...]]:
+) -> tuple[
+    tuple[ProfileEntry, ...],
+    tuple[SuiteEntry, ...],
+    PythonTestInventory,
+]:
     path = repo_root / TEST_MANIFEST
     data = _read_json(path)
+
+    raw_defaults = data.get("suite_defaults", {})
+    if not isinstance(raw_defaults, dict):
+        raise ManifestError(f"{path}: suite_defaults must be an object")
+
+    raw_inventory = data.get("python_test_inventory")
+    if not isinstance(raw_inventory, dict):
+        raise ManifestError(f"{path}: python_test_inventory must be an object")
+    inventory_context = f"{path}: python_test_inventory"
+    inventory = PythonTestInventory(
+        patterns=_string_tuple(
+            raw_inventory, "patterns", inventory_context, required=True
+        ),
+        exclude_roots=_string_tuple(
+            raw_inventory, "exclude_roots", inventory_context
+        ),
+        exclude_directory_names=_string_tuple(
+            raw_inventory, "exclude_directory_names", inventory_context
+        ),
+    )
 
     profiles = []
     for index, raw in enumerate(_object_list(data, "profiles", path)):
@@ -165,31 +242,57 @@ def load_profiles_and_suites(
             ProfileEntry(
                 id=_required_string(raw, "id", context),
                 description=_required_string(raw, "description", context),
+                pytest_mark_expression=_optional_string(
+                    raw, "pytest_mark_expression", context
+                ),
             )
         )
 
     suites = []
     for index, raw in enumerate(_object_list(data, "suites", path)):
         context = f"{path}: suites[{index}]"
+        executor = _required_string(raw, "executor", context)
+        executor_defaults = raw_defaults.get(executor, {})
+        if not isinstance(executor_defaults, dict):
+            raise ManifestError(
+                f"{path}: suite_defaults.{executor} must be an object"
+            )
         suites.append(
             SuiteEntry(
                 id=_required_string(raw, "id", context),
                 module=_required_string(raw, "module", context),
-                executor=_required_string(raw, "executor", context),
+                executor=executor,
                 roots=_string_tuple(raw, "roots", context, required=True),
-                profiles=_string_tuple(raw, "profiles", context, required=True),
-                environment=_required_string(raw, "environment", context),
-                platforms=_string_tuple(raw, "platforms", context),
-                capabilities=_string_tuple(raw, "capabilities", context),
+                profiles=_string_tuple_with_default(
+                    raw,
+                    "profiles",
+                    context,
+                    executor_defaults,
+                    required=True,
+                ),
+                environment=_string_with_default(
+                    raw, "environment", context, executor_defaults
+                ),
+                platforms=_string_tuple_with_default(
+                    raw, "platforms", context, executor_defaults
+                ),
+                capabilities=_string_tuple_with_default(
+                    raw, "capabilities", context, executor_defaults
+                ),
             )
         )
-    return tuple(profiles), tuple(suites)
+    return tuple(profiles), tuple(suites), inventory
 
 
 def load_catalog(repo_root: Path) -> RepositoryCatalog:
     modules = load_modules(repo_root)
-    profiles, suites = load_profiles_and_suites(repo_root)
-    return RepositoryCatalog(modules=modules, profiles=profiles, suites=suites)
+    profiles, suites, inventory = load_profiles_and_suites(repo_root)
+    return RepositoryCatalog(
+        modules=modules,
+        profiles=profiles,
+        suites=suites,
+        python_test_inventory=inventory,
+    )
 
 
 def _duplicates(values: Iterable[str]) -> list[str]:
@@ -206,6 +309,52 @@ def _is_repository_relative(path: str) -> bool:
     )
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def discover_python_tests(
+    repo_root: Path,
+    inventory: PythonTestInventory,
+) -> tuple[str, ...]:
+    exclude_roots = tuple(Path(path) for path in inventory.exclude_roots)
+    excluded_names = set(inventory.exclude_directory_names)
+    discovered = []
+
+    for current, directory_names, file_names in os.walk(repo_root):
+        current_path = Path(current)
+        relative_current = current_path.relative_to(repo_root)
+        kept_directories = []
+        for directory_name in directory_names:
+            relative = relative_current / directory_name
+            if directory_name in excluded_names:
+                continue
+            if any(_is_within(relative, excluded) for excluded in exclude_roots):
+                continue
+            kept_directories.append(directory_name)
+        directory_names[:] = kept_directories
+
+        if any(_is_within(relative_current, excluded) for excluded in exclude_roots):
+            continue
+        for file_name in file_names:
+            if any(fnmatch.fnmatch(file_name, pattern) for pattern in inventory.patterns):
+                discovered.append((relative_current / file_name).as_posix())
+    return tuple(sorted(discovered))
+
+
+def _pytest_owners(test_path: str, suites: Iterable[SuiteEntry]) -> list[str]:
+    path = Path(test_path)
+    owners = []
+    for suite in suites:
+        if suite.executor != "pytest":
+            continue
+        for root in suite.roots:
+            if _is_within(path, Path(root)):
+                owners.append(suite.id)
+                break
+    return sorted(owners)
+
+
 def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
     errors = []
     for module_id in _duplicates(module.id for module in catalog.modules):
@@ -219,6 +368,21 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
 
     module_ids = {module.id for module in catalog.modules}
     profile_ids = {profile.id for profile in catalog.profiles}
+    inventory = catalog.python_test_inventory
+    for pattern in inventory.patterns:
+        if "/" in pattern or "\\" in pattern:
+            errors.append(f"Python test pattern must match file names only: {pattern}")
+    for exclude_root in inventory.exclude_roots:
+        if not _is_repository_relative(exclude_root):
+            errors.append(
+                f"Python test exclude root must be repository-relative: {exclude_root}"
+            )
+    for directory_name in inventory.exclude_directory_names:
+        if Path(directory_name).name != directory_name or directory_name in ("", ".", ".."):
+            errors.append(
+                "Python test excluded directory must be a single name: "
+                f"{directory_name}"
+            )
     for module in catalog.modules:
         if not _is_repository_relative(module.path):
             errors.append(
@@ -247,6 +411,17 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                 continue
             if not (repo_root / root).exists():
                 errors.append(f"{suite.id}: test root does not exist: {root}")
+
+    if not errors:
+        for test_path in discover_python_tests(repo_root, inventory):
+            owners = _pytest_owners(test_path, catalog.suites)
+            if not owners:
+                errors.append(f"orphan Python test: {test_path}")
+            elif len(owners) > 1:
+                errors.append(
+                    f"Python test has multiple suite owners: {test_path}: "
+                    + ", ".join(owners)
+                )
     return errors
 
 
@@ -256,6 +431,7 @@ def catalog_as_json(catalog: RepositoryCatalog) -> dict[str, object]:
         "modules": [asdict(module) for module in catalog.modules],
         "profiles": [asdict(profile) for profile in catalog.profiles],
         "suites": [asdict(suite) for suite in catalog.suites],
+        "python_test_inventory": asdict(catalog.python_test_inventory),
     }
 
 
@@ -283,6 +459,95 @@ def build_plan(
         "platform": platform,
         "suites": suites,
     }
+
+
+def _host_platform() -> str:
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "linux"
+
+
+def _safe_suite_directory(suite_id: str) -> str:
+    return "".join(
+        character if character.isalnum() or character in "_.-" else "-"
+        for character in suite_id
+    )
+
+
+def run_pytest_plan(
+    repo_root: Path,
+    catalog: RepositoryCatalog,
+    profile_id: str,
+    platform: str,
+    python_executable: str,
+) -> int:
+    profile_by_id = {profile.id: profile for profile in catalog.profiles}
+    profile = profile_by_id.get(profile_id)
+    if profile is None:
+        raise ManifestError(f"unknown profile: {profile_id}")
+
+    plan = build_plan(catalog, profile_id, platform)
+    pytest_suites = [
+        suite for suite in plan["suites"] if suite["executor"] == "pytest"
+    ]
+    run_root = repo_root / "build" / "pytest-temp" / uuid.uuid4().hex
+    cache_root = repo_root / "build" / "pytest-cache"
+    run_root.mkdir(parents=True, exist_ok=True)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    print(f"Pytest execution plan: {profile_id} / {platform}")
+    print(f"Pytest suites: {len(pytest_suites)}")
+    print(f"Pytest temp root: {run_root}")
+
+    failures = []
+    environment = os.environ.copy()
+    environment["TEMP"] = str(run_root)
+    environment["TMP"] = str(run_root)
+    environment["TMPDIR"] = str(run_root)
+    for suite in pytest_suites:
+        suite_id = suite["id"]
+        safe_suite_id = _safe_suite_directory(suite_id)
+        suite_temp = run_root / safe_suite_id
+        suite_cache = cache_root / safe_suite_id
+        suite_temp.mkdir(parents=True, exist_ok=True)
+        suite_cache.mkdir(parents=True, exist_ok=True)
+
+        command = [python_executable, "-m", "pytest"]
+        if profile.pytest_mark_expression is not None:
+            command.extend(["-m", profile.pytest_mark_expression])
+        command.extend(suite["roots"])
+        command.extend(
+            [
+                "--basetemp",
+                str(suite_temp),
+                "-o",
+                f"cache_dir={suite_cache}",
+                "-v",
+            ]
+        )
+
+        print("")
+        print("----------------------------------------")
+        print(f"  {suite_id}")
+        print("----------------------------------------")
+        sys.stdout.flush()
+        result = subprocess.run(
+            command,
+            cwd=repo_root,
+            env=environment,
+            check=False,
+        )
+        if result.returncode != 0:
+            failures.append(suite_id)
+
+    if failures:
+        print("")
+        print("Python suite failures:", file=sys.stderr)
+        for suite_id in failures:
+            print(f"  - {suite_id}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _load_valid_catalog(repo_root: Path) -> RepositoryCatalog:
@@ -333,6 +598,22 @@ def _cmd_plan(
     return 0
 
 
+def _cmd_run(
+    repo_root: Path,
+    profile: str,
+    platform: str | None,
+    python_executable: str,
+) -> int:
+    resolved_platform = platform or _host_platform()
+    return run_pytest_plan(
+        repo_root,
+        _load_valid_catalog(repo_root),
+        profile,
+        resolved_platform,
+        python_executable,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=None)
@@ -349,6 +630,13 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     plan_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    run_parser = subparsers.add_parser(
+        "run", help="Execute planner-selected automatic Python suites."
+    )
+    run_parser.add_argument("profile")
+    run_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
+    run_parser.add_argument("--python", default=sys.executable, dest="python_executable")
+
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
     try:
@@ -362,6 +650,13 @@ def main(argv: list[str] | None = None) -> int:
                 args.profile,
                 args.platform,
                 args.json_output,
+            )
+        if args.command == "run":
+            return _cmd_run(
+                repo_root,
+                args.profile,
+                args.platform,
+                args.python_executable,
             )
     except (ManifestError, OSError) as exc:
         for line in str(exc).splitlines():

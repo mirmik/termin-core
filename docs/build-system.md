@@ -417,6 +417,35 @@ Window tests настроены так, чтобы пропускаться в h
 ./run-tests.sh --full
 ```
 
+Python suite roots больше не перечисляются в `run-tests-python.sh` и
+`run-tests-python.ps1`. Их source of truth — `build-system/test-suites.json`.
+Локальные runners вызывают `termin_build.repository_control`: профиль `pr`
+применяет pytest-выражение `not full`, а `linux-full` и `windows-d3d11`
+снимают этот фильтр на соответствующей платформе. Каждая suite запускается
+отдельно; planner продолжает прогон после ошибки и печатает общий список
+упавших suites.
+
+Проверка manifests и orphan-test gate не требует запуска самих тестов:
+
+```bash
+PYTHONPATH=termin-build-tools \
+python3 -m termin_build.repository_control --repo-root . check
+```
+
+Gate сканирует repository-owned `test_*.py` и `*_test.py`. Каждый найденный
+файл обязан принадлежать ровно одному объявленному pytest root. Generated,
+SDK, venv и third-party roots исключены явно в manifest. План можно проверить
+до исполнения:
+
+```bash
+PYTHONPATH=termin-build-tools \
+python3 -m termin_build.repository_control --repo-root . \
+plan pr --platform linux --json
+```
+
+Focused-вызов `run-tests-python.* <pytest-target ...>` остаётся прямым pytest
+запуском и не меняет repository inventory.
+
 Полный набор дополнительно запускает editor-process smoke tests для hot reload
 модулей:
 

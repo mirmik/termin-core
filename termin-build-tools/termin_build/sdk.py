@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -943,6 +944,25 @@ def _remove_metadata_path(path: Path) -> None:
         path.unlink()
 
 
+def _remove_recorded_distribution_files(target_dir: Path, metadata_path: Path) -> None:
+    record_path = metadata_path / "RECORD"
+    if not record_path.is_file():
+        return
+
+    resolved_target = target_dir.resolve()
+    with record_path.open(newline="", encoding="utf-8") as record_file:
+        for row in csv.reader(record_file):
+            if not row or not row[0]:
+                continue
+            installed_path = (target_dir / row[0]).resolve()
+            if not installed_path.is_relative_to(resolved_target):
+                continue
+            if installed_path == metadata_path.resolve():
+                continue
+            if installed_path.is_file() or installed_path.is_symlink():
+                installed_path.unlink()
+
+
 def _clear_target_distribution_metadata(target_dir: Path, distribution_names: set[str]) -> None:
     if not target_dir.is_dir() or not distribution_names:
         return
@@ -959,11 +979,13 @@ def _clear_target_distribution_metadata(target_dir: Path, distribution_names: se
             continue
         if _normalized_distribution_name(distribution_name) not in normalized_names:
             continue
+        if child.name.endswith(".dist-info"):
+            _remove_recorded_distribution_files(target_dir, child)
         _remove_metadata_path(child)
         removed.append(child.name)
     if removed:
         print(
-            "Removed stale target package metadata: "
+            "Removed stale target package artifacts: "
             + ", ".join(sorted(removed))
         )
 
