@@ -845,11 +845,12 @@ def _clear_python_package_build_caches(repo_root: Path) -> None:
         if build_dir.is_dir():
             for child in build_dir.iterdir():
                 if child.is_dir() and (
-                    child.name.startswith("lib.")
+                    child.name == "lib"
+                    or child.name.startswith("lib.")
                     or child.name.startswith("bdist.")
                 ):
                     shutil.rmtree(child, ignore_errors=True)
-        for egg_info in package_dir.glob("*.egg-info"):
+        for egg_info in package_dir.rglob("*.egg-info"):
             if egg_info.is_dir():
                 shutil.rmtree(egg_info, ignore_errors=True)
 
@@ -1488,11 +1489,96 @@ def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
     return 0
 
 
+def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
+    launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
+    launcher = sdk_prefix / "bin" / launcher_name
+    print("Verifying: isolated SDK Python launcher")
+    if not launcher.is_file():
+        print(f"FAILED: SDK Python launcher is missing: {launcher}", file=sys.stderr)
+        return 1
+
+    hostile_env = os.environ.copy()
+    hostile_env.update(
+        {
+            "PYTHONHOME": str(sdk_prefix / "__invalid_python_home__"),
+            "PYTHONPATH": str(sdk_prefix / "__invalid_python_path__"),
+            "PYTHONUSERBASE": str(sdk_prefix / "__invalid_user_base__"),
+            "PYTHONNOUSERSITE": "0",
+        }
+    )
+    info_result = subprocess.run(
+        [str(launcher), "--termin-info"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=hostile_env,
+    )
+    if info_result.returncode != 0:
+        print(
+            "FAILED: SDK Python launcher diagnostics failed: "
+            + info_result.stderr.strip(),
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        info = json.loads(info_result.stdout)
+    except json.JSONDecodeError as error:
+        print(f"FAILED: invalid SDK Python diagnostics JSON: {error}", file=sys.stderr)
+        return 1
+
+    expected_root = sdk_prefix.resolve()
+    if Path(str(info.get("sdk_root", ""))).resolve() != expected_root:
+        print("FAILED: SDK Python launcher reported the wrong SDK root", file=sys.stderr)
+        return 1
+    expected_flags = {
+        "isolated": True,
+        "use_environment": False,
+        "user_site": False,
+    }
+    for field, expected in expected_flags.items():
+        if info.get(field) is not expected:
+            print(
+                f"FAILED: SDK Python launcher diagnostic {field}={info.get(field)!r}",
+                file=sys.stderr,
+            )
+            return 1
+
+    smoke = (
+        "import pathlib, site, sys, tcbase, termin.tween; "
+        f"root = pathlib.Path({str(expected_root)!r}); "
+        "assert pathlib.Path(tcbase.__file__).resolve().is_relative_to(root); "
+        "assert pathlib.Path(termin.tween.__file__).resolve().is_relative_to(root); "
+        "assert site.ENABLE_USER_SITE is False; "
+        "assert pathlib.Path(sys.prefix).resolve() == root"
+    )
+    smoke_result = subprocess.run(
+        [str(launcher), "-c", smoke],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=hostile_env,
+    )
+    if smoke_result.returncode != 0:
+        print(
+            "FAILED: installed SDK Python import smoke failed: "
+            + smoke_result.stderr.strip(),
+            file=sys.stderr,
+        )
+        return 1
+    print("  OK: launcher ignores ambient Python paths and imports SDK packages")
+    return 0
+
+
 def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
     result = verify_no_duplicate_libraries(sdk_prefix)
     if result != 0:
         return result
-    return verify_sdk_artifacts(sdk_prefix, build_dir)
+    result = verify_sdk_artifacts(sdk_prefix, build_dir)
+    if result != 0:
+        return result
+    return verify_sdk_python_launcher(sdk_prefix)
 
 
 def _build_dir(repo_root: Path, build_type: str) -> Path:

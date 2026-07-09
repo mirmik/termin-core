@@ -114,7 +114,7 @@ Script-level `--pch` applies to selected C++ targets with broad STL-heavy includ
 
 ```
 sdk/
-├── bin/            # Исполняемые файлы + shared libraries на Windows (.dll)
+├── bin/            # Исполняемые файлы, включая termin_python; DLL на Windows
 ├── lib/            # Import libraries (.lib), shared libraries на Linux (.so), cmake configs
 │   ├── cmake/      # find_package() конфиги для каждого модуля
 │   └── python3.10/site-packages/
@@ -123,6 +123,39 @@ sdk/
 └── python/Lib/site-packages/
     # Python-пакеты на Windows; Windows stdlib живёт в sdk/python/Lib/
 ```
+
+### Bundled Python и тестовый контур
+
+`sdk/bin/termin_python` — SDK-relative isolated launcher. Он игнорирует
+`PYTHONHOME`, `PYTHONPATH` и user site-packages, использует bundled stdlib и
+site-packages, а `--termin-info` печатает диагностический JSON с SDK root,
+Python ABI и активными путями.
+
+Developer/test environment не является вторым runtime venv. Команда
+
+```bash
+./setup-sdk-python-env.sh
+```
+
+создаёт disposable слой `build/python-envs/test`: pinned pytest/Ruff/test-only
+dependencies и `overlay.json`. Manifest-driven finder загружает Python-исходники
+Termin из checkout, но ищет native extensions прежде всего в соответствующем
+SDK. Overlay привязан к hash `sdk/termin-artifacts.json` и Python ABI; устаревший
+overlay завершается ошибкой вместо неявного смешивания сборок.
+
+Прямые режимы запуска:
+
+```bash
+# Разработка и тесты из checkout поверх SDK runtime
+sdk/bin/termin_python --termin-overlay build/python-envs/test/overlay.json -m pytest
+
+# Проверка только установленного SDK, без checkout overlay
+sdk/bin/termin_python -c "import tcbase, termin.engine"
+```
+
+`setup-test-venv.sh` пока является compatibility wrapper. Новый workflow не
+копирует `.so`/`.pyd` в source tree и не требует `--force` после пересборки
+bindings; после изменения SDK нужно лишь перегенерировать overlay.
 
 ---
 

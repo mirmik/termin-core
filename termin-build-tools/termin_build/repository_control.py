@@ -482,6 +482,7 @@ def run_pytest_plan(
     profile_id: str,
     platform: str,
     python_executable: str,
+    python_arguments: tuple[str, ...] = (),
 ) -> int:
     profile_by_id = {profile.id: profile for profile in catalog.profiles}
     profile = profile_by_id.get(profile_id)
@@ -513,7 +514,7 @@ def run_pytest_plan(
         suite_temp.mkdir(parents=True, exist_ok=True)
         suite_cache.mkdir(parents=True, exist_ok=True)
 
-        command = [python_executable, "-m", "pytest"]
+        command = [python_executable, *python_arguments, "-m", "pytest"]
         if profile.pytest_mark_expression is not None:
             command.extend(["-m", profile.pytest_mark_expression])
         command.extend(suite["roots"])
@@ -603,6 +604,7 @@ def _cmd_run(
     profile: str,
     platform: str | None,
     python_executable: str,
+    python_arguments: tuple[str, ...],
 ) -> int:
     resolved_platform = platform or _host_platform()
     return run_pytest_plan(
@@ -611,6 +613,7 @@ def _cmd_run(
         profile,
         resolved_platform,
         python_executable,
+        python_arguments,
     )
 
 
@@ -636,6 +639,7 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("profile")
     run_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     run_parser.add_argument("--python", default=sys.executable, dest="python_executable")
+    run_parser.add_argument("--python-arg", action="append", default=[])
 
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
@@ -657,6 +661,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.profile,
                 args.platform,
                 args.python_executable,
+                tuple(args.python_arg),
             )
     except (ManifestError, OSError) as exc:
         for line in str(exc).splitlines():

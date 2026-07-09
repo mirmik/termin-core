@@ -37,6 +37,11 @@ termin_cli_add_tool(termin src/termin.cpp)
 termin_cli_add_tool(termin_modules_cli src/termin_modules_cli.cpp)
 termin_cli_add_tool(termin_stdlib src/termin_stdlib.cpp)
 
+if(TERMIN_BUILD_PYTHON)
+    termin_cli_add_tool(termin_python src/termin_python.cpp)
+    target_link_libraries(termin_python PRIVATE Python::Python)
+endif()
+
 termin_cli_add_tool(termin_builder src/termin_builder.cpp)
 target_link_libraries(termin_builder PRIVATE tcbase::termin_base)
 

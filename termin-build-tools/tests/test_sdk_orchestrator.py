@@ -196,6 +196,75 @@ def test_target_metadata_cleanup_does_not_follow_record_paths_outside_target(
     assert not metadata.exists()
 
 
+def test_verify_sdk_python_launcher_rejects_missing_launcher(tmp_path, capsys):
+    sdk_prefix = tmp_path / "sdk"
+
+    assert sdk.verify_sdk_python_launcher(sdk_prefix) == 1
+    assert "SDK Python launcher is missing" in capsys.readouterr().err
+
+
+def test_verify_sdk_python_launcher_checks_isolation_and_imports(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    launcher = sdk_prefix / "bin" / "termin_python"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("launcher", encoding="utf-8")
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append((command, kwargs))
+        if "--termin-info" in command:
+            return sdk.subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {
+                        "sdk_root": str(sdk_prefix.resolve()),
+                        "isolated": True,
+                        "use_environment": False,
+                        "user_site": False,
+                    }
+                ),
+                stderr="",
+            )
+        return sdk.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk.subprocess, "run", fake_run)
+
+    assert sdk.verify_sdk_python_launcher(sdk_prefix) == 0
+    assert len(commands) == 2
+    for _command, kwargs in commands:
+        assert kwargs["env"]["PYTHONHOME"].endswith("__invalid_python_home__")
+        assert kwargs["env"]["PYTHONPATH"].endswith("__invalid_python_path__")
+
+
+def test_force_package_cache_cleanup_removes_plain_build_lib_and_nested_egg_info(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    package_root = repo_root / "example"
+    stale_build_lib = package_root / "build" / "lib" / "example"
+    stale_build_lib.mkdir(parents=True)
+    (stale_build_lib / "removed.py").write_text("STALE = True\n", encoding="utf-8")
+    nested_egg_info = package_root / "python" / "example.egg-info"
+    nested_egg_info.mkdir(parents=True)
+    (nested_egg_info / "SOURCES.txt").write_text("removed.py\n", encoding="utf-8")
+    monkeypatch.setattr(
+        sdk,
+        "load_manifest",
+        lambda _repo_root: [PackageEntry("example", "example", (), ())],
+    )
+
+    sdk._clear_python_package_build_caches(repo_root)
+
+    assert not (package_root / "build" / "lib").exists()
+    assert not nested_egg_info.exists()
+
+
 def test_bundled_runtime_requirements_clear_stale_external_metadata(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     requirements = repo_root / "termin-app" / "requirements.txt"

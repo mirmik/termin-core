@@ -47,6 +47,7 @@ void print_help() {
         << "  modules [args...]      Warm up project modules and dependencies.\n"
         << "  profiles [args...]     Run termin_builder profiles [args...].\n"
         << "  profile <name>         Run termin_builder profile <name>.\n"
+        << "  python [args...]       Run the isolated bundled SDK Python.\n"
         << "  stdlib [args...]       Run termin_stdlib sync [args...].\n"
         << "  runner [args...]       Run termin_runner directly.\n"
         << "  builder [args...]      Run termin_builder directly.\n"
@@ -191,6 +192,8 @@ Dispatch resolve_dispatch(int argc, char** argv, const fs::path& own_dir) {
         dispatch.args.emplace_back("profile");
         std::vector<std::string> rest = tail_args(argc, argv, 2);
         dispatch.args.insert(dispatch.args.end(), rest.begin(), rest.end());
+    } else if (command == "python") {
+        direct("termin_python", 2);
     } else if (command == "stdlib") {
         dispatch.executable = "termin_stdlib";
         std::vector<std::string> rest = tail_args(argc, argv, 2);
