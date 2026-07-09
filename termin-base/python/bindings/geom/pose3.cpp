@@ -56,6 +56,15 @@ void bind_pose3(nb::module_& m) {
             p.rotation_matrix(data);
             return mat33_row_tuple(data);
         })
+        .def("rotation_mat33", [](const Pose3& p) {
+            double data[9];
+            p.rotation_matrix(data);
+            Mat33 mat;
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 3; ++col)
+                    mat(col, row) = data[row * 3 + col];
+            return mat;
+        })
         .def_static("identity", &Pose3::identity)
         .def_static("translation", nb::overload_cast<double, double, double>(&Pose3::translation))
         .def_static("rotation", nb::overload_cast<const Vec3&, double>(&Pose3::rotation))
