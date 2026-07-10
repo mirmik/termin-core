@@ -250,10 +250,16 @@ NB_MODULE(_inspect_native, m) {
             &result);
         return result;
     }, "Return runtime type records with owner, parent, generation and facet ids");
-    m.def("unregister_runtime_type_owner", [](const std::string& owner) {
-        return tc_runtime_type_registry_unregister_owner(owner.c_str());
+    m.def("commit_runtime_type_owner_unload", [](const std::string& owner) {
+        size_t removed = 0;
+        if (!tc_runtime_type_registry_commit_owner_unload(owner.c_str(), &removed)) {
+            throw std::runtime_error(
+                "Failed to commit runtime type owner unload for '" + owner + "'"
+            );
+        }
+        return removed;
     }, nb::arg("owner"),
-       "Remove runtime type records owned by a module and invoke facet cleanup callbacks");
+       "Commit removal of runtime type records after successful unload preparation");
 
     // Register pointer extractor (for domain types)
     m.def("register_ptr_extractor", [](nb::object fn) {

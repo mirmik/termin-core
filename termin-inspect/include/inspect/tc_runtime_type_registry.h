@@ -57,6 +57,14 @@ TC_API size_t tc_runtime_type_registry_unregister_owner_with_context(
     const char* owner,
     void* context
 );
+TC_API bool tc_runtime_type_registry_prepare_owner_unload(
+    const char* owner,
+    void* context
+);
+TC_API bool tc_runtime_type_registry_commit_owner_unload(
+    const char* owner,
+    size_t* removed_count
+);
 
 TC_API bool tc_runtime_type_registry_set_owner(
     const char* type_name,

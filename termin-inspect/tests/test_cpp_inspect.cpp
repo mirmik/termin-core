@@ -73,6 +73,11 @@ bool refuse_runtime_instance_probe_facet(
     return false;
 }
 
+bool accept_runtime_instance_probe_facet(const char*, void*, void*) {
+    g_prepared_runtime_instance_probe_facets++;
+    return true;
+}
+
 void expect_near(float a, float b, float eps = 1e-6f) {
     CHECK(std::fabs(a - b) <= eps);
 }
@@ -332,6 +337,53 @@ TEST_CASE("Runtime type facet prepare unload receives context and can refuse cle
         "termin.test.prepare_refuse_probe"
     ));
     tc_runtime_type_registry_unregister_type(refusing_type_name);
+}
+
+TEST_CASE("Runtime type owner unload prepares every record before atomic commit") {
+    const char* owner = "runtime_type_atomic_owner";
+    const char* accepted_type = "RuntimeTypeAtomicAccepted";
+    const char* refused_type = "RuntimeTypeAtomicRefused";
+    tc_runtime_type_registry_unregister_type(accepted_type);
+    tc_runtime_type_registry_unregister_type(refused_type);
+    g_destroyed_runtime_instance_probe_facets = 0;
+    g_prepared_runtime_instance_probe_facets = 0;
+
+    tc_runtime_type_registry_set_registration_owner(owner);
+    CHECK(tc_runtime_type_registry_ensure_type(accepted_type));
+    CHECK(tc_runtime_type_registry_ensure_type(refused_type));
+    tc_runtime_type_registry_set_registration_owner("");
+    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
+        accepted_type,
+        "termin.test.atomic_accept",
+        new int(1),
+        destroy_runtime_instance_probe_facet,
+        accept_runtime_instance_probe_facet,
+        1
+    ));
+    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
+        refused_type,
+        "termin.test.atomic_refuse",
+        new int(2),
+        destroy_runtime_instance_probe_facet,
+        refuse_runtime_instance_probe_facet,
+        1
+    ));
+
+    CHECK(!tc_runtime_type_registry_prepare_owner_unload(owner, nullptr));
+    CHECK(tc_runtime_type_registry_has_type(accepted_type));
+    CHECK(tc_runtime_type_registry_has_type(refused_type));
+    CHECK(tc_runtime_type_registry_has_facet(accepted_type, "termin.test.atomic_accept"));
+    CHECK(tc_runtime_type_registry_has_facet(refused_type, "termin.test.atomic_refuse"));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 0);
+
+    CHECK(tc_runtime_type_registry_remove_facet(refused_type, "termin.test.atomic_refuse"));
+    CHECK(tc_runtime_type_registry_prepare_owner_unload(owner, nullptr));
+    size_t removed = 0;
+    CHECK(tc_runtime_type_registry_commit_owner_unload(owner, &removed));
+    CHECK_EQ(removed, 1u);
+    CHECK(!tc_runtime_type_registry_has_type(accepted_type));
+    CHECK(!tc_runtime_type_registry_has_type(refused_type));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
 }
 
 TEST_CASE("C++ inspect choices support string enum fields") {

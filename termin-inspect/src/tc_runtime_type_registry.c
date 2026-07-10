@@ -258,6 +258,7 @@ typedef struct unregister_owner_ctx {
     const char** names;
     size_t count;
     size_t capacity;
+    bool ok;
 } unregister_owner_ctx;
 
 static bool collect_owner_type(const char* name, void* resource, void* user_data) {
@@ -277,6 +278,7 @@ static bool collect_owner_type(const char* name, void* resource, void* user_data
         );
         if (!new_names) {
             tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to grow owner cleanup list");
+            ctx->ok = false;
             return false;
         }
         ctx->names = new_names;
@@ -287,30 +289,95 @@ static bool collect_owner_type(const char* name, void* resource, void* user_data
     return true;
 }
 
-size_t tc_runtime_type_registry_unregister_owner_with_context(
-    const char* owner,
-    void* context
-) {
-    if (!owner || !owner[0] || !g_runtime_type_registry.records) {
-        return 0;
-    }
-
+static unregister_owner_ctx collect_owner_types(const char* owner) {
     unregister_owner_ctx ctx = {
         tc_intern_string(owner),
         NULL,
         0,
-        0
+        0,
+        true
     };
     tc_resource_map_foreach(g_runtime_type_registry.records, collect_owner_type, &ctx);
+    return ctx;
+}
 
-    size_t removed = 0;
+bool tc_runtime_type_registry_prepare_owner_unload(
+    const char* owner,
+    void* context
+) {
+    if (!owner || !owner[0] || !g_runtime_type_registry.records) {
+        return true;
+    }
+
+    unregister_owner_ctx ctx = collect_owner_types(owner);
+    if (!ctx.ok) {
+        free(ctx.names);
+        return false;
+    }
+
     for (size_t i = 0; i < ctx.count; ++i) {
-        if (tc_runtime_type_registry_unregister_type_with_context(ctx.names[i], context)) {
-            removed++;
+        tc_runtime_type_record* record = find_record(ctx.names[i]);
+        if (record && !prepare_record_unload(record, context)) {
+            free(ctx.names);
+            return false;
         }
     }
 
     free(ctx.names);
+    return true;
+}
+
+bool tc_runtime_type_registry_commit_owner_unload(
+    const char* owner,
+    size_t* removed_count
+) {
+    if (removed_count) {
+        *removed_count = 0;
+    }
+    if (!owner || !owner[0] || !g_runtime_type_registry.records) {
+        return true;
+    }
+
+    unregister_owner_ctx ctx = collect_owner_types(owner);
+    if (!ctx.ok) {
+        free(ctx.names);
+        return false;
+    }
+
+    size_t removed = 0;
+    for (size_t i = 0; i < ctx.count; ++i) {
+        tc_runtime_type_record* record = find_record(ctx.names[i]);
+        if (!record) {
+            continue;
+        }
+        if (record->instance_count == 0) {
+            tc_resource_map_remove(g_runtime_type_registry.records, ctx.names[i]);
+        } else {
+            clear_record_facets(record);
+            record->tombstoned = true;
+            record->generation++;
+        }
+        removed++;
+    }
+
+    free(ctx.names);
+    if (removed_count) {
+        *removed_count = removed;
+    }
+    return true;
+}
+
+size_t tc_runtime_type_registry_unregister_owner_with_context(
+    const char* owner,
+    void* context
+) {
+    if (!tc_runtime_type_registry_prepare_owner_unload(owner, context)) {
+        return 0;
+    }
+    size_t removed = 0;
+    if (!tc_runtime_type_registry_commit_owner_unload(owner, &removed)) {
+        return 0;
+    }
     return removed;
 }
 
