@@ -80,3 +80,9 @@ auto list = kinds.kinds();
 | `INSPECT_FIELD_CHOICES` | Поле с фиксированным набором значений |
 | `INSPECT_BUTTON` | Action-кнопка (без данных, только callback) |
 | `SERIALIZABLE_FIELD` | Поле, участвующее в serialize/deserialize |
+
+Эти макросы больше не создают inline static registrar. В объявлении класса они
+определяют только явную registration-функцию; класс вызывает её из собственного
+idempotent `register_type()`, а deterministic bootstrap вызывает
+`Type::register_type()`. Для project module та же граница оформляется через
+`TC_MODULE_INSPECT_*` внутри `register_type()`, вызванного из ABI `init`.

@@ -1272,54 +1272,60 @@ struct InspectTypeMetadataRegistrar {
 // ============================================================================
 
 #define INSPECT_FIELD(cls, field, label, kind, ...) \
-    inline static ::tc::InspectFieldRegistrar<cls, decltype(cls::field)> \
-        _inspect_reg_##cls##_##field{ \
-            &cls::field, \
-            ::tc::InspectFieldSpec{#cls, #field, label, kind, ##__VA_ARGS__}};
+    static void _register_inspect_##field() { \
+        ::tc::register_inspect_field<cls, decltype(cls::field)>( \
+            &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, ##__VA_ARGS__}); \
+    }
 
 #define INSPECT_FIELD_RANGE(cls, field, label, kind, min_val, max_val) \
-    inline static ::tc::InspectFieldRegistrar<cls, decltype(cls::field)> \
-        _inspect_reg_##cls##_##field{ \
-            &cls::field, \
-            ::tc::InspectFieldSpec{#cls, #field, label, kind, min_val, max_val, 0.01}};
+    static void _register_inspect_##field() { \
+        ::tc::register_inspect_field<cls, decltype(cls::field)>( \
+            &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, min_val, max_val, 0.01}); \
+    }
 
 #define INSPECT_FIELD_NAMED(cls, field, path, label, kind, ...) \
-    inline static ::tc::InspectFieldRegistrar<cls, decltype(cls::field)> \
-        _inspect_reg_##cls##_##field{ \
-            &cls::field, \
-            ::tc::InspectFieldSpec{#cls, path, label, kind, ##__VA_ARGS__}};
+    static void _register_inspect_##field() { \
+        ::tc::register_inspect_field<cls, decltype(cls::field)>( \
+            &cls::field, ::tc::InspectFieldSpec{#cls, path, label, kind, ##__VA_ARGS__}); \
+    }
 
 #define INSPECT_FIELD_CALLBACK(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
-    inline static ::tc::InspectFieldCallbackRegistrar<cls, type> \
-        _inspect_reg_##cls##_##name{ \
+    static void _register_inspect_##name() { \
+        ::tc::InspectFieldCallbackRegistrar<cls, type>{ \
             ::tc::InspectFieldSpec{#cls, #name, label, kind, ##__VA_ARGS__}, \
             getter_fn, \
-            setter_fn};
+            setter_fn}; \
+    }
 
 #define INSPECT_FIELD_ACCESSORS(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
-    inline static ::tc::InspectAccessorFieldRegistrar<cls, type> \
-        _inspect_reg_##cls##_##name{ \
+    static void _register_inspect_##name() { \
+        ::tc::InspectAccessorFieldRegistrar<cls, type>{ \
             ::tc::InspectFieldSpec{#cls, #name, label, kind, ##__VA_ARGS__}, \
             getter_fn, \
-            setter_fn};
+            setter_fn}; \
+    }
 
 #define INSPECT_FIELD_ACCESSORS_CHOICES(cls, type, name, label, kind, getter_fn, setter_fn, ...) \
-    inline static ::tc::InspectAccessorFieldChoicesRegistrar<cls, type> \
-        _inspect_reg_##cls##_##name{ \
+    static void _register_inspect_##name() { \
+        ::tc::InspectAccessorFieldChoicesRegistrar<cls, type>{ \
             ::tc::InspectFieldSpec{#cls, #name, label, kind}, \
             getter_fn, \
             setter_fn, \
-            {__VA_ARGS__}};
+            {__VA_ARGS__}}; \
+    }
 
 #define SERIALIZABLE_FIELD(cls, name, getter_expr, setter_expr) \
-    inline static ::tc::SerializableFieldRegistrar<cls> \
-        _serialize_reg_##cls##_##name{#cls, #name, \
+    inline void register_serialize_##cls##_##name() { \
+        ::tc::SerializableFieldRegistrar<cls>{#cls, #name, \
             [](cls* self) -> tc_value { return self->getter_expr; }, \
-            [](cls* self, const tc_value* val) { self->setter_expr; }};
+            [](cls* self, const tc_value* val) { self->setter_expr; }}; \
+    }
 
 #define INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
-    inline static ::tc::InspectFieldChoicesRegistrar<cls, decltype(cls::field)> \
-        _inspect_reg_##cls##_##field{&cls::field, #cls, #field, label, kind, {__VA_ARGS__}};
+    static void _register_inspect_##field() { \
+        ::tc::register_inspect_field_choices<cls, decltype(cls::field)>( \
+            &cls::field, #cls, #field, label, kind, {__VA_ARGS__}); \
+    }
 
 #define TC_MODULE_INSPECT_FIELD(cls, field, label, kind, ...) \
     ::tc::register_inspect_field<cls, decltype(cls::field)>( \
@@ -1333,16 +1339,18 @@ struct InspectTypeMetadataRegistrar {
     ::tc::register_inspect_button_method<cls>(#cls, #name, label, method)
 
 #define INSPECT_BUTTON(cls, name, label, method) \
-    inline static ::tc::InspectButtonRegistrar \
-        _inspect_btn_##cls##_##name{#cls, #name, label, \
+    static void _register_inspect_##name() { \
+        ::tc::InspectButtonRegistrar{#cls, #name, label, \
             [](void* obj, const ::tc::InspectContext&) { \
                 auto* self = static_cast<cls*>(obj); \
                 if (self) (self->*method)(); \
-            }};
+            }}; \
+    }
 
 #define INSPECT_TYPE_METADATA(cls, name, value_expr) \
-    inline static ::tc::InspectTypeMetadataRegistrar \
-        _inspect_meta_##cls##_##name{#cls, #name, (value_expr)};
+    static void _register_inspect_metadata_##name() { \
+        ::tc::InspectTypeMetadataRegistrar{#cls, #name, (value_expr)}; \
+    }
 
 #ifdef _MSC_VER
 #pragma warning(pop)
