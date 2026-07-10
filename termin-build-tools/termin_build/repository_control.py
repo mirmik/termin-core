@@ -64,11 +64,20 @@ class PythonTestInventory:
 
 
 @dataclass(frozen=True)
+class NativeTestInventory:
+    patterns: tuple[str, ...]
+    extensions: tuple[str, ...]
+    exclude_roots: tuple[str, ...]
+    exclude_directory_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RepositoryCatalog:
     modules: tuple[ModuleEntry, ...]
     profiles: tuple[ProfileEntry, ...]
     suites: tuple[SuiteEntry, ...]
     python_test_inventory: PythonTestInventory
+    native_test_inventory: NativeTestInventory
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -211,6 +220,7 @@ def load_profiles_and_suites(
     tuple[ProfileEntry, ...],
     tuple[SuiteEntry, ...],
     PythonTestInventory,
+    NativeTestInventory,
 ]:
     path = repo_root / TEST_MANIFEST
     data = _read_json(path)
@@ -232,6 +242,25 @@ def load_profiles_and_suites(
         ),
         exclude_directory_names=_string_tuple(
             raw_inventory, "exclude_directory_names", inventory_context
+        ),
+    )
+
+    raw_native_inventory = data.get("native_test_inventory")
+    if not isinstance(raw_native_inventory, dict):
+        raise ManifestError(f"{path}: native_test_inventory must be an object")
+    native_inventory_context = f"{path}: native_test_inventory"
+    native_inventory = NativeTestInventory(
+        patterns=_string_tuple(
+            raw_native_inventory, "patterns", native_inventory_context, required=True
+        ),
+        extensions=_string_tuple(
+            raw_native_inventory, "extensions", native_inventory_context, required=True
+        ),
+        exclude_roots=_string_tuple(
+            raw_native_inventory, "exclude_roots", native_inventory_context
+        ),
+        exclude_directory_names=_string_tuple(
+            raw_native_inventory, "exclude_directory_names", native_inventory_context
         ),
     )
 
@@ -281,17 +310,18 @@ def load_profiles_and_suites(
                 ),
             )
         )
-    return tuple(profiles), tuple(suites), inventory
+    return tuple(profiles), tuple(suites), inventory, native_inventory
 
 
 def load_catalog(repo_root: Path) -> RepositoryCatalog:
     modules = load_modules(repo_root)
-    profiles, suites, inventory = load_profiles_and_suites(repo_root)
+    profiles, suites, inventory, native_inventory = load_profiles_and_suites(repo_root)
     return RepositoryCatalog(
         modules=modules,
         profiles=profiles,
         suites=suites,
         python_test_inventory=inventory,
+        native_test_inventory=native_inventory,
     )
 
 
@@ -355,6 +385,121 @@ def _pytest_owners(test_path: str, suites: Iterable[SuiteEntry]) -> list[str]:
     return sorted(owners)
 
 
+def discover_native_tests(
+    repo_root: Path,
+    inventory: NativeTestInventory,
+) -> tuple[str, ...]:
+    """Find repository-owned C/C++ test translation units below test directories."""
+    exclude_roots = tuple(Path(path) for path in inventory.exclude_roots)
+    excluded_names = set(inventory.exclude_directory_names)
+    discovered = []
+    for current, directory_names, file_names in os.walk(repo_root):
+        current_path = Path(current)
+        relative_current = current_path.relative_to(repo_root)
+        directory_names[:] = [
+            name
+            for name in directory_names
+            if name not in excluded_names
+            and not any(_is_within(relative_current / name, excluded) for excluded in exclude_roots)
+        ]
+        if any(_is_within(relative_current, excluded) for excluded in exclude_roots):
+            continue
+        if "tests" not in {part.lower() for part in relative_current.parts}:
+            continue
+        for file_name in file_names:
+            if (
+                Path(file_name).suffix.lower() in inventory.extensions
+                and any(fnmatch.fnmatch(file_name, pattern) for pattern in inventory.patterns)
+            ):
+                discovered.append((relative_current / file_name).as_posix())
+    return tuple(sorted(discovered))
+
+
+def _native_owners(test_path: str, suites: Iterable[SuiteEntry]) -> list[str]:
+    path = Path(test_path)
+    return sorted(
+        suite.id
+        for suite in suites
+        if suite.executor == "ctest"
+        and any(_is_within(path, Path(root)) for root in suite.roots)
+    )
+
+
+def _ctest_labels(raw_test: object) -> tuple[str, ...]:
+    if not isinstance(raw_test, dict):
+        return ()
+    properties = raw_test.get("properties")
+    if not isinstance(properties, list):
+        return ()
+    for property_entry in properties:
+        if not isinstance(property_entry, dict) or property_entry.get("name") != "LABELS":
+            continue
+        value = property_entry.get("value")
+        if isinstance(value, list) and all(isinstance(label, str) for label in value):
+            return tuple(value)
+    return ()
+
+
+def validate_ctest_inventory(
+    catalog: RepositoryCatalog, ctest_payload: object
+) -> list[str]:
+    """Validate CTest's configured registrations against native-suite metadata."""
+    if not isinstance(ctest_payload, dict):
+        return ["CTest JSON root must be an object"]
+    tests = ctest_payload.get("tests")
+    if not isinstance(tests, list):
+        return ["CTest JSON must contain a tests array"]
+
+    errors = []
+    observed_modules = set()
+    for raw_test in tests:
+        name = raw_test.get("name") if isinstance(raw_test, dict) else None
+        test_name = name if isinstance(name, str) else "<unnamed>"
+        labels = _ctest_labels(raw_test)
+        module_labels = [label for label in labels if label.startswith("termin:module:")]
+        tier_labels = [label for label in labels if label.startswith("termin:tier:")]
+        capability_labels = [
+            label for label in labels if label.startswith("termin:capability:")
+        ]
+        if len(module_labels) != 1:
+            errors.append(f"CTest test {test_name}: expected one termin:module label")
+        else:
+            observed_modules.add(module_labels[0].removeprefix("termin:module:"))
+        if len(tier_labels) != 1:
+            errors.append(f"CTest test {test_name}: expected one termin:tier label")
+        if not capability_labels:
+            errors.append(f"CTest test {test_name}: missing termin:capability label")
+
+    for suite in catalog.suites:
+        if suite.executor == "ctest" and suite.module not in observed_modules:
+            errors.append(f"{suite.id}: no configured CTest registration for module {suite.module}")
+    return errors
+
+
+def validate_native_compile_inventory(
+    repo_root: Path,
+    catalog: RepositoryCatalog,
+    compile_commands: object,
+) -> list[str]:
+    """Ensure each declared native test translation unit reached CMake's graph."""
+    if not isinstance(compile_commands, list):
+        return ["compile_commands.json root must be an array"]
+    compiled_sources = set()
+    for entry in compile_commands:
+        if not isinstance(entry, dict) or not isinstance(entry.get("file"), str):
+            continue
+        source = Path(entry["file"])
+        try:
+            compiled_sources.add(source.resolve().relative_to(repo_root).as_posix())
+        except ValueError:
+            continue
+    return [
+        f"native test source is absent from configured CMake graph: {source}"
+        for source in discover_native_tests(repo_root, catalog.native_test_inventory)
+        if source not in compiled_sources
+    ]
+
+
 def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
     errors = []
     for module_id in _duplicates(module.id for module in catalog.modules):
@@ -381,6 +526,24 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
         if Path(directory_name).name != directory_name or directory_name in ("", ".", ".."):
             errors.append(
                 "Python test excluded directory must be a single name: "
+                f"{directory_name}"
+            )
+    native_inventory = catalog.native_test_inventory
+    for pattern in native_inventory.patterns:
+        if "/" in pattern or "\\" in pattern:
+            errors.append(f"Native test pattern must match file names only: {pattern}")
+    for extension in native_inventory.extensions:
+        if not extension.startswith(".") or len(extension) == 1:
+            errors.append(f"Native test extension must start with '.': {extension}")
+    for exclude_root in native_inventory.exclude_roots:
+        if not _is_repository_relative(exclude_root):
+            errors.append(
+                f"Native test exclude root must be repository-relative: {exclude_root}"
+            )
+    for directory_name in native_inventory.exclude_directory_names:
+        if Path(directory_name).name != directory_name or directory_name in ("", ".", ".."):
+            errors.append(
+                "Native test excluded directory must be a single name: "
                 f"{directory_name}"
             )
     for module in catalog.modules:
@@ -422,6 +585,15 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                     f"Python test has multiple suite owners: {test_path}: "
                     + ", ".join(owners)
                 )
+        for test_path in discover_native_tests(repo_root, native_inventory):
+            owners = _native_owners(test_path, catalog.suites)
+            if not owners:
+                errors.append(f"orphan native test: {test_path}")
+            elif len(owners) > 1:
+                errors.append(
+                    f"Native test has multiple suite owners: {test_path}: "
+                    + ", ".join(owners)
+                )
     return errors
 
 
@@ -432,6 +604,7 @@ def catalog_as_json(catalog: RepositoryCatalog) -> dict[str, object]:
         "profiles": [asdict(profile) for profile in catalog.profiles],
         "suites": [asdict(suite) for suite in catalog.suites],
         "python_test_inventory": asdict(catalog.python_test_inventory),
+        "native_test_inventory": asdict(catalog.native_test_inventory),
     }
 
 
@@ -599,6 +772,41 @@ def _cmd_plan(
     return 0
 
 
+def _cmd_check_ctest(repo_root: Path, build_dir: Path) -> int:
+    catalog = _load_valid_catalog(repo_root)
+    result = subprocess.run(
+        ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ManifestError(
+            "CTest JSON discovery failed for "
+            f"{build_dir}: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
+    compile_commands_path = build_dir / "compile_commands.json"
+    try:
+        compile_commands = json.loads(compile_commands_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(
+            f"compile commands are missing: {compile_commands_path}; configure with "
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid compile commands in {compile_commands_path}: {exc}") from exc
+    errors = validate_ctest_inventory(catalog, payload)
+    errors.extend(validate_native_compile_inventory(repo_root, catalog, compile_commands))
+    if errors:
+        raise ManifestError("\n".join(errors))
+    print("CTest inventory OK")
+    return 0
+
+
 def _cmd_run(
     repo_root: Path,
     profile: str,
@@ -633,6 +841,11 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     plan_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    ctest_parser = subparsers.add_parser(
+        "check-ctest", help="Validate configured CTest labels and native inventory."
+    )
+    ctest_parser.add_argument("--build-dir", type=Path, required=True)
+
     run_parser = subparsers.add_parser(
         "run", help="Execute planner-selected automatic Python suites."
     )
@@ -655,6 +868,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.platform,
                 args.json_output,
             )
+        if args.command == "check-ctest":
+            return _cmd_check_ctest(repo_root, args.build_dir.resolve())
         if args.command == "run":
             return _cmd_run(
                 repo_root,

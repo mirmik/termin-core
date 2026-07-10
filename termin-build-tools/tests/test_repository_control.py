@@ -42,6 +42,12 @@ def _repository(tmp_path: Path) -> Path:
                 "exclude_roots": ["build"],
                 "exclude_directory_names": ["__pycache__"],
             },
+            "native_test_inventory": {
+                "patterns": ["test_*", "tests_*", "*_test.*"],
+                "extensions": [".c", ".cc", ".cpp", ".cxx"],
+                "exclude_roots": ["build"],
+                "exclude_directory_names": ["__pycache__"],
+            },
             "suite_defaults": {
                 "pytest": {
                     "profiles": ["pr"],
@@ -187,6 +193,79 @@ def test_python_test_discovery_honors_declared_exclusions(tmp_path: Path) -> Non
     assert repository_control.discover_python_tests(
         repo, catalog.python_test_inventory
     ) == ()
+
+
+def test_catalog_rejects_orphan_native_test(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    source = repo / "alpha" / "tests" / "test_native.cpp"
+    source.write_text("int main() { return 0; }\n", encoding="utf-8")
+
+    errors = repository_control.validate_catalog(
+        repo, repository_control.load_catalog(repo)
+    )
+
+    assert errors == ["orphan native test: alpha/tests/test_native.cpp"]
+
+
+def test_ctest_inventory_requires_standard_labels_and_registered_module(
+    tmp_path: Path,
+) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suite_defaults"]["ctest"] = {
+        "profiles": ["pr"],
+        "environment": "cmake-top-level",
+        "platforms": ["linux"],
+        "capabilities": ["host"],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-native",
+            "module": "alpha",
+            "executor": "ctest",
+            "roots": ["alpha/tests"],
+        }
+    )
+    _write_json(manifest, data)
+    catalog = repository_control.load_catalog(repo)
+
+    errors = repository_control.validate_ctest_inventory(
+        catalog,
+        {"tests": [{"name": "alpha_test", "properties": []}]},
+    )
+
+    assert errors == [
+        "CTest test alpha_test: expected one termin:module label",
+        "CTest test alpha_test: expected one termin:tier label",
+        "CTest test alpha_test: missing termin:capability label",
+        "alpha-native: no configured CTest registration for module alpha",
+    ]
+
+
+def test_native_compile_inventory_rejects_source_outside_cmake_graph(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    source = repo / "alpha" / "tests" / "test_native.cpp"
+    source.write_text("int main() { return 0; }\n", encoding="utf-8")
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suite_defaults"]["ctest"] = {
+        "profiles": ["pr"],
+        "environment": "cmake-top-level",
+        "platforms": ["linux"],
+        "capabilities": ["host"],
+    }
+    data["suites"].append(
+        {"id": "alpha-native", "module": "alpha", "executor": "ctest", "roots": ["alpha/tests"]}
+    )
+    _write_json(manifest, data)
+    catalog = repository_control.load_catalog(repo)
+
+    errors = repository_control.validate_native_compile_inventory(repo, catalog, [])
+
+    assert errors == [
+        "native test source is absent from configured CMake graph: alpha/tests/test_native.cpp"
+    ]
 
 
 def test_plan_filters_by_profile_and_platform(tmp_path: Path) -> None:
