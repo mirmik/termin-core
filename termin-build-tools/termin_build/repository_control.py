@@ -69,6 +69,15 @@ class NativeTestInventory:
     extensions: tuple[str, ...]
     exclude_roots: tuple[str, ...]
     exclude_directory_names: tuple[str, ...]
+    source_classifications: tuple["NativeSourceClassification", ...]
+
+
+@dataclass(frozen=True)
+class NativeSourceClassification:
+    path: str
+    profiles: tuple[str, ...]
+    capabilities: tuple[str, ...]
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -249,6 +258,26 @@ def load_profiles_and_suites(
     if not isinstance(raw_native_inventory, dict):
         raise ManifestError(f"{path}: native_test_inventory must be an object")
     native_inventory_context = f"{path}: native_test_inventory"
+    raw_source_classifications = raw_native_inventory.get(
+        "source_classifications", []
+    )
+    if not isinstance(raw_source_classifications, list) or any(
+        not isinstance(entry, dict) for entry in raw_source_classifications
+    ):
+        raise ManifestError(
+            f"{native_inventory_context}: source_classifications must be a list of objects"
+        )
+    source_classifications = []
+    for index, raw in enumerate(raw_source_classifications):
+        context = f"{native_inventory_context}: source_classifications[{index}]"
+        source_classifications.append(
+            NativeSourceClassification(
+                path=_required_string(raw, "path", context),
+                profiles=_string_tuple(raw, "profiles", context, required=True),
+                capabilities=_string_tuple(raw, "capabilities", context),
+                reason=_required_string(raw, "reason", context),
+            )
+        )
     native_inventory = NativeTestInventory(
         patterns=_string_tuple(
             raw_native_inventory, "patterns", native_inventory_context, required=True
@@ -262,6 +291,7 @@ def load_profiles_and_suites(
         exclude_directory_names=_string_tuple(
             raw_native_inventory, "exclude_directory_names", native_inventory_context
         ),
+        source_classifications=tuple(source_classifications),
     )
 
     profiles = []
@@ -480,6 +510,8 @@ def validate_native_compile_inventory(
     repo_root: Path,
     catalog: RepositoryCatalog,
     compile_commands: object,
+    profile: str,
+    capabilities: Iterable[str],
 ) -> list[str]:
     """Ensure each declared native test translation unit reached CMake's graph."""
     if not isinstance(compile_commands, list):
@@ -493,11 +525,23 @@ def validate_native_compile_inventory(
             compiled_sources.add(source.resolve().relative_to(repo_root).as_posix())
         except ValueError:
             continue
-    return [
-        f"native test source is absent from configured CMake graph: {source}"
-        for source in discover_native_tests(repo_root, catalog.native_test_inventory)
-        if source not in compiled_sources
-    ]
+    enabled_capabilities = set(capabilities)
+    classifications = {
+        entry.path: entry
+        for entry in catalog.native_test_inventory.source_classifications
+    }
+    errors = []
+    for source in discover_native_tests(repo_root, catalog.native_test_inventory):
+        classification = classifications.get(source)
+        required_in_configuration = classification is None or (
+            profile in classification.profiles
+            and set(classification.capabilities) <= enabled_capabilities
+        )
+        if required_in_configuration and source not in compiled_sources:
+            errors.append(
+                f"native test source is absent from configured CMake graph: {source}"
+            )
+    return errors
 
 
 def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
@@ -546,6 +590,27 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                 "Native test excluded directory must be a single name: "
                 f"{directory_name}"
             )
+    native_classifications = native_inventory.source_classifications
+    for source in _duplicates(entry.path for entry in native_classifications):
+        errors.append(f"duplicate native source classification: {source}")
+    native_test_paths = set(discover_native_tests(repo_root, native_inventory))
+    for classification in native_classifications:
+        if not _is_repository_relative(classification.path):
+            errors.append(
+                "Native source classification path must be repository-relative: "
+                f"{classification.path}"
+            )
+        elif classification.path not in native_test_paths:
+            errors.append(
+                "Native source classification does not name a discovered native test: "
+                f"{classification.path}"
+            )
+        for profile in classification.profiles:
+            if profile not in profile_ids:
+                errors.append(
+                    f"Native source classification {classification.path}: "
+                    f"unknown profile: {profile}"
+                )
     for module in catalog.modules:
         if not _is_repository_relative(module.path):
             errors.append(
@@ -772,7 +837,12 @@ def _cmd_plan(
     return 0
 
 
-def _cmd_check_ctest(repo_root: Path, build_dir: Path) -> int:
+def _cmd_check_ctest(
+    repo_root: Path,
+    build_dir: Path,
+    profile: str,
+    capabilities: tuple[str, ...],
+) -> int:
     catalog = _load_valid_catalog(repo_root)
     result = subprocess.run(
         ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
@@ -800,7 +870,11 @@ def _cmd_check_ctest(repo_root: Path, build_dir: Path) -> int:
     except json.JSONDecodeError as exc:
         raise ManifestError(f"invalid compile commands in {compile_commands_path}: {exc}") from exc
     errors = validate_ctest_inventory(catalog, payload)
-    errors.extend(validate_native_compile_inventory(repo_root, catalog, compile_commands))
+    errors.extend(
+        validate_native_compile_inventory(
+            repo_root, catalog, compile_commands, profile, capabilities
+        )
+    )
     if errors:
         raise ManifestError("\n".join(errors))
     print("CTest inventory OK")
@@ -845,6 +919,8 @@ def main(argv: list[str] | None = None) -> int:
         "check-ctest", help="Validate configured CTest labels and native inventory."
     )
     ctest_parser.add_argument("--build-dir", type=Path, required=True)
+    ctest_parser.add_argument("--profile", required=True)
+    ctest_parser.add_argument("--capability", action="append", default=[])
 
     run_parser = subparsers.add_parser(
         "run", help="Execute planner-selected automatic Python suites."
@@ -869,7 +945,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.json_output,
             )
         if args.command == "check-ctest":
-            return _cmd_check_ctest(repo_root, args.build_dir.resolve())
+            return _cmd_check_ctest(
+                repo_root,
+                args.build_dir.resolve(),
+                args.profile,
+                tuple(args.capability),
+            )
         if args.command == "run":
             return _cmd_run(
                 repo_root,

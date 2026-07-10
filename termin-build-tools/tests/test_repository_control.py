@@ -261,7 +261,9 @@ def test_native_compile_inventory_rejects_source_outside_cmake_graph(tmp_path: P
     _write_json(manifest, data)
     catalog = repository_control.load_catalog(repo)
 
-    errors = repository_control.validate_native_compile_inventory(repo, catalog, [])
+    errors = repository_control.validate_native_compile_inventory(
+        repo, catalog, [], "pr", ()
+    )
 
     assert errors == [
         "native test source is absent from configured CMake graph: alpha/tests/test_native.cpp"
