@@ -23,12 +23,25 @@ tc_value* val = tc_inspect_get(obj, "Player", "hp");
 tc_inspect_set(obj, "Player", "hp", new_value, context);
 ```
 
+Для migration/restore-кода доступен проверяемый вариант:
+
+```c
+bool accepted = tc_inspect_set_checked(obj, "Player", "hp", new_value, context);
+```
+
 ### Сериализация / десериализация
 
 ```c
 tc_value* data = tc_inspect_serialize(obj, "Player");
 tc_inspect_deserialize(obj, "Player", data, context);
 ```
+
+`tc_inspect_deserialize` предназначен для обычного best-effort применения.
+Lossless restore должен использовать `tc_inspect_deserialize_checked`: он
+останавливается на первом неизвестном/non-serializable поле, ошибке kind
+conversion или setter и возвращает `tc_inspect_apply_result` с `status`,
+`applied_fields` и `field_path`. Функция не откатывает уже применённые поля;
+поэтому atomic migration выполняется на ещё не опубликованном candidate object.
 
 ## Поля и метаданные
 
@@ -46,8 +59,13 @@ tc_inspect_find_field_info("Player", "hp", &info);  // по path
 
 ## Поведение на ошибках
 
-Модель fail-soft:
+Обычные interactive-вызовы используют модель fail-soft:
 
 - Невалидный `type_name` или `path` — возвращает `nil` / `false`, выполняет no-op.
 - Ошибки логируются через `tc_log` (уровень WARN/ERROR).
 - Dispatcher не бросает исключений и не аварийно завершается.
+
+Checked-вызовы также не пропускают исключения backend-а через C ABI, но
+возвращают `false`/fallible status. Неизвестные поля в checked payload считаются
+schema drift; вызывающий migration layer обязан сохранить исходный payload или
+явно преобразовать его до применения.

@@ -58,12 +58,14 @@ static tc_value mock_get(void* obj, const char* type_name, const char* path, voi
     return tc_value_int(((mock_dispatch_obj*)obj)->value);
 }
 
-static void mock_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
+static bool mock_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
     (void)context;
     (void)ctx;
-    if (!obj || !type_name || !path) return;
-    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0) return;
-    if (value.type == TC_VALUE_INT) ((mock_dispatch_obj*)obj)->value = value.data.i;
+    if (!obj || !type_name || !path) return false;
+    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0) return false;
+    if (value.type != TC_VALUE_INT) return false;
+    ((mock_dispatch_obj*)obj)->value = value.data.i;
+    return true;
 }
 
 static void mock_action(void* obj, const char* type_name, const char* path, void* ctx) {

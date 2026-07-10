@@ -11,6 +11,7 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <stdexcept>
 #include <any>
 #include <cerrno>
 #include <cstdlib>
@@ -99,8 +100,10 @@ inline int tc_value_to_int(const tc_value* v) {
             return static_cast<int>(parsed);
         }
         tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to int", v->data.s);
+        throw std::invalid_argument("cannot convert tc_value string to int");
     }
-    return 0;
+    tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert tc_value type %d to int", v->type);
+    throw std::invalid_argument("cannot convert tc_value to int");
 }
 
 // Helper to get double from tc_value
