@@ -54,6 +54,7 @@ class SuiteEntry:
     environment: str
     platforms: tuple[str, ...]
     capabilities: tuple[str, ...]
+    reason: str | None
 
 
 @dataclass(frozen=True)
@@ -338,6 +339,7 @@ def load_profiles_and_suites(
                 capabilities=_string_tuple_with_default(
                     raw, "capabilities", context, executor_defaults
                 ),
+                reason=_optional_string(raw, "reason", context),
             )
         )
     return tuple(profiles), tuple(suites), inventory, native_inventory
@@ -625,6 +627,10 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
             errors.append(f"{suite.id}: unknown module: {suite.module}")
         if suite.executor not in SUPPORTED_EXECUTORS:
             errors.append(f"{suite.id}: unsupported executor: {suite.executor}")
+        if suite.executor in {"process-smoke", "device", "manual"} and suite.reason is None:
+            errors.append(
+                f"{suite.id}: {suite.executor} suite requires an explicit reason"
+            )
         for profile in suite.profiles:
             if profile not in profile_ids:
                 errors.append(f"{suite.id}: unknown profile: {profile}")
@@ -789,6 +795,46 @@ def run_pytest_plan(
     return 0
 
 
+def run_process_smoke_plan(
+    repo_root: Path,
+    catalog: RepositoryCatalog,
+    profile_id: str,
+    platform: str,
+) -> int:
+    plan = build_plan(catalog, profile_id, platform)
+    suites = [
+        suite for suite in plan["suites"] if suite["executor"] == "process-smoke"
+    ]
+    failures = []
+    print(f"Process-smoke execution plan: {profile_id} / {platform}")
+    print(f"Process-smoke suites: {len(suites)}")
+    for suite in suites:
+        print("")
+        print("----------------------------------------")
+        print(f"  {suite['id']}")
+        print("----------------------------------------")
+        for root in suite["roots"]:
+            command = repo_root / root
+            if not os.access(command, os.X_OK):
+                print(
+                    f"ERROR: process-smoke command is not executable: {command}",
+                    file=sys.stderr,
+                )
+                failures.append(suite["id"])
+                break
+            result = subprocess.run([str(command)], cwd=repo_root, check=False)
+            if result.returncode != 0:
+                failures.append(suite["id"])
+                break
+    if failures:
+        print("", file=sys.stderr)
+        print("Process-smoke suite failures:", file=sys.stderr)
+        for suite_id in failures:
+            print(f"  - {suite_id}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _load_valid_catalog(repo_root: Path) -> RepositoryCatalog:
     catalog = load_catalog(repo_root)
     errors = validate_catalog(repo_root, catalog)
@@ -889,14 +935,29 @@ def _cmd_run(
     python_arguments: tuple[str, ...],
 ) -> int:
     resolved_platform = platform or _host_platform()
-    return run_pytest_plan(
-        repo_root,
-        _load_valid_catalog(repo_root),
-        profile,
-        resolved_platform,
-        python_executable,
-        python_arguments,
-    )
+    catalog = _load_valid_catalog(repo_root)
+    plan = build_plan(catalog, profile, resolved_platform)
+    executors = {suite["executor"] for suite in plan["suites"]}
+    unsupported = executors - {"pytest", "process-smoke"}
+    if unsupported:
+        raise ManifestError(
+            "local planner run has no executor for: " + ", ".join(sorted(unsupported))
+        )
+    exit_code = 0
+    if "pytest" in executors:
+        exit_code |= run_pytest_plan(
+            repo_root,
+            catalog,
+            profile,
+            resolved_platform,
+            python_executable,
+            python_arguments,
+        )
+    if "process-smoke" in executors:
+        exit_code |= run_process_smoke_plan(
+            repo_root, catalog, profile, resolved_platform
+        )
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:

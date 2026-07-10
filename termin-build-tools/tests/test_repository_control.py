@@ -366,3 +366,49 @@ def test_run_accumulates_suite_failures(tmp_path: Path, monkeypatch, capsys) -> 
 
     assert result == 1
     assert "  - alpha-python" in capsys.readouterr().err
+
+
+def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["profiles"].append(
+        {
+            "id": "editor-smoke",
+            "description": "Editor process smoke",
+        }
+    )
+    data["suite_defaults"]["process-smoke"] = {
+        "profiles": ["editor-smoke"],
+        "environment": "sdk-installed",
+        "platforms": ["linux"],
+        "capabilities": ["editor"],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-editor-smoke",
+            "module": "alpha",
+            "executor": "process-smoke",
+            "roots": ["scripts/smoke"],
+            "reason": "Exercises the editor process boundary.",
+        }
+    )
+    _write_json(manifest, data)
+    command = repo / "scripts" / "smoke"
+    command.parent.mkdir()
+    command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    command.chmod(0o755)
+    calls = []
+
+    def fake_run(args, *, cwd, check):
+        calls.append((args, cwd, check))
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(repository_control.subprocess, "run", fake_run)
+
+    result = repository_control.main(
+        ["--repo-root", str(repo), "run", "editor-smoke", "--platform", "linux"]
+    )
+
+    assert result == 0
+    assert calls == [([str(command)], repo, False)]
