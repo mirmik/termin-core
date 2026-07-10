@@ -1142,6 +1142,76 @@ def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path)
     return 1 if failed else 0
 
 
+def _read_execution_json(path: Path, description: str) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(f"{description} does not exist: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid {description}: {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ManifestError(f"{description} root must be an object: {path}")
+    return value
+
+
+def _entry_values(manifest: dict[str, object], field: str, key: str) -> set[str]:
+    entries = manifest.get(field)
+    if not isinstance(entries, list):
+        raise ManifestError(f"execution manifest field must be a list: {field}")
+    values = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get(key), str):
+            raise ManifestError(f"invalid {field} entry in execution manifest")
+        values.add(entry[key])
+    return values
+
+
+def _cmd_verify_plan_execution(
+    plan_path: Path, ctest_path: Path, python_path: Path
+) -> int:
+    plan = _read_execution_json(plan_path, "planner JSON")
+    ctest_manifest = _read_execution_json(ctest_path, "CTest execution manifest")
+    python_manifest = _read_execution_json(
+        python_path, "Python execution manifest"
+    )
+    suites = plan.get("suites")
+    if not isinstance(suites, list):
+        raise ManifestError(f"planner JSON has no suites list: {plan_path}")
+    expected_python = set()
+    expected_ctest_modules = set()
+    for suite in suites:
+        if not isinstance(suite, dict):
+            raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
+        executor = suite.get("executor")
+        if executor == "pytest" and isinstance(suite.get("id"), str):
+            expected_python.add(suite["id"])
+        elif executor == "ctest" and isinstance(suite.get("module"), str):
+            expected_ctest_modules.add(suite["module"])
+
+    python_observed = set()
+    for field in ("executed", "skipped", "failed"):
+        python_observed |= _entry_values(python_manifest, field, "id")
+    ctest_observed = set()
+    for field in ("executed", "skipped", "failed"):
+        ctest_observed |= _entry_values(ctest_manifest, field, "module")
+    missing_python = sorted(expected_python - python_observed)
+    missing_ctest = sorted(expected_ctest_modules - ctest_observed)
+    failures = _entry_values(python_manifest, "failed", "id") | _entry_values(
+        ctest_manifest, "failed", "module"
+    )
+    summary = {
+        "profile": plan.get("profile"),
+        "platform": plan.get("platform"),
+        "expected_python_suites": len(expected_python),
+        "expected_ctest_modules": len(expected_ctest_modules),
+        "missing_python_suites": missing_python,
+        "missing_ctest_modules": missing_ctest,
+        "failed_entries": sorted(failures),
+    }
+    _print_json(summary)
+    return 1 if missing_python or missing_ctest or failures else 0
+
+
 def _cmd_run(
     repo_root: Path,
     profile: str,
@@ -1262,6 +1332,14 @@ def main(argv: list[str] | None = None) -> int:
     ctest_report_parser.add_argument("--junit", type=Path, required=True)
     ctest_report_parser.add_argument("--output", type=Path, required=True)
 
+    verify_parser = subparsers.add_parser(
+        "verify-plan-execution",
+        help="Verify that CTest and Python manifests cover a planner JSON.",
+    )
+    verify_parser.add_argument("--plan", type=Path, required=True)
+    verify_parser.add_argument("--ctest", type=Path, required=True)
+    verify_parser.add_argument("--python", type=Path, required=True)
+
     run_parser = subparsers.add_parser(
         "run", help="Execute planner-selected automatic Python suites."
     )
@@ -1310,6 +1388,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "report-ctest":
             return _cmd_report_ctest(
                 args.selection.resolve(), args.junit.resolve(), args.output.resolve()
+            )
+        if args.command == "verify-plan-execution":
+            return _cmd_verify_plan_execution(
+                args.plan.resolve(), args.ctest.resolve(), args.python.resolve()
             )
         if args.command == "run":
             return _cmd_run(

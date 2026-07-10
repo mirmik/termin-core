@@ -455,3 +455,43 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
         "runtime_skip",
     ]
     assert report["failed"] == []
+
+
+def test_verify_plan_execution_requires_python_and_ctest_coverage(
+    tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    ctest = tmp_path / "ctest.json"
+    python = tmp_path / "python.json"
+    _write_json(
+        plan,
+        {
+            "profile": "pr",
+            "platform": "linux",
+            "suites": [
+                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+                {"id": "alpha-native", "executor": "ctest", "module": "alpha"},
+            ],
+        },
+    )
+    _write_json(
+        ctest,
+        {
+            "executed": [{"module": "alpha"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+    _write_json(
+        python,
+        {
+            "executed": [{"id": "alpha-python"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+
+    result = repository_control._cmd_verify_plan_execution(plan, ctest, python)
+
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["missing_python_suites"] == []
