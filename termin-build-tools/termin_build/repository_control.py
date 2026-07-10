@@ -917,14 +917,17 @@ def run_process_smoke_plan(
         print("----------------------------------------")
         for root in suite["roots"]:
             command = repo_root / root
-            if not os.access(command, os.X_OK):
+            command_line = [str(command)]
+            if platform == "windows" and command.suffix.lower() == ".ps1":
+                command_line = ["pwsh", "-NoProfile", "-File", str(command)]
+            elif not os.access(command, os.X_OK):
                 print(
                     f"ERROR: process-smoke command is not executable: {command}",
                     file=sys.stderr,
                 )
                 failures.append(suite["id"])
                 break
-            result = subprocess.run([str(command)], cwd=repo_root, check=False)
+            result = subprocess.run(command_line, cwd=repo_root, check=False)
             if result.returncode != 0:
                 failures.append(suite["id"])
                 break
