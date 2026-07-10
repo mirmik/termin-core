@@ -24,6 +24,7 @@ class InspectField:
     read_only – виджет будет только для чтения
     metadata  – свободные UI/domain hints; inspect-core их не интерпретирует
     """
+
     path: str | None = None
     label: str | None = None
     kind: str = "float"
@@ -45,6 +46,7 @@ class InspectField:
         if self.path is None:
             raise ValueError("InspectField: path or getter must be set")
         from termin.inspect.registry import InspectRegistry
+
         return InspectRegistry.instance().get(obj, self.path)
 
     def set_value(self, obj, value):
@@ -62,22 +64,16 @@ class InspectField:
             return
         if self.path is None:
             raise ValueError("InspectField: path or setter must be set")
-        # Use InspectRegistry.set() for proper kind handling (e.g. dict -> MaterialHandle)
+        # Use InspectRegistry.set() for proper kind handling (e.g. dict -> MaterialHandle).
+        # A failed registry write is a schema/registration error and must not be
+        # hidden by a reflective attribute write.
         try:
             from termin.inspect.registry import InspectRegistry
+
             InspectRegistry.instance().set(obj, self.path, value)
         except Exception as e:
-            log.warn(f"[InspectField] falling back to setattr for '{self.path}': {e}")
-            _resolve_path_set(obj, self.path, value)
-
-
-def _resolve_path_set(obj, path: str, value):
-    parts = path.split(".")
-    cur = obj
-    for part in parts[:-1]:
-        cur = getattr(cur, part)
-    last = parts[-1]
-    setattr(cur, last, value)
+            log.error(f"[InspectField] failed to set registered field '{self.path}': {e}")
+            raise
 
 
 class InspectAttr:
