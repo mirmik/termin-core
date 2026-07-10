@@ -412,3 +412,46 @@ def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> Non
 
     assert result == 0
     assert calls == [([str(command)], repo, False)]
+
+
+def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> None:
+    selection = tmp_path / "selection.json"
+    junit = tmp_path / "ctest.xml"
+    output = tmp_path / "execution.json"
+    _write_json(
+        selection,
+        {
+            "profile": "pr",
+            "platform": "linux",
+            "capabilities": ["host"],
+            "selected": [
+                {"name": "passes", "module": "alpha", "capabilities": ["host"]},
+                {"name": "runtime_skip", "module": "alpha", "capabilities": ["host"]},
+            ],
+            "skipped": [
+                {
+                    "name": "missing_capability",
+                    "module": "alpha",
+                    "reason": "missing capabilities: vulkan",
+                }
+            ],
+        },
+    )
+    junit.write_text(
+        "<testsuites><testsuite>"
+        '<testcase name="passes" />'
+        '<testcase name="runtime_skip"><skipped /></testcase>'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+
+    result = repository_control._cmd_report_ctest(selection, junit, output)
+
+    assert result == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert [entry["name"] for entry in report["executed"]] == ["passes"]
+    assert [entry["name"] for entry in report["skipped"]] == [
+        "missing_capability",
+        "runtime_skip",
+    ]
+    assert report["failed"] == []

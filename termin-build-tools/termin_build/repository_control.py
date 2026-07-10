@@ -6,9 +6,11 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -508,6 +510,67 @@ def validate_ctest_inventory(
     return errors
 
 
+def build_ctest_execution_plan(
+    catalog: RepositoryCatalog,
+    ctest_payload: object,
+    profile: str,
+    platform: str,
+    capabilities: Iterable[str],
+) -> dict[str, object]:
+    if not isinstance(ctest_payload, dict) or not isinstance(
+        ctest_payload.get("tests"), list
+    ):
+        raise ManifestError("CTest JSON must contain a tests array")
+    selected_modules = {
+        suite["module"]
+        for suite in build_plan(catalog, profile, platform)["suites"]
+        if suite["executor"] == "ctest"
+    }
+    enabled_capabilities = set(capabilities)
+    selected = []
+    skipped = []
+    for raw_test in ctest_payload["tests"]:
+        if not isinstance(raw_test, dict) or not isinstance(raw_test.get("name"), str):
+            continue
+        labels = _ctest_labels(raw_test)
+        module_labels = [
+            label for label in labels if label.startswith("termin:module:")
+        ]
+        if len(module_labels) != 1:
+            continue
+        module = module_labels[0].removeprefix("termin:module:")
+        if module not in selected_modules:
+            continue
+        required_capabilities = sorted(
+            label.removeprefix("termin:capability:")
+            for label in labels
+            if label.startswith("termin:capability:")
+        )
+        entry = {
+            "name": raw_test["name"],
+            "module": module,
+            "capabilities": required_capabilities,
+        }
+        missing_capabilities = sorted(
+            set(required_capabilities) - enabled_capabilities
+        )
+        if missing_capabilities:
+            entry["reason"] = "missing capabilities: " + ", ".join(
+                missing_capabilities
+            )
+            skipped.append(entry)
+        else:
+            selected.append(entry)
+    return {
+        "schema": 1,
+        "profile": profile,
+        "platform": platform,
+        "capabilities": sorted(enabled_capabilities),
+        "selected": selected,
+        "skipped": skipped,
+    }
+
+
 def validate_native_compile_inventory(
     repo_root: Path,
     catalog: RepositoryCatalog,
@@ -927,15 +990,130 @@ def _cmd_check_ctest(
     return 0
 
 
+def _cmd_ctest_plan(
+    repo_root: Path,
+    build_dir: Path,
+    profile: str,
+    platform: str,
+    capabilities: tuple[str, ...],
+    json_output: bool,
+    regex_output: bool,
+) -> int:
+    catalog = _load_valid_catalog(repo_root)
+    result = subprocess.run(
+        ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ManifestError(
+            "CTest JSON discovery failed for "
+            f"{build_dir}: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
+    plan = build_ctest_execution_plan(
+        catalog, payload, profile, platform, capabilities
+    )
+    if regex_output:
+        names = [entry["name"] for entry in plan["selected"]]
+        print("^(" + "|".join(re.escape(name) for name in names) + ")$")
+    elif json_output:
+        _print_json(plan)
+    else:
+        for entry in plan["selected"]:
+            print(entry["name"])
+    return 0
+
+
+def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path) -> int:
+    try:
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(f"CTest selection does not exist: {selection_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid CTest selection JSON: {selection_path}: {exc}") from exc
+    if not isinstance(selection, dict) or not isinstance(selection.get("selected"), list):
+        raise ManifestError(f"CTest selection has no selected test list: {selection_path}")
+    try:
+        root = ET.parse(junit_path).getroot()
+    except FileNotFoundError as exc:
+        raise ManifestError(f"CTest JUnit report does not exist: {junit_path}") from exc
+    except ET.ParseError as exc:
+        raise ManifestError(f"invalid CTest JUnit report: {junit_path}: {exc}") from exc
+
+    reported = {
+        testcase.attrib["name"]: testcase
+        for testcase in root.iter("testcase")
+        if "name" in testcase.attrib
+    }
+    executed = []
+    failed = []
+    runtime_skipped = []
+    for entry in selection["selected"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            raise ManifestError(f"invalid selected CTest entry in {selection_path}")
+        name = entry["name"]
+        testcase = reported.get(name)
+        result = dict(entry)
+        if testcase is None:
+            result["reason"] = "CTest did not report this selected registration"
+            failed.append(result)
+        elif testcase.find("failure") is not None or testcase.find("error") is not None:
+            failed.append(result)
+        elif testcase.find("skipped") is not None:
+            result["reason"] = "CTest marked the registration skipped"
+            runtime_skipped.append(result)
+        else:
+            executed.append(result)
+    manifest = {
+        "schema": 1,
+        "profile": selection.get("profile"),
+        "platform": selection.get("platform"),
+        "capabilities": selection.get("capabilities", []),
+        "selected": selection["selected"],
+        "executed": executed,
+        "skipped": [*selection.get("skipped", []), *runtime_skipped],
+        "failed": failed,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    _print_json(
+        {
+            "executed": len(executed),
+            "skipped": len(manifest["skipped"]),
+            "failed": len(failed),
+            "output": str(output_path),
+        }
+    )
+    return 1 if failed else 0
+
+
 def _cmd_run(
     repo_root: Path,
     profile: str,
     platform: str | None,
     python_executable: str,
     python_arguments: tuple[str, ...],
+    executor_filter: tuple[str, ...],
 ) -> int:
     resolved_platform = platform or _host_platform()
     catalog = _load_valid_catalog(repo_root)
+    if executor_filter:
+        catalog = RepositoryCatalog(
+            modules=catalog.modules,
+            profiles=catalog.profiles,
+            suites=tuple(
+                suite for suite in catalog.suites if suite.executor in executor_filter
+            ),
+            python_test_inventory=catalog.python_test_inventory,
+            native_test_inventory=catalog.native_test_inventory,
+        )
     plan = build_plan(catalog, profile, resolved_platform)
     executors = {suite["executor"] for suite in plan["suites"]}
     unsupported = executors - {"pytest", "process-smoke"}
@@ -983,6 +1161,24 @@ def main(argv: list[str] | None = None) -> int:
     ctest_parser.add_argument("--profile", required=True)
     ctest_parser.add_argument("--capability", action="append", default=[])
 
+    ctest_plan_parser = subparsers.add_parser(
+        "ctest-plan", help="Select configured CTest registrations from the planner."
+    )
+    ctest_plan_parser.add_argument("--build-dir", type=Path, required=True)
+    ctest_plan_parser.add_argument("--profile", required=True)
+    ctest_plan_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS),
+                                   default=_host_platform())
+    ctest_plan_parser.add_argument("--capability", action="append", default=[])
+    ctest_plan_parser.add_argument("--json", action="store_true", dest="json_output")
+    ctest_plan_parser.add_argument("--regex", action="store_true", dest="regex_output")
+
+    ctest_report_parser = subparsers.add_parser(
+        "report-ctest", help="Write an execution manifest from CTest JUnit output."
+    )
+    ctest_report_parser.add_argument("--selection", type=Path, required=True)
+    ctest_report_parser.add_argument("--junit", type=Path, required=True)
+    ctest_report_parser.add_argument("--output", type=Path, required=True)
+
     run_parser = subparsers.add_parser(
         "run", help="Execute planner-selected automatic Python suites."
     )
@@ -990,6 +1186,9 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     run_parser.add_argument("--python", default=sys.executable, dest="python_executable")
     run_parser.add_argument("--python-arg", action="append", default=[])
+    run_parser.add_argument(
+        "--executor", action="append", choices=sorted(SUPPORTED_EXECUTORS), default=[]
+    )
 
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
@@ -1012,6 +1211,20 @@ def main(argv: list[str] | None = None) -> int:
                 args.profile,
                 tuple(args.capability),
             )
+        if args.command == "ctest-plan":
+            return _cmd_ctest_plan(
+                repo_root,
+                args.build_dir.resolve(),
+                args.profile,
+                args.platform,
+                tuple(args.capability),
+                args.json_output,
+                args.regex_output,
+            )
+        if args.command == "report-ctest":
+            return _cmd_report_ctest(
+                args.selection.resolve(), args.junit.resolve(), args.output.resolve()
+            )
         if args.command == "run":
             return _cmd_run(
                 repo_root,
@@ -1019,6 +1232,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.platform,
                 args.python_executable,
                 tuple(args.python_arg),
+                tuple(args.executor),
             )
     except (ManifestError, OSError) as exc:
         for line in str(exc).splitlines():
