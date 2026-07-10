@@ -516,15 +516,18 @@ def build_ctest_execution_plan(
     profile: str,
     platform: str,
     capabilities: Iterable[str],
+    suite_ids: Iterable[str] | None = None,
 ) -> dict[str, object]:
     if not isinstance(ctest_payload, dict) or not isinstance(
         ctest_payload.get("tests"), list
     ):
         raise ManifestError("CTest JSON must contain a tests array")
+    allowed_suite_ids = set(suite_ids) if suite_ids is not None else None
     selected_modules = {
         suite["module"]
         for suite in build_plan(catalog, profile, platform)["suites"]
         if suite["executor"] == "ctest"
+        and (allowed_suite_ids is None or suite["id"] in allowed_suite_ids)
     }
     enabled_capabilities = set(capabilities)
     selected = []
@@ -768,6 +771,42 @@ def build_plan(
     }
 
 
+def load_plan_file(
+    path: Path,
+    catalog: RepositoryCatalog,
+    profile: str,
+    platform: str,
+) -> tuple[str, ...]:
+    try:
+        raw_plan = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(f"planner JSON does not exist: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid planner JSON in {path}: {exc}") from exc
+    if not isinstance(raw_plan, dict):
+        raise ManifestError(f"planner JSON root must be an object: {path}")
+    if raw_plan.get("profile") != profile or raw_plan.get("platform") != platform:
+        raise ManifestError(
+            f"planner JSON profile/platform does not match requested {profile}/{platform}"
+        )
+    raw_suites = raw_plan.get("suites")
+    if not isinstance(raw_suites, list):
+        raise ManifestError(f"planner JSON has no suites list: {path}")
+    actual_ids = []
+    for entry in raw_suites:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+            raise ManifestError(f"planner JSON has an invalid suite entry: {path}")
+        actual_ids.append(entry["id"])
+    expected_ids = [
+        entry["id"] for entry in build_plan(catalog, profile, platform)["suites"]
+    ]
+    if sorted(actual_ids) != sorted(expected_ids):
+        raise ManifestError(
+            f"planner JSON suite inventory differs from local {profile}/{platform} plan"
+        )
+    return tuple(actual_ids)
+
+
 def _host_platform() -> str:
     if sys.platform == "win32":
         return "windows"
@@ -790,7 +829,7 @@ def run_pytest_plan(
     platform: str,
     python_executable: str,
     python_arguments: tuple[str, ...] = (),
-) -> int:
+) -> tuple[int, list[str]]:
     profile_by_id = {profile.id: profile for profile in catalog.profiles}
     profile = profile_by_id.get(profile_id)
     if profile is None:
@@ -854,8 +893,8 @@ def run_pytest_plan(
         print("Python suite failures:", file=sys.stderr)
         for suite_id in failures:
             print(f"  - {suite_id}", file=sys.stderr)
-        return 1
-    return 0
+        return 1, failures
+    return 0, []
 
 
 def run_process_smoke_plan(
@@ -863,7 +902,7 @@ def run_process_smoke_plan(
     catalog: RepositoryCatalog,
     profile_id: str,
     platform: str,
-) -> int:
+) -> tuple[int, list[str]]:
     plan = build_plan(catalog, profile_id, platform)
     suites = [
         suite for suite in plan["suites"] if suite["executor"] == "process-smoke"
@@ -894,8 +933,8 @@ def run_process_smoke_plan(
         print("Process-smoke suite failures:", file=sys.stderr)
         for suite_id in failures:
             print(f"  - {suite_id}", file=sys.stderr)
-        return 1
-    return 0
+        return 1, failures
+    return 0, []
 
 
 def _load_valid_catalog(repo_root: Path) -> RepositoryCatalog:
@@ -998,6 +1037,7 @@ def _cmd_ctest_plan(
     capabilities: tuple[str, ...],
     json_output: bool,
     regex_output: bool,
+    plan_file: Path | None,
 ) -> int:
     catalog = _load_valid_catalog(repo_root)
     result = subprocess.run(
@@ -1015,8 +1055,13 @@ def _cmd_ctest_plan(
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
+    suite_ids = (
+        load_plan_file(plan_file, catalog, profile, platform)
+        if plan_file is not None
+        else None
+    )
     plan = build_ctest_execution_plan(
-        catalog, payload, profile, platform, capabilities
+        catalog, payload, profile, platform, capabilities, suite_ids
     )
     if regex_output:
         names = [entry["name"] for entry in plan["selected"]]
@@ -1101,9 +1146,20 @@ def _cmd_run(
     python_executable: str,
     python_arguments: tuple[str, ...],
     executor_filter: tuple[str, ...],
+    plan_file: Path | None,
+    report_output: Path | None,
 ) -> int:
     resolved_platform = platform or _host_platform()
     catalog = _load_valid_catalog(repo_root)
+    if plan_file is not None:
+        suite_ids = set(load_plan_file(plan_file, catalog, profile, resolved_platform))
+        catalog = RepositoryCatalog(
+            modules=catalog.modules,
+            profiles=catalog.profiles,
+            suites=tuple(suite for suite in catalog.suites if suite.id in suite_ids),
+            python_test_inventory=catalog.python_test_inventory,
+            native_test_inventory=catalog.native_test_inventory,
+        )
     if executor_filter:
         catalog = RepositoryCatalog(
             modules=catalog.modules,
@@ -1122,8 +1178,9 @@ def _cmd_run(
             "local planner run has no executor for: " + ", ".join(sorted(unsupported))
         )
     exit_code = 0
+    failures = []
     if "pytest" in executors:
-        exit_code |= run_pytest_plan(
+        pytest_exit_code, pytest_failures = run_pytest_plan(
             repo_root,
             catalog,
             profile,
@@ -1131,9 +1188,31 @@ def _cmd_run(
             python_executable,
             python_arguments,
         )
+        exit_code |= pytest_exit_code
+        failures.extend(pytest_failures)
     if "process-smoke" in executors:
-        exit_code |= run_process_smoke_plan(
+        process_exit_code, process_failures = run_process_smoke_plan(
             repo_root, catalog, profile, resolved_platform
+        )
+        exit_code |= process_exit_code
+        failures.extend(process_failures)
+    if report_output is not None:
+        selected = [
+            {"id": suite["id"], "executor": suite["executor"]}
+            for suite in plan["suites"]
+        ]
+        manifest = {
+            "schema": 1,
+            "profile": profile,
+            "platform": resolved_platform,
+            "selected": selected,
+            "executed": [entry for entry in selected if entry["id"] not in failures],
+            "skipped": [],
+            "failed": [entry for entry in selected if entry["id"] in failures],
+        }
+        report_output.parent.mkdir(parents=True, exist_ok=True)
+        report_output.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
     return exit_code
 
@@ -1171,6 +1250,7 @@ def main(argv: list[str] | None = None) -> int:
     ctest_plan_parser.add_argument("--capability", action="append", default=[])
     ctest_plan_parser.add_argument("--json", action="store_true", dest="json_output")
     ctest_plan_parser.add_argument("--regex", action="store_true", dest="regex_output")
+    ctest_plan_parser.add_argument("--plan-file", type=Path)
 
     ctest_report_parser = subparsers.add_parser(
         "report-ctest", help="Write an execution manifest from CTest JUnit output."
@@ -1189,6 +1269,8 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--executor", action="append", choices=sorted(SUPPORTED_EXECUTORS), default=[]
     )
+    run_parser.add_argument("--plan-file", type=Path)
+    run_parser.add_argument("--report-output", type=Path)
 
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
@@ -1220,6 +1302,7 @@ def main(argv: list[str] | None = None) -> int:
                 tuple(args.capability),
                 args.json_output,
                 args.regex_output,
+                args.plan_file.resolve() if args.plan_file else None,
             )
         if args.command == "report-ctest":
             return _cmd_report_ctest(
@@ -1233,6 +1316,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.python_executable,
                 tuple(args.python_arg),
                 tuple(args.executor),
+                args.plan_file.resolve() if args.plan_file else None,
+                args.report_output.resolve() if args.report_output else None,
             )
     except (ManifestError, OSError) as exc:
         for line in str(exc).splitlines():
