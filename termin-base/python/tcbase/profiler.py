@@ -126,13 +126,16 @@ class Profiler:
     def _convert_history(self) -> List[FrameProfile]:
         result = []
         for c_frame in self._tc.history:
-            frame = FrameProfile(
-                frame_number=c_frame.frame_number,
-                total_ms=c_frame.total_ms,
-            )
-            self._build_sections(c_frame.sections, frame.sections)
-            result.append(frame)
+            result.append(self._convert_frame(c_frame))
         return result
+
+    def _convert_frame(self, c_frame) -> FrameProfile:
+        frame = FrameProfile(
+            frame_number=c_frame.frame_number,
+            total_ms=c_frame.total_ms,
+        )
+        self._build_sections(c_frame.sections, frame.sections)
+        return frame
 
     def _build_sections(self, c_sections: list, out: Dict[str, SectionTiming],
                         parent_idx: int = -1) -> None:
@@ -150,6 +153,15 @@ class Profiler:
     def last_frame(self) -> FrameProfile | None:
         history = self._convert_history()
         return history[-1] if history else None
+
+    def last_complete_frame(self) -> FrameProfile | None:
+        """Return the newest closed frame, excluding the currently open slot."""
+        count = self._tc.history_count
+        index = count - 2 if self._tc.current_frame is not None else count - 1
+        if index < 0:
+            return None
+        frame = self._tc.history_at(index)
+        return self._convert_frame(frame) if frame is not None else None
 
     def average(self, frames: int = 60) -> Dict[str, float]:
         detailed = self.detailed_average(frames)
