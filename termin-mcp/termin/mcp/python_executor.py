@@ -52,7 +52,7 @@ class PythonScriptExecutor:
         self._pending: queue.Queue[_ExecutionRequest] = queue.Queue()
 
     def execute_repl_line(self, text: str) -> PythonExecutionResult:
-        if not text.strip():
+        if not text.strip() and not self._console.buffer:
             return PythonExecutionResult(ok=True, output="")
 
         self._refresh_context()
