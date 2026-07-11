@@ -21,6 +21,7 @@ from .package_manifest import repo_root_from
 
 MODULE_MANIFEST = Path("build-system/modules.json")
 TEST_MANIFEST = Path("build-system/test-suites.json")
+DOCS_MANIFEST = Path("build-system/docs-publication.json")
 SUPPORTED_EXECUTORS = frozenset(
     {"pytest", "ctest", "process-smoke", "device", "manual"}
 )
@@ -89,12 +90,29 @@ class NativeSourceClassification:
 
 
 @dataclass(frozen=True)
+class DocumentationSite:
+    module: str | None
+    root: str
+    config: str
+    site_path: str
+
+
+@dataclass(frozen=True)
+class DocumentationInventory:
+    sites: tuple[DocumentationSite, ...]
+    internal_roots: tuple[str, ...]
+    exclude_roots: tuple[str, ...]
+    exclude_directory_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RepositoryCatalog:
     modules: tuple[ModuleEntry, ...]
     profiles: tuple[ProfileEntry, ...]
     suites: tuple[SuiteEntry, ...]
     python_test_inventory: PythonTestInventory
     native_test_inventory: NativeTestInventory
+    documentation: DocumentationInventory
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -352,15 +370,49 @@ def load_profiles_and_suites(
     return tuple(profiles), tuple(suites), inventory, native_inventory
 
 
+def load_documentation_inventory(repo_root: Path) -> DocumentationInventory:
+    path = repo_root / DOCS_MANIFEST
+    data = _read_json(path)
+    raw_inventory = data.get("inventory")
+    if not isinstance(raw_inventory, dict):
+        raise ManifestError(f"{path}: inventory must be an object")
+    sites = []
+    for index, raw in enumerate(_object_list(data, "public_sites", path)):
+        context = f"{path}: public_sites[{index}]"
+        module = _optional_string(raw, "module", context)
+        sites.append(
+            DocumentationSite(
+                module=module,
+                root=_required_string(raw, "root", context),
+                config=_required_string(raw, "config", context),
+                site_path=_required_string(raw, "site_path", context),
+            )
+        )
+    return DocumentationInventory(
+        sites=tuple(sites),
+        internal_roots=_string_tuple(
+            data, "internal_roots", str(path)
+        ),
+        exclude_roots=_string_tuple(
+            raw_inventory, "exclude_roots", f"{path}: inventory"
+        ),
+        exclude_directory_names=_string_tuple(
+            raw_inventory, "exclude_directory_names", f"{path}: inventory"
+        ),
+    )
+
+
 def load_catalog(repo_root: Path) -> RepositoryCatalog:
     modules = load_modules(repo_root)
     profiles, suites, inventory, native_inventory = load_profiles_and_suites(repo_root)
+    documentation = load_documentation_inventory(repo_root)
     return RepositoryCatalog(
         modules=modules,
         profiles=profiles,
         suites=suites,
         python_test_inventory=inventory,
         native_test_inventory=native_inventory,
+        documentation=documentation,
     )
 
 
@@ -408,6 +460,30 @@ def discover_python_tests(
         for file_name in file_names:
             if any(fnmatch.fnmatch(file_name, pattern) for pattern in inventory.patterns):
                 discovered.append((relative_current / file_name).as_posix())
+    return tuple(sorted(discovered))
+
+
+def discover_documentation_roots(
+    repo_root: Path, inventory: DocumentationInventory
+) -> tuple[str, ...]:
+    exclude_roots = tuple(Path(path) for path in inventory.exclude_roots)
+    excluded_names = set(inventory.exclude_directory_names)
+    discovered = []
+    for current, directory_names, _ in os.walk(repo_root):
+        current_path = Path(current)
+        relative_current = current_path.relative_to(repo_root)
+        kept_directories = []
+        for directory_name in directory_names:
+            relative = relative_current / directory_name
+            if directory_name in excluded_names:
+                continue
+            if any(_is_within(relative, excluded) for excluded in exclude_roots):
+                continue
+            if directory_name == "docs":
+                discovered.append(relative.as_posix())
+                continue
+            kept_directories.append(directory_name)
+        directory_names[:] = kept_directories
     return tuple(sorted(discovered))
 
 
@@ -717,6 +793,47 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
             if not (repo_root / root).exists():
                 errors.append(f"{suite.id}: test root does not exist: {root}")
 
+    documentation = catalog.documentation
+    public_roots = [site.root for site in documentation.sites]
+    classified_roots = [*public_roots, *documentation.internal_roots]
+    for root in _duplicates(classified_roots):
+        errors.append(f"duplicate documentation root classification: {root}")
+    for site_path in _duplicates(site.site_path for site in documentation.sites):
+        errors.append(f"duplicate documentation publication path: {site_path}")
+    modules_by_id = {module.id: module for module in catalog.modules}
+    for site in documentation.sites:
+        if site.module is not None:
+            module = modules_by_id.get(site.module)
+            if module is None:
+                errors.append(f"documentation site has unknown module: {site.module}")
+            elif site.root != f"{module.path}/docs":
+                errors.append(
+                    f"documentation root does not match module {site.module}: {site.root}"
+                )
+        for field, value in (("root", site.root), ("config", site.config)):
+            if not _is_repository_relative(value):
+                errors.append(
+                    f"documentation site {field} must be repository-relative: {value}"
+                )
+            elif not (repo_root / value).exists():
+                errors.append(f"documentation site {field} does not exist: {value}")
+        site_path = Path(site.site_path)
+        if site_path.is_absolute() or ".." in site_path.parts:
+            errors.append(
+                f"documentation site_path must stay within publication root: {site.site_path}"
+            )
+    for root in documentation.internal_roots:
+        if not _is_repository_relative(root):
+            errors.append(f"internal docs root must be repository-relative: {root}")
+        elif not (repo_root / root).is_dir():
+            errors.append(f"internal docs root does not exist: {root}")
+    discovered_docs = set(discover_documentation_roots(repo_root, documentation))
+    classified_docs = set(classified_roots)
+    for root in sorted(discovered_docs - classified_docs):
+        errors.append(f"orphan documentation root: {root}")
+    for root in sorted(classified_docs - discovered_docs):
+        errors.append(f"classified documentation root was not discovered: {root}")
+
     if not errors:
         for test_path in discover_python_tests(repo_root, inventory):
             owners = _pytest_owners(test_path, catalog.suites)
@@ -747,6 +864,7 @@ def catalog_as_json(catalog: RepositoryCatalog) -> dict[str, object]:
         "suites": [asdict(suite) for suite in catalog.suites],
         "python_test_inventory": asdict(catalog.python_test_inventory),
         "native_test_inventory": asdict(catalog.native_test_inventory),
+        "documentation": asdict(catalog.documentation),
     }
 
 
@@ -1014,6 +1132,26 @@ def _cmd_list(repo_root: Path, subject: str, json_output: bool) -> int:
     else:
         for entry in entries:
             print(entry.id)
+    return 0
+
+
+def _cmd_docs_plan(repo_root: Path, json_output: bool) -> int:
+    catalog = _load_valid_catalog(repo_root)
+    sites = [asdict(site) for site in catalog.documentation.sites]
+    plan = {"schema": 1, "sites": sites}
+    if json_output:
+        _print_json(plan)
+    else:
+        for site in sites:
+            print(
+                "\t".join(
+                    (
+                        site["module"] or "repository",
+                        site["config"],
+                        site["site_path"],
+                    )
+                )
+            )
     return 0
 
 
@@ -1369,6 +1507,7 @@ def _cmd_run(
             suites=tuple(suite for suite in catalog.suites if suite.id in suite_ids),
             python_test_inventory=catalog.python_test_inventory,
             native_test_inventory=catalog.native_test_inventory,
+            documentation=catalog.documentation,
         )
     if executor_filter:
         catalog = RepositoryCatalog(
@@ -1379,6 +1518,7 @@ def _cmd_run(
             ),
             python_test_inventory=catalog.python_test_inventory,
             native_test_inventory=catalog.native_test_inventory,
+            documentation=catalog.documentation,
         )
     plan = build_plan(catalog, profile, resolved_platform)
     executors = {suite["executor"] for suite in plan["suites"]}
@@ -1437,6 +1577,11 @@ def main(argv: list[str] | None = None) -> int:
     list_parser = subparsers.add_parser("list", help="List catalog entries.")
     list_parser.add_argument("subject", choices=("modules", "profiles", "suites"))
     list_parser.add_argument("--json", action="store_true", dest="json_output")
+
+    docs_plan_parser = subparsers.add_parser(
+        "docs-plan", help="Emit the manifest-driven documentation publication plan."
+    )
+    docs_plan_parser.add_argument("--json", action="store_true", dest="json_output")
 
     plan_parser = subparsers.add_parser("plan", help="Build a test execution plan.")
     plan_parser.add_argument("profile")
@@ -1507,6 +1652,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_check(repo_root)
         if args.command == "list":
             return _cmd_list(repo_root, args.subject, args.json_output)
+        if args.command == "docs-plan":
+            return _cmd_docs_plan(repo_root, args.json_output)
         if args.command == "plan":
             return _cmd_plan(
                 repo_root,

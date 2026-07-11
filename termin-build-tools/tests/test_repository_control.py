@@ -76,6 +76,18 @@ def _repository(tmp_path: Path) -> Path:
             ],
         },
     )
+    _write_json(
+        tmp_path / "build-system" / "docs-publication.json",
+        {
+            "schema": 1,
+            "inventory": {
+                "exclude_roots": ["build"],
+                "exclude_directory_names": [".git", "__pycache__"],
+            },
+            "public_sites": [],
+            "internal_roots": [],
+        },
+    )
     return tmp_path
 
 
@@ -92,6 +104,7 @@ def test_catalog_joins_python_packages_to_test_suites(tmp_path: Path) -> None:
             python_distribution="alpha-dist",
         ),
     )
+    assert catalog.documentation.sites == ()
     assert catalog.profiles[0].pytest_mark_expression == "not full"
     assert repository_control.validate_catalog(repo, catalog) == []
 
@@ -157,6 +170,46 @@ def test_catalog_rejects_orphan_python_test(tmp_path: Path) -> None:
     )
 
     assert errors == ["orphan Python test: unowned/tests/test_orphan.py"]
+
+
+def test_catalog_rejects_orphan_documentation_root(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    docs = repo / "alpha" / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text("# Alpha\n", encoding="utf-8")
+
+    errors = repository_control.validate_catalog(
+        repo, repository_control.load_catalog(repo)
+    )
+
+    assert errors == ["orphan documentation root: alpha/docs"]
+
+
+def test_docs_plan_uses_module_identity_and_publication_path(
+    tmp_path: Path, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    docs = repo / "alpha" / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text("# Alpha\n", encoding="utf-8")
+    config = repo / "alpha" / "mkdocs.yml"
+    config.write_text("site_name: Alpha\n", encoding="utf-8")
+    manifest = repo / repository_control.DOCS_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["public_sites"] = [
+        {
+            "module": "alpha",
+            "root": "alpha/docs",
+            "config": "alpha/mkdocs.yml",
+            "site_path": "alpha",
+        }
+    ]
+    _write_json(manifest, data)
+
+    result = repository_control._cmd_docs_plan(repo, json_output=False)
+
+    assert result == 0
+    assert capsys.readouterr().out == "alpha\talpha/mkdocs.yml\talpha\n"
 
 
 def test_catalog_rejects_multiple_python_test_owners(tmp_path: Path) -> None:
