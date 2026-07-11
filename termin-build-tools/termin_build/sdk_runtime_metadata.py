@@ -6,20 +6,43 @@ import base64
 import csv
 import hashlib
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from .package_manifest import load_manifest
-from .sdk import (
-    LEGACY_BUNDLED_RUNTIME_PACKAGES,
-    RUNTIME_LOCK_RELATIVE,
-    RUNTIME_MANIFEST_NAME,
-    RUNTIME_MANIFEST_SCHEMA,
-    _python_executable,
-    _python_version_and_paths,
-)
+
+
+RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
+RUNTIME_MANIFEST_NAME = "python-runtime-manifest.json"
+RUNTIME_MANIFEST_SCHEMA = 1
+LEGACY_BUNDLED_RUNTIME_PACKAGES = {
+    "Pillow": ("PIL", "pillow.libs", "Pillow.libs"),
+}
+
+
+def _python_executable() -> str:
+    return os.environ.get("PYTHON_EXECUTABLE") or os.environ.get("PYTHON_BIN") or sys.executable
+
+
+def _python_version_and_paths(py_exec: str) -> dict[str, object]:
+    script = (
+        "import json, site, sys, sysconfig; "
+        "print(json.dumps({'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
+        "'prefix': sys.prefix, 'base_prefix': sys.base_prefix, "
+        "'executable': sys.executable, 'base_executable': sys._base_executable, "
+        "'stdlib': sysconfig.get_paths()['stdlib'], "
+        "'libdir': sysconfig.get_config_var('LIBDIR') or '', "
+        "'ldlibrary': sysconfig.get_config_var('LDLIBRARY') or '', "
+        "'sitepackages': site.getsitepackages() + ([site.getusersitepackages()] if site.getusersitepackages() else [])}))"
+    )
+    result = subprocess.run([py_exec, "-c", script], check=False, text=True, stdout=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(f"failed to inspect Python runtime: {py_exec}")
+    return json.loads(result.stdout)
 
 _DISTRIBUTION_NORMALIZE_RE = re.compile(r"[-_.]+")
 

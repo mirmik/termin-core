@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
-from .sdk import RUNTIME_MANIFEST_NAME, RUNTIME_MANIFEST_SCHEMA, _python_version_and_paths
 from .sdk_runtime_metadata import (
+    RUNTIME_MANIFEST_NAME,
+    RUNTIME_MANIFEST_SCHEMA,
     _distribution_metadata_paths,
     _distribution_name_from_metadata_dir,
     _metadata_distribution_field,
@@ -15,6 +18,27 @@ from .sdk_runtime_metadata import (
     _sha256_file,
     _verify_distribution_records,
 )
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def _python_version_and_paths(py_exec: str) -> dict[str, object]:
+    script = (
+        "import json, site, sys, sysconfig; "
+        "print(json.dumps({'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
+        "'prefix': sys.prefix, 'base_prefix': sys.base_prefix, "
+        "'executable': sys.executable, 'base_executable': sys._base_executable, "
+        "'stdlib': sysconfig.get_paths()['stdlib'], "
+        "'libdir': sysconfig.get_config_var('LIBDIR') or '', "
+        "'ldlibrary': sysconfig.get_config_var('LDLIBRARY') or '', "
+        "'sitepackages': site.getsitepackages() + ([site.getusersitepackages()] if site.getusersitepackages() else [])}))"
+    )
+    result = subprocess.run([py_exec, "-c", script], check=False, text=True, stdout=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(f"failed to inspect Python runtime: {py_exec}")
+    return json.loads(result.stdout)
 
 def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
     launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
@@ -180,4 +204,3 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
         return 1
     print(f"  OK: {len(declared)} declared distributions and RECORD hashes verified")
     return 0
-

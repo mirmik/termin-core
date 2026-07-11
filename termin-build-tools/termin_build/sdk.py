@@ -1510,6 +1510,7 @@ def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
 from .sdk_runtime_metadata import (
     _clear_legacy_bundled_runtime_packages,
     _clear_target_python_package_metadata,
+    _load_runtime_lock,
     write_python_runtime_manifest,
 )
 from .sdk_verification import verify_python_runtime_manifest, verify_sdk_python_launcher
