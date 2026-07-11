@@ -4,6 +4,8 @@ import json
 from io import StringIO
 from pathlib import Path
 
+import pytest
+
 from termin_build import repository_control
 
 
@@ -468,6 +470,7 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
     _write_json(
         selection,
         {
+            "schema": 1,
             "profile": "pr",
             "platform": "linux",
             "capabilities": ["host"],
@@ -513,6 +516,7 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
     _write_json(
         plan,
         {
+            "schema": 1,
             "profile": "pr",
             "platform": "linux",
             "suites": [
@@ -524,6 +528,9 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
     _write_json(
         ctest,
         {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
             "executed": [{"module": "alpha"}],
             "skipped": [],
             "failed": [],
@@ -532,6 +539,9 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
     _write_json(
         python,
         {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
             "executed": [{"id": "alpha-python"}],
             "skipped": [],
             "failed": [],
@@ -542,3 +552,60 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
 
     assert result == 0
     assert json.loads(capsys.readouterr().out)["missing_python_suites"] == []
+
+
+def test_verify_plan_execution_rejects_wrong_identity_and_unexpected_entries(
+    tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    ctest = tmp_path / "ctest.json"
+    python = tmp_path / "python.json"
+    _write_json(
+        plan,
+        {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
+            "suites": [
+                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+                {"id": "alpha-native", "executor": "ctest", "module": "alpha"},
+            ],
+        },
+    )
+    _write_json(
+        ctest,
+        {
+            "schema": 1,
+            "profile": "linux-full",
+            "platform": "linux",
+            "executed": [{"module": "alpha"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+    _write_json(
+        python,
+        {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
+            "executed": [{"id": "alpha-python"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+
+    with pytest.raises(repository_control.ManifestError, match="profile does not match"):
+        repository_control._cmd_verify_plan_execution(plan, ctest, python)
+
+    ctest_payload = json.loads(ctest.read_text(encoding="utf-8"))
+    ctest_payload["profile"] = "pr"
+    ctest_payload["executed"].append({"module": "unplanned"})
+    _write_json(ctest, ctest_payload)
+
+    result = repository_control._cmd_verify_plan_execution(plan, ctest, python)
+
+    assert result == 1
+    assert json.loads(capsys.readouterr().out)["unexpected_ctest_modules"] == [
+        "unplanned"
+    ]

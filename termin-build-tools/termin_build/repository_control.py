@@ -1210,6 +1210,25 @@ def _entry_values(manifest: dict[str, object], field: str, key: str) -> set[str]
     return values
 
 
+def _validate_execution_identity(
+    plan: dict[str, object],
+    manifest: dict[str, object],
+    description: str,
+) -> None:
+    if manifest.get("schema") != 1:
+        raise ManifestError(
+            f"{description} has unsupported schema: {manifest.get('schema')}"
+        )
+    for field in ("profile", "platform"):
+        expected = plan.get(field)
+        observed = manifest.get(field)
+        if observed != expected:
+            raise ManifestError(
+                f"{description} {field} does not match planner JSON: "
+                f"expected {expected!r}, got {observed!r}"
+            )
+
+
 def _cmd_verify_plan_execution(
     plan_path: Path, ctest_path: Path, python_path: Path
 ) -> int:
@@ -1218,6 +1237,12 @@ def _cmd_verify_plan_execution(
     python_manifest = _read_execution_json(
         python_path, "Python execution manifest"
     )
+    if plan.get("schema") != 1:
+        raise ManifestError(
+            f"planner JSON has unsupported schema: {plan.get('schema')}"
+        )
+    _validate_execution_identity(plan, ctest_manifest, "CTest execution manifest")
+    _validate_execution_identity(plan, python_manifest, "Python execution manifest")
     suites = plan.get("suites")
     if not isinstance(suites, list):
         raise ManifestError(f"planner JSON has no suites list: {plan_path}")
@@ -1240,6 +1265,8 @@ def _cmd_verify_plan_execution(
         ctest_observed |= _entry_values(ctest_manifest, field, "module")
     missing_python = sorted(expected_python - python_observed)
     missing_ctest = sorted(expected_ctest_modules - ctest_observed)
+    unexpected_python = sorted(python_observed - expected_python)
+    unexpected_ctest = sorted(ctest_observed - expected_ctest_modules)
     failures = _entry_values(python_manifest, "failed", "id") | _entry_values(
         ctest_manifest, "failed", "module"
     )
@@ -1250,10 +1277,18 @@ def _cmd_verify_plan_execution(
         "expected_ctest_modules": len(expected_ctest_modules),
         "missing_python_suites": missing_python,
         "missing_ctest_modules": missing_ctest,
+        "unexpected_python_suites": unexpected_python,
+        "unexpected_ctest_modules": unexpected_ctest,
         "failed_entries": sorted(failures),
     }
     _print_json(summary)
-    return 1 if missing_python or missing_ctest or failures else 0
+    return 1 if (
+        missing_python
+        or missing_ctest
+        or unexpected_python
+        or unexpected_ctest
+        or failures
+    ) else 0
 
 
 def _cmd_run(
