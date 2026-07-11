@@ -17,6 +17,11 @@ from typing import Iterable
 
 from .package_manifest import load_manifest as load_package_manifest
 from .package_manifest import repo_root_from
+from .source_size_policy import (
+    SourceSizePolicyError,
+    find_long_files,
+    load_source_size_policy,
+)
 
 
 MODULE_MANIFEST = Path("build-system/modules.json")
@@ -1116,7 +1121,19 @@ def _print_json(value: object) -> None:
 
 def _cmd_check(repo_root: Path) -> int:
     _load_valid_catalog(repo_root)
-    print("Repository control manifests OK")
+    try:
+        source_size_policy = load_source_size_policy(repo_root)
+    except SourceSizePolicyError as exc:
+        raise ManifestError(str(exc)) from exc
+    long_files = find_long_files(repo_root, source_size_policy)
+    if long_files:
+        details = "\n".join(
+            f"source-size policy violation: {path}: {lines} lines "
+            f"(limit {source_size_policy.threshold - 1})"
+            for path, lines in long_files
+        )
+        raise ManifestError(details)
+    print("Repository control checks OK")
     return 0
 
 

@@ -8,7 +8,7 @@ import pytest
 from setuptools import Distribution
 from setuptools.config.pyprojecttoml import apply_configuration
 
-from termin_build import sdk
+from termin_build import sdk, sdk_runtime_metadata
 from termin_build.package_manifest import NativeExtension, PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
 
@@ -219,7 +219,7 @@ def test_target_metadata_cleanup_does_not_follow_record_paths_outside_target(
         encoding="utf-8",
     )
 
-    sdk._clear_target_distribution_metadata(target_dir, {"pkg-a"})
+    sdk_runtime_metadata._clear_target_distribution_metadata(target_dir, {"pkg-a"})
 
     assert outside.is_file()
     assert not metadata.exists()
@@ -422,7 +422,7 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
     (build_dir / "bin").mkdir(parents=True)
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_runtime_metadata, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
         "_python_version_and_paths",
@@ -784,16 +784,16 @@ def test_runtime_manifest_records_declared_distributions_and_verifies_hashes(
         "termin_example",
     )
     monkeypatch.setattr(
-        sdk,
+        sdk_runtime_metadata,
         "load_manifest",
         lambda _root: [PackageEntry("example", "termin-example", (), ())],
     )
     monkeypatch.setattr(
-        sdk,
+        sdk_runtime_metadata,
         "_python_version_and_paths",
         lambda _python: {"version": "3.10"},
     )
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_runtime_metadata, "_python_executable", lambda: "python")
 
     output = sdk.write_python_runtime_manifest(repo_root, sdk_prefix, site_packages)
 
@@ -818,13 +818,13 @@ def test_runtime_manifest_rejects_undeclared_and_modified_distributions(
     lock_path.parent.mkdir(parents=True)
     lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")
     payload = _write_test_distribution(site_packages, "numpy", "2.2.6", "numpy_stub")
-    monkeypatch.setattr(sdk, "load_manifest", lambda _root: [])
+    monkeypatch.setattr(sdk_runtime_metadata, "load_manifest", lambda _root: [])
     monkeypatch.setattr(
-        sdk,
+        sdk_runtime_metadata,
         "_python_version_and_paths",
         lambda _python: {"version": "3.10"},
     )
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_runtime_metadata, "_python_executable", lambda: "python")
     sdk.write_python_runtime_manifest(repo_root, sdk_prefix, site_packages)
 
     payload.write_text("VALUE = 2\n", encoding="utf-8")

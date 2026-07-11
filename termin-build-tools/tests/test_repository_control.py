@@ -88,6 +88,17 @@ def _repository(tmp_path: Path) -> Path:
             "internal_roots": [],
         },
     )
+    _write_json(
+        tmp_path / "build-system" / "repository-policies.json",
+        {
+            "schema": 1,
+            "source_size": {
+                "threshold": 2000,
+                "extensions": [".py", ".cpp"],
+                "exclude_roots": ["build"],
+            },
+        },
+    )
     return tmp_path
 
 
@@ -362,6 +373,22 @@ def test_cli_logs_manifest_errors(tmp_path: Path, capsys) -> None:
     assert (
         "ERROR: alpha-python: test root does not exist: alpha/tests"
         in capsys.readouterr().err
+    )
+
+
+def test_check_profile_enforces_source_size_policy(tmp_path: Path, capsys) -> None:
+    repo = _repository(tmp_path)
+    policy_path = repo / "build-system" / "repository-policies.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["source_size"]["threshold"] = 3
+    _write_json(policy_path, policy)
+    (repo / "alpha" / "oversized.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    result = repository_control.main(["--repo-root", str(repo), "check"])
+
+    assert result == 1
+    assert "source-size policy violation: alpha/oversized.py: 3 lines" in (
+        capsys.readouterr().err
     )
 
 
