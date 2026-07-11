@@ -6,9 +6,11 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -54,6 +56,7 @@ class SuiteEntry:
     environment: str
     platforms: tuple[str, ...]
     capabilities: tuple[str, ...]
+    reason: str | None
 
 
 @dataclass(frozen=True)
@@ -64,11 +67,29 @@ class PythonTestInventory:
 
 
 @dataclass(frozen=True)
+class NativeTestInventory:
+    patterns: tuple[str, ...]
+    extensions: tuple[str, ...]
+    exclude_roots: tuple[str, ...]
+    exclude_directory_names: tuple[str, ...]
+    source_classifications: tuple["NativeSourceClassification", ...]
+
+
+@dataclass(frozen=True)
+class NativeSourceClassification:
+    path: str
+    profiles: tuple[str, ...]
+    capabilities: tuple[str, ...]
+    reason: str
+
+
+@dataclass(frozen=True)
 class RepositoryCatalog:
     modules: tuple[ModuleEntry, ...]
     profiles: tuple[ProfileEntry, ...]
     suites: tuple[SuiteEntry, ...]
     python_test_inventory: PythonTestInventory
+    native_test_inventory: NativeTestInventory
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -211,6 +232,7 @@ def load_profiles_and_suites(
     tuple[ProfileEntry, ...],
     tuple[SuiteEntry, ...],
     PythonTestInventory,
+    NativeTestInventory,
 ]:
     path = repo_root / TEST_MANIFEST
     data = _read_json(path)
@@ -233,6 +255,46 @@ def load_profiles_and_suites(
         exclude_directory_names=_string_tuple(
             raw_inventory, "exclude_directory_names", inventory_context
         ),
+    )
+
+    raw_native_inventory = data.get("native_test_inventory")
+    if not isinstance(raw_native_inventory, dict):
+        raise ManifestError(f"{path}: native_test_inventory must be an object")
+    native_inventory_context = f"{path}: native_test_inventory"
+    raw_source_classifications = raw_native_inventory.get(
+        "source_classifications", []
+    )
+    if not isinstance(raw_source_classifications, list) or any(
+        not isinstance(entry, dict) for entry in raw_source_classifications
+    ):
+        raise ManifestError(
+            f"{native_inventory_context}: source_classifications must be a list of objects"
+        )
+    source_classifications = []
+    for index, raw in enumerate(raw_source_classifications):
+        context = f"{native_inventory_context}: source_classifications[{index}]"
+        source_classifications.append(
+            NativeSourceClassification(
+                path=_required_string(raw, "path", context),
+                profiles=_string_tuple(raw, "profiles", context, required=True),
+                capabilities=_string_tuple(raw, "capabilities", context),
+                reason=_required_string(raw, "reason", context),
+            )
+        )
+    native_inventory = NativeTestInventory(
+        patterns=_string_tuple(
+            raw_native_inventory, "patterns", native_inventory_context, required=True
+        ),
+        extensions=_string_tuple(
+            raw_native_inventory, "extensions", native_inventory_context, required=True
+        ),
+        exclude_roots=_string_tuple(
+            raw_native_inventory, "exclude_roots", native_inventory_context
+        ),
+        exclude_directory_names=_string_tuple(
+            raw_native_inventory, "exclude_directory_names", native_inventory_context
+        ),
+        source_classifications=tuple(source_classifications),
     )
 
     profiles = []
@@ -279,19 +341,21 @@ def load_profiles_and_suites(
                 capabilities=_string_tuple_with_default(
                     raw, "capabilities", context, executor_defaults
                 ),
+                reason=_optional_string(raw, "reason", context),
             )
         )
-    return tuple(profiles), tuple(suites), inventory
+    return tuple(profiles), tuple(suites), inventory, native_inventory
 
 
 def load_catalog(repo_root: Path) -> RepositoryCatalog:
     modules = load_modules(repo_root)
-    profiles, suites, inventory = load_profiles_and_suites(repo_root)
+    profiles, suites, inventory, native_inventory = load_profiles_and_suites(repo_root)
     return RepositoryCatalog(
         modules=modules,
         profiles=profiles,
         suites=suites,
         python_test_inventory=inventory,
+        native_test_inventory=native_inventory,
     )
 
 
@@ -355,6 +419,199 @@ def _pytest_owners(test_path: str, suites: Iterable[SuiteEntry]) -> list[str]:
     return sorted(owners)
 
 
+def discover_native_tests(
+    repo_root: Path,
+    inventory: NativeTestInventory,
+) -> tuple[str, ...]:
+    """Find repository-owned C/C++ test translation units below test directories."""
+    exclude_roots = tuple(Path(path) for path in inventory.exclude_roots)
+    excluded_names = set(inventory.exclude_directory_names)
+    discovered = []
+    for current, directory_names, file_names in os.walk(repo_root):
+        current_path = Path(current)
+        relative_current = current_path.relative_to(repo_root)
+        directory_names[:] = [
+            name
+            for name in directory_names
+            if name not in excluded_names
+            and not any(_is_within(relative_current / name, excluded) for excluded in exclude_roots)
+        ]
+        if any(_is_within(relative_current, excluded) for excluded in exclude_roots):
+            continue
+        if "tests" not in {part.lower() for part in relative_current.parts}:
+            continue
+        for file_name in file_names:
+            if (
+                Path(file_name).suffix.lower() in inventory.extensions
+                and any(fnmatch.fnmatch(file_name, pattern) for pattern in inventory.patterns)
+            ):
+                discovered.append((relative_current / file_name).as_posix())
+    return tuple(sorted(discovered))
+
+
+def _native_owners(test_path: str, suites: Iterable[SuiteEntry]) -> list[str]:
+    path = Path(test_path)
+    return sorted(
+        suite.id
+        for suite in suites
+        if suite.executor == "ctest"
+        and any(_is_within(path, Path(root)) for root in suite.roots)
+    )
+
+
+def _ctest_labels(raw_test: object) -> tuple[str, ...]:
+    if not isinstance(raw_test, dict):
+        return ()
+    properties = raw_test.get("properties")
+    if not isinstance(properties, list):
+        return ()
+    for property_entry in properties:
+        if not isinstance(property_entry, dict) or property_entry.get("name") != "LABELS":
+            continue
+        value = property_entry.get("value")
+        if isinstance(value, list) and all(isinstance(label, str) for label in value):
+            return tuple(value)
+    return ()
+
+
+def validate_ctest_inventory(
+    catalog: RepositoryCatalog, ctest_payload: object
+) -> list[str]:
+    """Validate CTest's configured registrations against native-suite metadata."""
+    if not isinstance(ctest_payload, dict):
+        return ["CTest JSON root must be an object"]
+    tests = ctest_payload.get("tests")
+    if not isinstance(tests, list):
+        return ["CTest JSON must contain a tests array"]
+
+    errors = []
+    observed_modules = set()
+    for raw_test in tests:
+        name = raw_test.get("name") if isinstance(raw_test, dict) else None
+        test_name = name if isinstance(name, str) else "<unnamed>"
+        labels = _ctest_labels(raw_test)
+        module_labels = [label for label in labels if label.startswith("termin:module:")]
+        tier_labels = [label for label in labels if label.startswith("termin:tier:")]
+        capability_labels = [
+            label for label in labels if label.startswith("termin:capability:")
+        ]
+        if len(module_labels) != 1:
+            errors.append(f"CTest test {test_name}: expected one termin:module label")
+        else:
+            observed_modules.add(module_labels[0].removeprefix("termin:module:"))
+        if len(tier_labels) != 1:
+            errors.append(f"CTest test {test_name}: expected one termin:tier label")
+        if not capability_labels:
+            errors.append(f"CTest test {test_name}: missing termin:capability label")
+
+    for suite in catalog.suites:
+        if suite.executor == "ctest" and suite.module not in observed_modules:
+            errors.append(f"{suite.id}: no configured CTest registration for module {suite.module}")
+    return errors
+
+
+def build_ctest_execution_plan(
+    catalog: RepositoryCatalog,
+    ctest_payload: object,
+    profile: str,
+    platform: str,
+    capabilities: Iterable[str],
+    suite_ids: Iterable[str] | None = None,
+) -> dict[str, object]:
+    if not isinstance(ctest_payload, dict) or not isinstance(
+        ctest_payload.get("tests"), list
+    ):
+        raise ManifestError("CTest JSON must contain a tests array")
+    allowed_suite_ids = set(suite_ids) if suite_ids is not None else None
+    selected_modules = {
+        suite["module"]
+        for suite in build_plan(catalog, profile, platform)["suites"]
+        if suite["executor"] == "ctest"
+        and (allowed_suite_ids is None or suite["id"] in allowed_suite_ids)
+    }
+    enabled_capabilities = set(capabilities)
+    selected = []
+    skipped = []
+    for raw_test in ctest_payload["tests"]:
+        if not isinstance(raw_test, dict) or not isinstance(raw_test.get("name"), str):
+            continue
+        labels = _ctest_labels(raw_test)
+        module_labels = [
+            label for label in labels if label.startswith("termin:module:")
+        ]
+        if len(module_labels) != 1:
+            continue
+        module = module_labels[0].removeprefix("termin:module:")
+        if module not in selected_modules:
+            continue
+        required_capabilities = sorted(
+            label.removeprefix("termin:capability:")
+            for label in labels
+            if label.startswith("termin:capability:")
+        )
+        entry = {
+            "name": raw_test["name"],
+            "module": module,
+            "capabilities": required_capabilities,
+        }
+        missing_capabilities = sorted(
+            set(required_capabilities) - enabled_capabilities
+        )
+        if missing_capabilities:
+            entry["reason"] = "missing capabilities: " + ", ".join(
+                missing_capabilities
+            )
+            skipped.append(entry)
+        else:
+            selected.append(entry)
+    return {
+        "schema": 1,
+        "profile": profile,
+        "platform": platform,
+        "capabilities": sorted(enabled_capabilities),
+        "selected": selected,
+        "skipped": skipped,
+    }
+
+
+def validate_native_compile_inventory(
+    repo_root: Path,
+    catalog: RepositoryCatalog,
+    compile_commands: object,
+    profile: str,
+    capabilities: Iterable[str],
+) -> list[str]:
+    """Ensure each declared native test translation unit reached CMake's graph."""
+    if not isinstance(compile_commands, list):
+        return ["compile_commands.json root must be an array"]
+    compiled_sources = set()
+    for entry in compile_commands:
+        if not isinstance(entry, dict) or not isinstance(entry.get("file"), str):
+            continue
+        source = Path(entry["file"])
+        try:
+            compiled_sources.add(source.resolve().relative_to(repo_root).as_posix())
+        except ValueError:
+            continue
+    enabled_capabilities = set(capabilities)
+    classifications = {
+        entry.path: entry
+        for entry in catalog.native_test_inventory.source_classifications
+    }
+    errors = []
+    for source in discover_native_tests(repo_root, catalog.native_test_inventory):
+        classification = classifications.get(source)
+        required_in_configuration = classification is None or (
+            profile in classification.profiles
+            and set(classification.capabilities) <= enabled_capabilities
+        )
+        if required_in_configuration and source not in compiled_sources:
+            errors.append(
+                f"native test source is absent from configured CMake graph: {source}"
+            )
+    return errors
+
+
 def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
     errors = []
     for module_id in _duplicates(module.id for module in catalog.modules):
@@ -383,6 +640,45 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                 "Python test excluded directory must be a single name: "
                 f"{directory_name}"
             )
+    native_inventory = catalog.native_test_inventory
+    for pattern in native_inventory.patterns:
+        if "/" in pattern or "\\" in pattern:
+            errors.append(f"Native test pattern must match file names only: {pattern}")
+    for extension in native_inventory.extensions:
+        if not extension.startswith(".") or len(extension) == 1:
+            errors.append(f"Native test extension must start with '.': {extension}")
+    for exclude_root in native_inventory.exclude_roots:
+        if not _is_repository_relative(exclude_root):
+            errors.append(
+                f"Native test exclude root must be repository-relative: {exclude_root}"
+            )
+    for directory_name in native_inventory.exclude_directory_names:
+        if Path(directory_name).name != directory_name or directory_name in ("", ".", ".."):
+            errors.append(
+                "Native test excluded directory must be a single name: "
+                f"{directory_name}"
+            )
+    native_classifications = native_inventory.source_classifications
+    for source in _duplicates(entry.path for entry in native_classifications):
+        errors.append(f"duplicate native source classification: {source}")
+    native_test_paths = set(discover_native_tests(repo_root, native_inventory))
+    for classification in native_classifications:
+        if not _is_repository_relative(classification.path):
+            errors.append(
+                "Native source classification path must be repository-relative: "
+                f"{classification.path}"
+            )
+        elif classification.path not in native_test_paths:
+            errors.append(
+                "Native source classification does not name a discovered native test: "
+                f"{classification.path}"
+            )
+        for profile in classification.profiles:
+            if profile not in profile_ids:
+                errors.append(
+                    f"Native source classification {classification.path}: "
+                    f"unknown profile: {profile}"
+                )
     for module in catalog.modules:
         if not _is_repository_relative(module.path):
             errors.append(
@@ -397,6 +693,10 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
             errors.append(f"{suite.id}: unknown module: {suite.module}")
         if suite.executor not in SUPPORTED_EXECUTORS:
             errors.append(f"{suite.id}: unsupported executor: {suite.executor}")
+        if suite.executor in {"process-smoke", "device", "manual"} and suite.reason is None:
+            errors.append(
+                f"{suite.id}: {suite.executor} suite requires an explicit reason"
+            )
         for profile in suite.profiles:
             if profile not in profile_ids:
                 errors.append(f"{suite.id}: unknown profile: {profile}")
@@ -422,6 +722,15 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                     f"Python test has multiple suite owners: {test_path}: "
                     + ", ".join(owners)
                 )
+        for test_path in discover_native_tests(repo_root, native_inventory):
+            owners = _native_owners(test_path, catalog.suites)
+            if not owners:
+                errors.append(f"orphan native test: {test_path}")
+            elif len(owners) > 1:
+                errors.append(
+                    f"Native test has multiple suite owners: {test_path}: "
+                    + ", ".join(owners)
+                )
     return errors
 
 
@@ -432,6 +741,7 @@ def catalog_as_json(catalog: RepositoryCatalog) -> dict[str, object]:
         "profiles": [asdict(profile) for profile in catalog.profiles],
         "suites": [asdict(suite) for suite in catalog.suites],
         "python_test_inventory": asdict(catalog.python_test_inventory),
+        "native_test_inventory": asdict(catalog.native_test_inventory),
     }
 
 
@@ -461,6 +771,42 @@ def build_plan(
     }
 
 
+def load_plan_file(
+    path: Path,
+    catalog: RepositoryCatalog,
+    profile: str,
+    platform: str,
+) -> tuple[str, ...]:
+    try:
+        raw_plan = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(f"planner JSON does not exist: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid planner JSON in {path}: {exc}") from exc
+    if not isinstance(raw_plan, dict):
+        raise ManifestError(f"planner JSON root must be an object: {path}")
+    if raw_plan.get("profile") != profile or raw_plan.get("platform") != platform:
+        raise ManifestError(
+            f"planner JSON profile/platform does not match requested {profile}/{platform}"
+        )
+    raw_suites = raw_plan.get("suites")
+    if not isinstance(raw_suites, list):
+        raise ManifestError(f"planner JSON has no suites list: {path}")
+    actual_ids = []
+    for entry in raw_suites:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+            raise ManifestError(f"planner JSON has an invalid suite entry: {path}")
+        actual_ids.append(entry["id"])
+    expected_ids = [
+        entry["id"] for entry in build_plan(catalog, profile, platform)["suites"]
+    ]
+    if sorted(actual_ids) != sorted(expected_ids):
+        raise ManifestError(
+            f"planner JSON suite inventory differs from local {profile}/{platform} plan"
+        )
+    return tuple(actual_ids)
+
+
 def _host_platform() -> str:
     if sys.platform == "win32":
         return "windows"
@@ -483,7 +829,7 @@ def run_pytest_plan(
     platform: str,
     python_executable: str,
     python_arguments: tuple[str, ...] = (),
-) -> int:
+) -> tuple[int, list[str]]:
     profile_by_id = {profile.id: profile for profile in catalog.profiles}
     profile = profile_by_id.get(profile_id)
     if profile is None:
@@ -547,8 +893,51 @@ def run_pytest_plan(
         print("Python suite failures:", file=sys.stderr)
         for suite_id in failures:
             print(f"  - {suite_id}", file=sys.stderr)
-        return 1
-    return 0
+        return 1, failures
+    return 0, []
+
+
+def run_process_smoke_plan(
+    repo_root: Path,
+    catalog: RepositoryCatalog,
+    profile_id: str,
+    platform: str,
+) -> tuple[int, list[str]]:
+    plan = build_plan(catalog, profile_id, platform)
+    suites = [
+        suite for suite in plan["suites"] if suite["executor"] == "process-smoke"
+    ]
+    failures = []
+    print(f"Process-smoke execution plan: {profile_id} / {platform}")
+    print(f"Process-smoke suites: {len(suites)}")
+    for suite in suites:
+        print("")
+        print("----------------------------------------")
+        print(f"  {suite['id']}")
+        print("----------------------------------------")
+        for root in suite["roots"]:
+            command = repo_root / root
+            command_line = [str(command)]
+            if platform == "windows" and command.suffix.lower() == ".ps1":
+                command_line = ["pwsh", "-NoProfile", "-File", str(command)]
+            elif not os.access(command, os.X_OK):
+                print(
+                    f"ERROR: process-smoke command is not executable: {command}",
+                    file=sys.stderr,
+                )
+                failures.append(suite["id"])
+                break
+            result = subprocess.run(command_line, cwd=repo_root, check=False)
+            if result.returncode != 0:
+                failures.append(suite["id"])
+                break
+    if failures:
+        print("", file=sys.stderr)
+        print("Process-smoke suite failures:", file=sys.stderr)
+        for suite_id in failures:
+            print(f"  - {suite_id}", file=sys.stderr)
+        return 1, failures
+    return 0, []
 
 
 def _load_valid_catalog(repo_root: Path) -> RepositoryCatalog:
@@ -599,22 +988,306 @@ def _cmd_plan(
     return 0
 
 
+def _cmd_check_ctest(
+    repo_root: Path,
+    build_dir: Path,
+    profile: str,
+    capabilities: tuple[str, ...],
+) -> int:
+    catalog = _load_valid_catalog(repo_root)
+    result = subprocess.run(
+        ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ManifestError(
+            "CTest JSON discovery failed for "
+            f"{build_dir}: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
+    compile_commands_path = build_dir / "compile_commands.json"
+    try:
+        compile_commands = json.loads(compile_commands_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(
+            f"compile commands are missing: {compile_commands_path}; configure with "
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid compile commands in {compile_commands_path}: {exc}") from exc
+    errors = validate_ctest_inventory(catalog, payload)
+    errors.extend(
+        validate_native_compile_inventory(
+            repo_root, catalog, compile_commands, profile, capabilities
+        )
+    )
+    if errors:
+        raise ManifestError("\n".join(errors))
+    print("CTest inventory OK")
+    return 0
+
+
+def _cmd_ctest_plan(
+    repo_root: Path,
+    build_dir: Path,
+    profile: str,
+    platform: str,
+    capabilities: tuple[str, ...],
+    json_output: bool,
+    regex_output: bool,
+    plan_file: Path | None,
+) -> int:
+    catalog = _load_valid_catalog(repo_root)
+    result = subprocess.run(
+        ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ManifestError(
+            "CTest JSON discovery failed for "
+            f"{build_dir}: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
+    suite_ids = (
+        load_plan_file(plan_file, catalog, profile, platform)
+        if plan_file is not None
+        else None
+    )
+    plan = build_ctest_execution_plan(
+        catalog, payload, profile, platform, capabilities, suite_ids
+    )
+    if regex_output:
+        names = [entry["name"] for entry in plan["selected"]]
+        print("^(" + "|".join(re.escape(name) for name in names) + ")$")
+    elif json_output:
+        _print_json(plan)
+    else:
+        for entry in plan["selected"]:
+            print(entry["name"])
+    return 0
+
+
+def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path) -> int:
+    try:
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(f"CTest selection does not exist: {selection_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid CTest selection JSON: {selection_path}: {exc}") from exc
+    if not isinstance(selection, dict) or not isinstance(selection.get("selected"), list):
+        raise ManifestError(f"CTest selection has no selected test list: {selection_path}")
+    try:
+        root = ET.parse(junit_path).getroot()
+    except FileNotFoundError as exc:
+        raise ManifestError(f"CTest JUnit report does not exist: {junit_path}") from exc
+    except ET.ParseError as exc:
+        raise ManifestError(f"invalid CTest JUnit report: {junit_path}: {exc}") from exc
+
+    reported = {
+        testcase.attrib["name"]: testcase
+        for testcase in root.iter("testcase")
+        if "name" in testcase.attrib
+    }
+    executed = []
+    failed = []
+    runtime_skipped = []
+    for entry in selection["selected"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            raise ManifestError(f"invalid selected CTest entry in {selection_path}")
+        name = entry["name"]
+        testcase = reported.get(name)
+        result = dict(entry)
+        if testcase is None:
+            result["reason"] = "CTest did not report this selected registration"
+            failed.append(result)
+        elif testcase.find("failure") is not None or testcase.find("error") is not None:
+            failed.append(result)
+        elif testcase.find("skipped") is not None:
+            result["reason"] = "CTest marked the registration skipped"
+            runtime_skipped.append(result)
+        else:
+            executed.append(result)
+    manifest = {
+        "schema": 1,
+        "profile": selection.get("profile"),
+        "platform": selection.get("platform"),
+        "capabilities": selection.get("capabilities", []),
+        "selected": selection["selected"],
+        "executed": executed,
+        "skipped": [*selection.get("skipped", []), *runtime_skipped],
+        "failed": failed,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    _print_json(
+        {
+            "executed": len(executed),
+            "skipped": len(manifest["skipped"]),
+            "failed": len(failed),
+            "output": str(output_path),
+        }
+    )
+    return 1 if failed else 0
+
+
+def _read_execution_json(path: Path, description: str) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestError(f"{description} does not exist: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"invalid {description}: {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ManifestError(f"{description} root must be an object: {path}")
+    return value
+
+
+def _entry_values(manifest: dict[str, object], field: str, key: str) -> set[str]:
+    entries = manifest.get(field)
+    if not isinstance(entries, list):
+        raise ManifestError(f"execution manifest field must be a list: {field}")
+    values = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get(key), str):
+            raise ManifestError(f"invalid {field} entry in execution manifest")
+        values.add(entry[key])
+    return values
+
+
+def _cmd_verify_plan_execution(
+    plan_path: Path, ctest_path: Path, python_path: Path
+) -> int:
+    plan = _read_execution_json(plan_path, "planner JSON")
+    ctest_manifest = _read_execution_json(ctest_path, "CTest execution manifest")
+    python_manifest = _read_execution_json(
+        python_path, "Python execution manifest"
+    )
+    suites = plan.get("suites")
+    if not isinstance(suites, list):
+        raise ManifestError(f"planner JSON has no suites list: {plan_path}")
+    expected_python = set()
+    expected_ctest_modules = set()
+    for suite in suites:
+        if not isinstance(suite, dict):
+            raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
+        executor = suite.get("executor")
+        if executor == "pytest" and isinstance(suite.get("id"), str):
+            expected_python.add(suite["id"])
+        elif executor == "ctest" and isinstance(suite.get("module"), str):
+            expected_ctest_modules.add(suite["module"])
+
+    python_observed = set()
+    for field in ("executed", "skipped", "failed"):
+        python_observed |= _entry_values(python_manifest, field, "id")
+    ctest_observed = set()
+    for field in ("executed", "skipped", "failed"):
+        ctest_observed |= _entry_values(ctest_manifest, field, "module")
+    missing_python = sorted(expected_python - python_observed)
+    missing_ctest = sorted(expected_ctest_modules - ctest_observed)
+    failures = _entry_values(python_manifest, "failed", "id") | _entry_values(
+        ctest_manifest, "failed", "module"
+    )
+    summary = {
+        "profile": plan.get("profile"),
+        "platform": plan.get("platform"),
+        "expected_python_suites": len(expected_python),
+        "expected_ctest_modules": len(expected_ctest_modules),
+        "missing_python_suites": missing_python,
+        "missing_ctest_modules": missing_ctest,
+        "failed_entries": sorted(failures),
+    }
+    _print_json(summary)
+    return 1 if missing_python or missing_ctest or failures else 0
+
+
 def _cmd_run(
     repo_root: Path,
     profile: str,
     platform: str | None,
     python_executable: str,
     python_arguments: tuple[str, ...],
+    executor_filter: tuple[str, ...],
+    plan_file: Path | None,
+    report_output: Path | None,
 ) -> int:
     resolved_platform = platform or _host_platform()
-    return run_pytest_plan(
-        repo_root,
-        _load_valid_catalog(repo_root),
-        profile,
-        resolved_platform,
-        python_executable,
-        python_arguments,
-    )
+    catalog = _load_valid_catalog(repo_root)
+    if plan_file is not None:
+        suite_ids = set(load_plan_file(plan_file, catalog, profile, resolved_platform))
+        catalog = RepositoryCatalog(
+            modules=catalog.modules,
+            profiles=catalog.profiles,
+            suites=tuple(suite for suite in catalog.suites if suite.id in suite_ids),
+            python_test_inventory=catalog.python_test_inventory,
+            native_test_inventory=catalog.native_test_inventory,
+        )
+    if executor_filter:
+        catalog = RepositoryCatalog(
+            modules=catalog.modules,
+            profiles=catalog.profiles,
+            suites=tuple(
+                suite for suite in catalog.suites if suite.executor in executor_filter
+            ),
+            python_test_inventory=catalog.python_test_inventory,
+            native_test_inventory=catalog.native_test_inventory,
+        )
+    plan = build_plan(catalog, profile, resolved_platform)
+    executors = {suite["executor"] for suite in plan["suites"]}
+    unsupported = executors - {"pytest", "process-smoke"}
+    if unsupported:
+        raise ManifestError(
+            "local planner run has no executor for: " + ", ".join(sorted(unsupported))
+        )
+    exit_code = 0
+    failures = []
+    if "pytest" in executors:
+        pytest_exit_code, pytest_failures = run_pytest_plan(
+            repo_root,
+            catalog,
+            profile,
+            resolved_platform,
+            python_executable,
+            python_arguments,
+        )
+        exit_code |= pytest_exit_code
+        failures.extend(pytest_failures)
+    if "process-smoke" in executors:
+        process_exit_code, process_failures = run_process_smoke_plan(
+            repo_root, catalog, profile, resolved_platform
+        )
+        exit_code |= process_exit_code
+        failures.extend(process_failures)
+    if report_output is not None:
+        selected = [
+            {"id": suite["id"], "executor": suite["executor"]}
+            for suite in plan["suites"]
+        ]
+        manifest = {
+            "schema": 1,
+            "profile": profile,
+            "platform": resolved_platform,
+            "selected": selected,
+            "executed": [entry for entry in selected if entry["id"] not in failures],
+            "skipped": [],
+            "failed": [entry for entry in selected if entry["id"] in failures],
+        }
+        report_output.parent.mkdir(parents=True, exist_ok=True)
+        report_output.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -633,6 +1306,40 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     plan_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    ctest_parser = subparsers.add_parser(
+        "check-ctest", help="Validate configured CTest labels and native inventory."
+    )
+    ctest_parser.add_argument("--build-dir", type=Path, required=True)
+    ctest_parser.add_argument("--profile", required=True)
+    ctest_parser.add_argument("--capability", action="append", default=[])
+
+    ctest_plan_parser = subparsers.add_parser(
+        "ctest-plan", help="Select configured CTest registrations from the planner."
+    )
+    ctest_plan_parser.add_argument("--build-dir", type=Path, required=True)
+    ctest_plan_parser.add_argument("--profile", required=True)
+    ctest_plan_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS),
+                                   default=_host_platform())
+    ctest_plan_parser.add_argument("--capability", action="append", default=[])
+    ctest_plan_parser.add_argument("--json", action="store_true", dest="json_output")
+    ctest_plan_parser.add_argument("--regex", action="store_true", dest="regex_output")
+    ctest_plan_parser.add_argument("--plan-file", type=Path)
+
+    ctest_report_parser = subparsers.add_parser(
+        "report-ctest", help="Write an execution manifest from CTest JUnit output."
+    )
+    ctest_report_parser.add_argument("--selection", type=Path, required=True)
+    ctest_report_parser.add_argument("--junit", type=Path, required=True)
+    ctest_report_parser.add_argument("--output", type=Path, required=True)
+
+    verify_parser = subparsers.add_parser(
+        "verify-plan-execution",
+        help="Verify that CTest and Python manifests cover a planner JSON.",
+    )
+    verify_parser.add_argument("--plan", type=Path, required=True)
+    verify_parser.add_argument("--ctest", type=Path, required=True)
+    verify_parser.add_argument("--python", type=Path, required=True)
+
     run_parser = subparsers.add_parser(
         "run", help="Execute planner-selected automatic Python suites."
     )
@@ -640,6 +1347,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     run_parser.add_argument("--python", default=sys.executable, dest="python_executable")
     run_parser.add_argument("--python-arg", action="append", default=[])
+    run_parser.add_argument(
+        "--executor", action="append", choices=sorted(SUPPORTED_EXECUTORS), default=[]
+    )
+    run_parser.add_argument("--plan-file", type=Path)
+    run_parser.add_argument("--report-output", type=Path)
 
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
@@ -655,6 +1367,32 @@ def main(argv: list[str] | None = None) -> int:
                 args.platform,
                 args.json_output,
             )
+        if args.command == "check-ctest":
+            return _cmd_check_ctest(
+                repo_root,
+                args.build_dir.resolve(),
+                args.profile,
+                tuple(args.capability),
+            )
+        if args.command == "ctest-plan":
+            return _cmd_ctest_plan(
+                repo_root,
+                args.build_dir.resolve(),
+                args.profile,
+                args.platform,
+                tuple(args.capability),
+                args.json_output,
+                args.regex_output,
+                args.plan_file.resolve() if args.plan_file else None,
+            )
+        if args.command == "report-ctest":
+            return _cmd_report_ctest(
+                args.selection.resolve(), args.junit.resolve(), args.output.resolve()
+            )
+        if args.command == "verify-plan-execution":
+            return _cmd_verify_plan_execution(
+                args.plan.resolve(), args.ctest.resolve(), args.python.resolve()
+            )
         if args.command == "run":
             return _cmd_run(
                 repo_root,
@@ -662,6 +1400,9 @@ def main(argv: list[str] | None = None) -> int:
                 args.platform,
                 args.python_executable,
                 tuple(args.python_arg),
+                tuple(args.executor),
+                args.plan_file.resolve() if args.plan_file else None,
+                args.report_output.resolve() if args.report_output else None,
             )
     except (ManifestError, OSError) as exc:
         for line in str(exc).splitlines():

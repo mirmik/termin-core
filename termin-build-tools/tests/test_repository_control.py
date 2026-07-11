@@ -42,6 +42,12 @@ def _repository(tmp_path: Path) -> Path:
                 "exclude_roots": ["build"],
                 "exclude_directory_names": ["__pycache__"],
             },
+            "native_test_inventory": {
+                "patterns": ["test_*", "tests_*", "*_test.*"],
+                "extensions": [".c", ".cc", ".cpp", ".cxx"],
+                "exclude_roots": ["build"],
+                "exclude_directory_names": ["__pycache__"],
+            },
             "suite_defaults": {
                 "pytest": {
                     "profiles": ["pr"],
@@ -189,6 +195,81 @@ def test_python_test_discovery_honors_declared_exclusions(tmp_path: Path) -> Non
     ) == ()
 
 
+def test_catalog_rejects_orphan_native_test(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    source = repo / "alpha" / "tests" / "test_native.cpp"
+    source.write_text("int main() { return 0; }\n", encoding="utf-8")
+
+    errors = repository_control.validate_catalog(
+        repo, repository_control.load_catalog(repo)
+    )
+
+    assert errors == ["orphan native test: alpha/tests/test_native.cpp"]
+
+
+def test_ctest_inventory_requires_standard_labels_and_registered_module(
+    tmp_path: Path,
+) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suite_defaults"]["ctest"] = {
+        "profiles": ["pr"],
+        "environment": "cmake-top-level",
+        "platforms": ["linux"],
+        "capabilities": ["host"],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-native",
+            "module": "alpha",
+            "executor": "ctest",
+            "roots": ["alpha/tests"],
+        }
+    )
+    _write_json(manifest, data)
+    catalog = repository_control.load_catalog(repo)
+
+    errors = repository_control.validate_ctest_inventory(
+        catalog,
+        {"tests": [{"name": "alpha_test", "properties": []}]},
+    )
+
+    assert errors == [
+        "CTest test alpha_test: expected one termin:module label",
+        "CTest test alpha_test: expected one termin:tier label",
+        "CTest test alpha_test: missing termin:capability label",
+        "alpha-native: no configured CTest registration for module alpha",
+    ]
+
+
+def test_native_compile_inventory_rejects_source_outside_cmake_graph(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    source = repo / "alpha" / "tests" / "test_native.cpp"
+    source.write_text("int main() { return 0; }\n", encoding="utf-8")
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suite_defaults"]["ctest"] = {
+        "profiles": ["pr"],
+        "environment": "cmake-top-level",
+        "platforms": ["linux"],
+        "capabilities": ["host"],
+    }
+    data["suites"].append(
+        {"id": "alpha-native", "module": "alpha", "executor": "ctest", "roots": ["alpha/tests"]}
+    )
+    _write_json(manifest, data)
+    catalog = repository_control.load_catalog(repo)
+
+    errors = repository_control.validate_native_compile_inventory(
+        repo, catalog, [], "pr", ()
+    )
+
+    assert errors == [
+        "native test source is absent from configured CMake graph: alpha/tests/test_native.cpp"
+    ]
+
+
 def test_plan_filters_by_profile_and_platform(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
     catalog = repository_control.load_catalog(repo)
@@ -285,3 +366,132 @@ def test_run_accumulates_suite_failures(tmp_path: Path, monkeypatch, capsys) -> 
 
     assert result == 1
     assert "  - alpha-python" in capsys.readouterr().err
+
+
+def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["profiles"].append(
+        {
+            "id": "editor-smoke",
+            "description": "Editor process smoke",
+        }
+    )
+    data["suite_defaults"]["process-smoke"] = {
+        "profiles": ["editor-smoke"],
+        "environment": "sdk-installed",
+        "platforms": ["linux"],
+        "capabilities": ["editor"],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-editor-smoke",
+            "module": "alpha",
+            "executor": "process-smoke",
+            "roots": ["scripts/smoke"],
+            "reason": "Exercises the editor process boundary.",
+        }
+    )
+    _write_json(manifest, data)
+    command = repo / "scripts" / "smoke"
+    command.parent.mkdir()
+    command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    command.chmod(0o755)
+    calls = []
+
+    def fake_run(args, *, cwd, check):
+        calls.append((args, cwd, check))
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(repository_control.subprocess, "run", fake_run)
+
+    result = repository_control.main(
+        ["--repo-root", str(repo), "run", "editor-smoke", "--platform", "linux"]
+    )
+
+    assert result == 0
+    assert calls == [([str(command)], repo, False)]
+
+
+def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> None:
+    selection = tmp_path / "selection.json"
+    junit = tmp_path / "ctest.xml"
+    output = tmp_path / "execution.json"
+    _write_json(
+        selection,
+        {
+            "profile": "pr",
+            "platform": "linux",
+            "capabilities": ["host"],
+            "selected": [
+                {"name": "passes", "module": "alpha", "capabilities": ["host"]},
+                {"name": "runtime_skip", "module": "alpha", "capabilities": ["host"]},
+            ],
+            "skipped": [
+                {
+                    "name": "missing_capability",
+                    "module": "alpha",
+                    "reason": "missing capabilities: vulkan",
+                }
+            ],
+        },
+    )
+    junit.write_text(
+        "<testsuites><testsuite>"
+        '<testcase name="passes" />'
+        '<testcase name="runtime_skip"><skipped /></testcase>'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+
+    result = repository_control._cmd_report_ctest(selection, junit, output)
+
+    assert result == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert [entry["name"] for entry in report["executed"]] == ["passes"]
+    assert [entry["name"] for entry in report["skipped"]] == [
+        "missing_capability",
+        "runtime_skip",
+    ]
+    assert report["failed"] == []
+
+
+def test_verify_plan_execution_requires_python_and_ctest_coverage(
+    tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    ctest = tmp_path / "ctest.json"
+    python = tmp_path / "python.json"
+    _write_json(
+        plan,
+        {
+            "profile": "pr",
+            "platform": "linux",
+            "suites": [
+                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+                {"id": "alpha-native", "executor": "ctest", "module": "alpha"},
+            ],
+        },
+    )
+    _write_json(
+        ctest,
+        {
+            "executed": [{"module": "alpha"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+    _write_json(
+        python,
+        {
+            "executed": [{"id": "alpha-python"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+
+    result = repository_control._cmd_verify_plan_execution(plan, ctest, python)
+
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["missing_python_suites"] == []

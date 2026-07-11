@@ -199,6 +199,8 @@ if(TI_BUILD_TESTS)
         target_link_libraries(termin_inspect_python_test PRIVATE termin_inspect_python Python::Python nanobind)
         target_include_directories(termin_inspect_python_test PRIVATE ${NB_DIR}/include)
         add_test(NAME termin_inspect_python_test COMMAND termin_inspect_python_test)
+        termin_add_test_labels(termin_inspect_python_test
+            "termin:capability:python-bindings")
         set_target_properties(termin_inspect_python_test PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         )
@@ -249,3 +251,5 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/termin_inspectConfigVersion.cmake"
     DESTINATION lib/cmake/termin_inspect
 )
+
+termin_label_tests_in_directory("termin-inspect")

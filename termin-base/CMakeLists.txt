@@ -157,3 +157,5 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/termin_baseConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/termin_base
 )
+
+termin_label_tests_in_directory("termin-base")
