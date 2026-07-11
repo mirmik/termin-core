@@ -5,10 +5,14 @@ namespace termin {
 void bind_general_pose3(nb::module_& m) {
     nb::class_<GeneralPose3>(m, "GeneralPose3")
         .def(nb::init<>())
-        .def(nb::init<const Quat&, const Vec3&, const Vec3&>(),
-             nb::arg("ang") = Quat::identity(),
-             nb::arg("lin") = Vec3::zero(),
-             nb::arg("scale") = Vec3{1.0, 1.0, 1.0})
+        .def("__init__", [](GeneralPose3* self, std::optional<Quat> ang,
+                             std::optional<Vec3> lin, std::optional<Vec3> scale) {
+            new (self) GeneralPose3{
+                ang.value_or(Quat::identity()),
+                lin.value_or(Vec3::zero()),
+                scale.value_or(Vec3{1.0, 1.0, 1.0})};
+        }, nb::arg("ang").none() = nb::none(), nb::arg("lin").none() = nb::none(),
+           nb::arg("scale").none() = nb::none())
         .def_prop_rw("ang",
             [](const GeneralPose3& p) { return p.ang; },
             [](GeneralPose3& p, const Quat& val) {
@@ -146,8 +150,11 @@ void bind_general_pose3(nb::module_& m) {
         .def_static("right", &GeneralPose3::right)
         .def_static("forward", &GeneralPose3::forward)
         .def_static("up", &GeneralPose3::up)
-        .def_static("looking_at", nb::overload_cast<const Vec3&, const Vec3&, const Vec3&>(&GeneralPose3::looking_at),
-                    nb::arg("eye"), nb::arg("target"), nb::arg("up_vec") = Vec3{0.0, 0.0, 1.0})
+        .def_static("looking_at", [](const Vec3& eye, const Vec3& target,
+                                      std::optional<Vec3> up_vec) {
+            return GeneralPose3::looking_at(
+                eye, target, up_vec.value_or(Vec3{0.0, 0.0, 1.0}));
+        }, nb::arg("eye"), nb::arg("target"), nb::arg("up_vec").none() = nb::none())
         .def_static("lerp",
                     static_cast<GeneralPose3 (*)(const GeneralPose3&, const GeneralPose3&, double)>(&lerp),
                     "Linear interpolation between GeneralPose3 (with scale)")

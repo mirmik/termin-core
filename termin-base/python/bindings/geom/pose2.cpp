@@ -15,7 +15,9 @@ nb::tuple vec2_tuple(const Vec2& v) {
 void bind_pose2(nb::module_& m) {
     nb::class_<Pose2>(m, "Pose2")
         .def(nb::init<>())
-        .def(nb::init<double, const Vec2&>(), nb::arg("ang") = 0.0, nb::arg("lin") = Vec2::zero())
+        .def("__init__", [](Pose2* self, double ang, std::optional<Vec2> lin) {
+            new (self) Pose2{ang, lin.value_or(Vec2::zero())};
+        }, nb::arg("ang") = 0.0, nb::arg("lin").none() = nb::none())
         .def_rw("ang", &Pose2::ang)
         .def_prop_rw("lin",
             [](const Pose2& p) { return p.lin; },

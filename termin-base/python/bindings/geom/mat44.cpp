@@ -59,8 +59,10 @@ void bind_mat44(nb::module_& m) {
             nb::arg("left"), nb::arg("right"), nb::arg("bottom"), nb::arg("top"),
             nb::arg("near"), nb::arg("far"),
             "Orthographic projection (Y-forward, Z-up)")
-        .def_static("look_at", &Mat44::look_at,
-            nb::arg("eye"), nb::arg("target"), nb::arg("up") = Vec3::unit_z(),
+        .def_static("look_at", [](const Vec3& eye, const Vec3& target,
+                                   std::optional<Vec3> up) {
+            return Mat44::look_at(eye, target, up.value_or(Vec3::unit_z()));
+        }, nb::arg("eye"), nb::arg("target"), nb::arg("up").none() = nb::none(),
             "Look-at view matrix (Y-forward, Z-up)")
         .def_static("compose", &Mat44::compose,
             nb::arg("translation"), nb::arg("rotation"), nb::arg("scale"),
@@ -120,8 +122,10 @@ void bind_mat44(nb::module_& m) {
         .def_static("orthographic", &Mat44f::orthographic,
             nb::arg("left"), nb::arg("right"), nb::arg("bottom"), nb::arg("top"),
             nb::arg("near"), nb::arg("far"))
-        .def_static("look_at", &Mat44f::look_at,
-            nb::arg("eye"), nb::arg("target"), nb::arg("up") = Vec3::unit_z())
+        .def_static("look_at", [](const Vec3& eye, const Vec3& target,
+                                   std::optional<Vec3> up) {
+            return Mat44f::look_at(eye, target, up.value_or(Vec3::unit_z()));
+        }, nb::arg("eye"), nb::arg("target"), nb::arg("up").none() = nb::none())
         .def_static("compose", &Mat44f::compose,
             nb::arg("translation"), nb::arg("rotation"), nb::arg("scale"))
         .def("to_rows", [](const Mat44f& mat) {

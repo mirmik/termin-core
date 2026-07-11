@@ -40,8 +40,9 @@ void bind_quat(nb::module_& m) {
         .def("inverse_rotate", &Quat::inverse_rotate)
         .def_static("identity", &Quat::identity)
         .def_static("from_axis_angle", &Quat::from_axis_angle)
-        .def_static("look_rotation", &Quat::look_rotation,
-            nb::arg("forward"), nb::arg("up") = Vec3::unit_z(),
+        .def_static("look_rotation", [](const Vec3& forward, std::optional<Vec3> up) {
+            return Quat::look_rotation(forward, up.value_or(Vec3::unit_z()));
+        }, nb::arg("forward"), nb::arg("up").none() = nb::none(),
             "Create quaternion looking in direction (Forward=+Y, Up=+Z)")
         .def_static("slerp", &Quat::slerp,
             nb::arg("a"), nb::arg("b"), nb::arg("t"),

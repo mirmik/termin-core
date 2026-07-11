@@ -5,8 +5,11 @@ namespace termin {
 void bind_pose3(nb::module_& m) {
     nb::class_<Pose3>(m, "Pose3")
         .def(nb::init<>())
-        .def(nb::init<const Quat&, const Vec3&>(),
-             nb::arg("ang") = Quat::identity(), nb::arg("lin") = Vec3::zero())
+        .def("__init__", [](Pose3* self, std::optional<Quat> ang,
+                             std::optional<Vec3> lin) {
+            new (self) Pose3{ang.value_or(Quat::identity()),
+                              lin.value_or(Vec3::zero())};
+        }, nb::arg("ang").none() = nb::none(), nb::arg("lin").none() = nb::none())
         // Convenience: Pose3(Vec3) - translation only
         .def("__init__", [](Pose3* self, const Vec3& lin) {
             new (self) Pose3{Quat::identity(), lin};
@@ -79,8 +82,10 @@ void bind_pose3(nb::module_& m) {
         .def_static("moveX", [](double d) { return Pose3::translation(d, 0, 0); })
         .def_static("moveY", [](double d) { return Pose3::translation(0, d, 0); })
         .def_static("moveZ", [](double d) { return Pose3::translation(0, 0, d); })
-        .def_static("looking_at", &Pose3::looking_at,
-                    nb::arg("eye"), nb::arg("target"), nb::arg("up") = Vec3::unit_z())
+        .def_static("looking_at", [](const Vec3& eye, const Vec3& target,
+                                      std::optional<Vec3> up) {
+            return Pose3::looking_at(eye, target, up.value_or(Vec3::unit_z()));
+        }, nb::arg("eye"), nb::arg("target"), nb::arg("up").none() = nb::none())
         .def_static("from_euler", &Pose3::from_euler,
                     nb::arg("roll"), nb::arg("pitch"), nb::arg("yaw"))
         .def("to_euler", nb::overload_cast<>(&Pose3::to_euler, nb::const_))
@@ -141,9 +146,10 @@ void bind_pose3(nb::module_& m) {
         .def_static("lerp", [](const Pose3& a, const Pose3& b, double t) {
             return lerp(a, b, t);
         })
-        .def("to_general_pose3", [](const Pose3& p, const Vec3& scale) {
-            return GeneralPose3(p.ang, p.lin, scale);
-        }, nb::arg("scale") = Vec3{1.0, 1.0, 1.0})
+        .def("to_general_pose3", [](const Pose3& p, std::optional<Vec3> scale) {
+            return GeneralPose3(p.ang, p.lin,
+                                scale.value_or(Vec3{1.0, 1.0, 1.0}));
+        }, nb::arg("scale").none() = nb::none())
         .def("__repr__", [](const Pose3& p) {
             return "Pose3(ang=Quat(" + std::to_string(p.ang.x) + ", " +
                    std::to_string(p.ang.y) + ", " + std::to_string(p.ang.z) + ", " +
