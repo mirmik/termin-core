@@ -54,15 +54,17 @@ static tc_value python_inspect_get(void* obj, const char* type_name, const char*
     return tc_value_nil();
 }
 
-static void python_inspect_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
+static bool python_inspect_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
     (void)ctx;
     nb::gil_scoped_acquire gil;
     try {
         InspectRegistry::instance().set_tc_value(obj, type_name ? type_name : "", path ? path : "", value, context);
+        return true;
     } catch (const std::exception& e) {
         tc::Log::error(e, "[Inspect] Python set failed for type '%s' field '%s'",
                        type_name ? type_name : "", path ? path : "");
     }
+    return false;
 }
 
 static void python_inspect_action(void* obj, const char* type_name, const char* path, void* ctx) {

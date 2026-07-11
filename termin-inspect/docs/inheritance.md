@@ -31,14 +31,13 @@ record:
 
 ### C++
 
-Макро `REGISTER_COMPONENT` автоматически регистрирует родителя:
+Новый код регистрирует компонент и родителя явно из `register_type()`:
 
 ```cpp
-// component_registry.hpp
-REGISTER_COMPONENT(MeshRenderer, Component);
-
-// Внутри раскрывается в:
-InspectRegistry::instance().set_type_parent("MeshRenderer", "Component");
+void MeshRenderer::register_type() {
+    register_component_type<MeshRenderer>("MeshRenderer", "Component");
+    // inspect fields принадлежат той же registration boundary
+}
 ```
 
 Ручная регистрация:

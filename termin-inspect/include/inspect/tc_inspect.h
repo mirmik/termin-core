@@ -64,7 +64,7 @@ typedef size_t (*tc_inspect_field_count_fn)(const char* type_name, void* ctx);
 typedef bool (*tc_inspect_get_field_fn)(const char* type_name, size_t index, tc_field_info* out, void* ctx);
 typedef bool (*tc_inspect_find_field_fn)(const char* type_name, const char* path, tc_field_info* out, void* ctx);
 typedef tc_value (*tc_inspect_getter_fn)(void* obj, const char* type_name, const char* path, void* ctx);
-typedef void (*tc_inspect_setter_fn)(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx);
+typedef bool (*tc_inspect_setter_fn)(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx);
 typedef void (*tc_inspect_action_fn)(void* obj, const char* type_name, const char* path, void* ctx);
 typedef tc_value (*tc_inspect_get_type_metadata_fn)(const char* type_name, void* ctx);
 typedef void (*tc_inspect_set_type_metadata_fn)(const char* type_name, const tc_value* metadata, void* ctx);
@@ -130,6 +130,7 @@ TC_API void tc_inspect_set_type_metadata(const char* type_name, const tc_value* 
 
 TC_API tc_value tc_inspect_get(void* obj, const char* type_name, const char* path);
 TC_API void tc_inspect_set(void* obj, const char* type_name, const char* path, tc_value value, void* context);
+TC_API bool tc_inspect_set_checked(void* obj, const char* type_name, const char* path, tc_value value, void* context);
 TC_API void tc_inspect_action(void* obj, const char* type_name, const char* path);
 
 // ============================================================================
@@ -141,6 +142,32 @@ TC_API tc_value tc_inspect_serialize(void* obj, const char* type_name);
 
 // Deserialize from dict with runtime context
 TC_API void tc_inspect_deserialize(void* obj, const char* type_name, const tc_value* data, void* context);
+
+typedef enum tc_inspect_apply_status {
+    TC_INSPECT_APPLY_OK = 0,
+    TC_INSPECT_APPLY_INVALID_ARGUMENT,
+    TC_INSPECT_APPLY_TYPE_NOT_FOUND,
+    TC_INSPECT_APPLY_NO_FIELDS,
+    TC_INSPECT_APPLY_UNKNOWN_FIELD,
+    TC_INSPECT_APPLY_KIND_CONVERSION_FAILED,
+    TC_INSPECT_APPLY_SETTER_FAILED
+} tc_inspect_apply_status;
+
+typedef struct tc_inspect_apply_result {
+    tc_inspect_apply_status status;
+    size_t applied_fields;
+    const char* field_path;
+} tc_inspect_apply_result;
+
+// Strict, fail-fast application for restore/migration paths. Every input key
+// must name a serializable field; callers may remove domain-owned keys first.
+// field_path points into inspect metadata or data and remains caller-owned.
+TC_API tc_inspect_apply_result tc_inspect_deserialize_checked(
+    void* obj,
+    const char* type_name,
+    const tc_value* data,
+    void* context
+);
 
 // ============================================================================
 // Parameterized kinds (e.g., "list[entity_handle]")

@@ -166,16 +166,20 @@ tc_value tc_inspect_get(void* obj, const char* type_name, const char* path) {
 }
 
 void tc_inspect_set(void* obj, const char* type_name, const char* path, tc_value value, void* context) {
+    (void)tc_inspect_set_checked(obj, type_name, path, value, context);
+}
+
+bool tc_inspect_set_checked(void* obj, const char* type_name, const char* path, tc_value value, void* context) {
     tc_inspect_lang lang = tc_inspect_type_lang(type_name);
     if (lang >= TC_INSPECT_LANG_COUNT) {
         tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set: type '%s' not found in any language vtable", type_name ? type_name : "null");
-        return;
+        return false;
     }
     if (!g_vtables[lang].set) {
         tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set: no setter for type '%s' (lang=%d)", type_name ? type_name : "null", lang);
-        return;
+        return false;
     }
-    g_vtables[lang].set(obj, type_name, path, value, context, g_vtables[lang].ctx);
+    return g_vtables[lang].set(obj, type_name, path, value, context, g_vtables[lang].ctx);
 }
 
 void tc_inspect_action(void* obj, const char* type_name, const char* path) {
@@ -263,6 +267,63 @@ void tc_inspect_deserialize(void* obj, const char* type_name, const tc_value* da
         // No deserializer - set value as-is
         tc_inspect_set(obj, type_name, f.path, *field_data, context);
     }
+}
+
+tc_inspect_apply_result tc_inspect_deserialize_checked(
+    void* obj, const char* type_name, const tc_value* data, void* context) {
+    tc_inspect_apply_result result = {TC_INSPECT_APPLY_OK, 0, NULL};
+    if (!obj || !type_name || !data || data->type != TC_VALUE_DICT) {
+        result.status = TC_INSPECT_APPLY_INVALID_ARGUMENT;
+        return result;
+    }
+    if (!tc_inspect_has_type(type_name)) {
+        result.status = TC_INSPECT_APPLY_TYPE_NOT_FOUND;
+        return result;
+    }
+
+    const size_t field_count = tc_inspect_field_count(type_name);
+    if (field_count == 0 && tc_value_dict_size(data) != 0) {
+        result.status = TC_INSPECT_APPLY_NO_FIELDS;
+        return result;
+    }
+
+    for (size_t i = 0; i < tc_value_dict_size(data); ++i) {
+        const char* key = NULL;
+        tc_value* field_data = tc_value_dict_get_at((tc_value*)data, i, &key);
+        tc_field_info field;
+        if (!key || !tc_inspect_find_field_info(type_name, key, &field) || !field.is_serializable) {
+            result.status = TC_INSPECT_APPLY_UNKNOWN_FIELD;
+            result.field_path = key;
+            return result;
+        }
+        if (!field_data || field_data->type == TC_VALUE_NIL) {
+            continue;
+        }
+
+        tc_value value = *field_data;
+        bool owns_value = false;
+        if (tc_kind_exists(field.kind)) {
+            value = tc_kind_deserialize_any(field.kind, field_data, context);
+            if (value.type == TC_VALUE_NIL) {
+                result.status = TC_INSPECT_APPLY_KIND_CONVERSION_FAILED;
+                result.field_path = key;
+                return result;
+            }
+            owns_value = true;
+        }
+
+        const bool set = tc_inspect_set_checked(obj, type_name, key, value, context);
+        if (owns_value) {
+            tc_value_free(&value);
+        }
+        if (!set) {
+            result.status = TC_INSPECT_APPLY_SETTER_FAILED;
+            result.field_path = key;
+            return result;
+        }
+        result.applied_fields++;
+    }
+    return result;
 }
 
 // ============================================================================

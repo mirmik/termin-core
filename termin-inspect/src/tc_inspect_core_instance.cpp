@@ -63,9 +63,20 @@ static tc_value cpp_get(void* obj, const char* type_name, const char* path, void
     return InspectRegistry::instance().get_tc_value(obj, type_name, path);
 }
 
-static void cpp_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
+static bool cpp_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
     (void)ctx;
-    InspectRegistry::instance().set_tc_value(obj, type_name, path, value, context);
+    try {
+        InspectRegistry::instance().set_tc_value(obj, type_name, path, value, context);
+        return true;
+    } catch (const std::exception& error) {
+        tc_log(TC_LOG_ERROR, "[Inspect] C++ set failed for type '%s' field '%s': %s",
+               type_name ? type_name : "", path ? path : "", error.what());
+        return false;
+    } catch (...) {
+        tc_log(TC_LOG_ERROR, "[Inspect] C++ set failed for type '%s' field '%s'",
+               type_name ? type_name : "", path ? path : "");
+        return false;
+    }
 }
 
 static void cpp_action(void* obj, const char* type_name, const char* path, void* ctx) {
