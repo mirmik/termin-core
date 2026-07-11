@@ -24,6 +24,7 @@ _EXCLUDED_SOURCE_DIRECTORIES = {
     "__pycache__",
     "build",
     "dist",
+    "install",
     "sdk",
     "tests",
 }

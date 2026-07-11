@@ -79,3 +79,30 @@ def test_find_source_file_ignores_generated_build_tree(tmp_path: Path) -> None:
         files,
         Path("example/module.py"),
     ) == source
+
+
+def test_find_source_file_ignores_generated_install_tree(tmp_path: Path) -> None:
+    package_root = tmp_path / "package"
+    source = package_root / "python" / "example" / "module.py"
+    generated = (
+        package_root
+        / "install"
+        / "lib"
+        / "python3.10"
+        / "site-packages"
+        / "example"
+        / "module.py"
+    )
+    source.parent.mkdir(parents=True)
+    generated.parent.mkdir(parents=True)
+    source.write_text("SOURCE = True\n", encoding="utf-8")
+    generated.write_text("SOURCE = True\n", encoding="utf-8")
+
+    files = python_overlay._source_python_files(package_root)
+
+    assert files == (source,)
+    assert python_overlay._find_source_file(
+        package_root,
+        files,
+        Path("example/module.py"),
+    ) == source
