@@ -39,12 +39,6 @@ namespace nos
     class trent
     {
     public:
-        static const trent &static_nil();
-        static trent nil()
-        {
-            return trent();
-        }
-
         using type = trent_type;
         using value_type = std::pair<std::string, trent>;
 
@@ -100,6 +94,12 @@ namespace nos
         };
 
     public:
+        static const trent &static_nil();
+        static trent nil()
+        {
+            return trent();
+        }
+
         const char *typestr();
 
         ~trent();

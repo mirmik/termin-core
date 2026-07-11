@@ -10,6 +10,11 @@ namespace tc
 {
     class Settings
     {
+    private:
+        std::string _path;
+        nos::trent _data;
+        std::vector<std::string> _group_stack;
+
     public:
         /// Construct with app name -> ~/.config/{app_name}/settings.json
         explicit Settings(const std::string &app_name);
@@ -50,10 +55,6 @@ namespace tc
         const std::string &path() const { return _path; }
 
     private:
-        std::string _path;
-        nos::trent _data;
-        std::vector<std::string> _group_stack;
-
         std::string _resolve_key(const std::string &key) const;
 
         // Navigate to parent dict + leaf key.

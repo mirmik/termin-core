@@ -39,6 +39,9 @@ struct trent_dict_entry_ref {
 };
 
 class trent_view {
+private:
+    const tc_value* value_ = nullptr;
+
 public:
     constexpr trent_view() noexcept = default;
     constexpr trent_view(std::nullptr_t) noexcept {}
@@ -236,8 +239,15 @@ public:
     }
 
     class list_view {
+    private:
+        const tc_value* value_ = nullptr;
+
     public:
         class iterator {
+        private:
+            const tc_value* items_ = nullptr;
+            std::size_t index_ = 0;
+
         public:
             using difference_type = std::ptrdiff_t;
             using value_type = trent_view;
@@ -259,9 +269,6 @@ public:
                 return items_ != other.items_ || index_ != other.index_;
             }
 
-        private:
-            const tc_value* items_ = nullptr;
-            std::size_t index_ = 0;
         };
 
         explicit list_view(const tc_value* value) noexcept
@@ -283,13 +290,18 @@ public:
             return size() == 0;
         }
 
-    private:
-        const tc_value* value_ = nullptr;
     };
 
     class dict_view {
+    private:
+        const tc_value* value_ = nullptr;
+
     public:
         class iterator {
+        private:
+            const tc_value_dict_entry* entries_ = nullptr;
+            std::size_t index_ = 0;
+
         public:
             using difference_type = std::ptrdiff_t;
             using value_type = trent_dict_entry_view;
@@ -312,9 +324,6 @@ public:
                 return entries_ != other.entries_ || index_ != other.index_;
             }
 
-        private:
-            const tc_value_dict_entry* entries_ = nullptr;
-            std::size_t index_ = 0;
         };
 
         explicit dict_view(const tc_value* value) noexcept
@@ -336,8 +345,6 @@ public:
             return size() == 0;
         }
 
-    private:
-        const tc_value* value_ = nullptr;
     };
 
     list_view as_list() const noexcept {
@@ -348,11 +355,12 @@ public:
         return dict_view(value_);
     }
 
-private:
-    const tc_value* value_ = nullptr;
 };
 
 class trent_ref {
+private:
+    tc_value* value_ = nullptr;
+
 public:
     constexpr trent_ref() noexcept = default;
     explicit constexpr trent_ref(tc_value* value) noexcept
@@ -603,8 +611,15 @@ public:
     }
 
     class list_ref {
+    private:
+        tc_value* value_ = nullptr;
+
     public:
         class iterator {
+        private:
+            tc_value* items_ = nullptr;
+            std::size_t index_ = 0;
+
         public:
             using difference_type = std::ptrdiff_t;
             using value_type = trent_ref;
@@ -626,9 +641,6 @@ public:
                 return items_ != other.items_ || index_ != other.index_;
             }
 
-        private:
-            tc_value* items_ = nullptr;
-            std::size_t index_ = 0;
         };
 
         explicit list_ref(tc_value* value) noexcept
@@ -650,13 +662,18 @@ public:
             return size() == 0;
         }
 
-    private:
-        tc_value* value_ = nullptr;
     };
 
     class dict_ref {
+    private:
+        tc_value* value_ = nullptr;
+
     public:
         class iterator {
+        private:
+            tc_value_dict_entry* entries_ = nullptr;
+            std::size_t index_ = 0;
+
         public:
             using difference_type = std::ptrdiff_t;
             using value_type = trent_dict_entry_ref;
@@ -679,9 +696,6 @@ public:
                 return entries_ != other.entries_ || index_ != other.index_;
             }
 
-        private:
-            tc_value_dict_entry* entries_ = nullptr;
-            std::size_t index_ = 0;
         };
 
         explicit dict_ref(tc_value* value) noexcept
@@ -703,8 +717,6 @@ public:
             return size() == 0;
         }
 
-    private:
-        tc_value* value_ = nullptr;
     };
 
     list_ref as_list() noexcept {
@@ -746,10 +758,12 @@ private:
         tc_value_dict_set(value_, key, value);
     }
 
-    tc_value* value_ = nullptr;
 };
 
 class trent {
+private:
+    tc_value value_;
+
 public:
     using type = trent_type;
 
@@ -976,8 +990,6 @@ public:
     trent_ref::dict_ref as_dict() noexcept { return ref().as_dict(); }
     trent_view::dict_view as_dict() const noexcept { return view().as_dict(); }
 
-private:
-    tc_value value_;
 };
 
 inline trent_ref& trent_ref::operator=(const trent& other) noexcept {
