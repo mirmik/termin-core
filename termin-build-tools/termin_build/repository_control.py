@@ -25,6 +25,11 @@ SUPPORTED_EXECUTORS = frozenset(
     {"pytest", "ctest", "process-smoke", "device", "manual"}
 )
 SUPPORTED_PLATFORMS = frozenset({"linux", "windows", "macos", "android", "quest"})
+_NANOBIND_SHUTDOWN_DIAGNOSTIC = re.compile(
+    r"^nanobind: leaked\b.*$", re.IGNORECASE | re.MULTILINE
+)
+_NANOBIND_DIAGNOSTIC_CONTEXT_BEFORE = 3
+_NANOBIND_DIAGNOSTIC_CONTEXT_AFTER = 20
 
 
 class ManifestError(ValueError):
@@ -822,6 +827,42 @@ def _safe_suite_directory(suite_id: str) -> str:
     )
 
 
+def _nanobind_shutdown_diagnostic_excerpt(output: str) -> str | None:
+    """Return the useful context of a nanobind shutdown leak diagnostic."""
+    match = _NANOBIND_SHUTDOWN_DIAGNOSTIC.search(output)
+    if match is None:
+        return None
+
+    lines = output.splitlines()
+    diagnostic_line = output[: match.start()].count("\n")
+    start = max(0, diagnostic_line - _NANOBIND_DIAGNOSTIC_CONTEXT_BEFORE)
+    end = min(len(lines), diagnostic_line + _NANOBIND_DIAGNOSTIC_CONTEXT_AFTER + 1)
+    return "\n".join(lines[start:end])
+
+
+def _run_pytest_command(
+    command: list[str], repo_root: Path, environment: dict[str, str]
+) -> tuple[int, str]:
+    """Run one pytest suite while retaining its output for shutdown diagnostics."""
+    process = subprocess.Popen(
+        command,
+        cwd=repo_root,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+
+    output = []
+    for line in process.stdout:
+        output.append(line)
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    return process.wait(), "".join(output)
+
+
 def run_pytest_plan(
     repo_root: Path,
     catalog: RepositoryCatalog,
@@ -879,13 +920,16 @@ def run_pytest_plan(
         print(f"  {suite_id}")
         print("----------------------------------------")
         sys.stdout.flush()
-        result = subprocess.run(
-            command,
-            cwd=repo_root,
-            env=environment,
-            check=False,
-        )
-        if result.returncode != 0:
+        returncode, output = _run_pytest_command(command, repo_root, environment)
+        nanobind_excerpt = _nanobind_shutdown_diagnostic_excerpt(output)
+        if nanobind_excerpt is not None:
+            print(
+                f"ERROR: pytest suite {suite_id} emitted nanobind shutdown "
+                "leak diagnostics:",
+                file=sys.stderr,
+            )
+            print(nanobind_excerpt, file=sys.stderr)
+        if returncode != 0 or nanobind_excerpt is not None:
             failures.append(suite_id)
 
     if failures:
