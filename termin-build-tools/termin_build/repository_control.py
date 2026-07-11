@@ -1229,6 +1229,66 @@ def _validate_execution_identity(
             )
 
 
+def _execution_observed_ids(
+    manifest: dict[str, object], key: str
+) -> tuple[set[str], set[str]]:
+    observed = set()
+    for field in ("executed", "skipped", "failed"):
+        observed |= _entry_values(manifest, field, key)
+    return observed, _entry_values(manifest, "failed", key)
+
+
+def _cmd_verify_suite_execution(
+    plan_path: Path, manifest_path: Path, executor: str
+) -> int:
+    plan = _read_execution_json(plan_path, "planner JSON")
+    manifest = _read_execution_json(manifest_path, f"{executor} execution manifest")
+    if plan.get("schema") != 1:
+        raise ManifestError(
+            f"planner JSON has unsupported schema: {plan.get('schema')}"
+        )
+    _validate_execution_identity(plan, manifest, f"{executor} execution manifest")
+    suites = plan.get("suites")
+    if not isinstance(suites, list):
+        raise ManifestError(f"planner JSON has no suites list: {plan_path}")
+
+    expected = set()
+    for suite in suites:
+        if not isinstance(suite, dict):
+            raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
+        if suite.get("executor") == executor:
+            suite_id = suite.get("id")
+            if not isinstance(suite_id, str):
+                raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
+            expected.add(suite_id)
+
+    selected = _entry_values(manifest, "selected", "id")
+    observed, failures = _execution_observed_ids(manifest, "id")
+    missing_selected = sorted(expected - selected)
+    unexpected_selected = sorted(selected - expected)
+    missing_observed = sorted(expected - observed)
+    unexpected_observed = sorted(observed - expected)
+    summary = {
+        "profile": plan.get("profile"),
+        "platform": plan.get("platform"),
+        "executor": executor,
+        "expected_suites": len(expected),
+        "missing_selected_suites": missing_selected,
+        "unexpected_selected_suites": unexpected_selected,
+        "missing_observed_suites": missing_observed,
+        "unexpected_observed_suites": unexpected_observed,
+        "failed_suites": sorted(failures),
+    }
+    _print_json(summary)
+    return 1 if (
+        missing_selected
+        or unexpected_selected
+        or missing_observed
+        or unexpected_observed
+        or failures
+    ) else 0
+
+
 def _cmd_verify_plan_execution(
     plan_path: Path, ctest_path: Path, python_path: Path
 ) -> int:
@@ -1257,19 +1317,17 @@ def _cmd_verify_plan_execution(
         elif executor == "ctest" and isinstance(suite.get("module"), str):
             expected_ctest_modules.add(suite["module"])
 
-    python_observed = set()
-    for field in ("executed", "skipped", "failed"):
-        python_observed |= _entry_values(python_manifest, field, "id")
-    ctest_observed = set()
-    for field in ("executed", "skipped", "failed"):
-        ctest_observed |= _entry_values(ctest_manifest, field, "module")
+    python_observed, python_failures = _execution_observed_ids(
+        python_manifest, "id"
+    )
+    ctest_observed, ctest_failures = _execution_observed_ids(
+        ctest_manifest, "module"
+    )
     missing_python = sorted(expected_python - python_observed)
     missing_ctest = sorted(expected_ctest_modules - ctest_observed)
     unexpected_python = sorted(python_observed - expected_python)
     unexpected_ctest = sorted(ctest_observed - expected_ctest_modules)
-    failures = _entry_values(python_manifest, "failed", "id") | _entry_values(
-        ctest_manifest, "failed", "module"
-    )
+    failures = python_failures | ctest_failures
     summary = {
         "profile": plan.get("profile"),
         "platform": plan.get("platform"),
@@ -1419,6 +1477,16 @@ def main(argv: list[str] | None = None) -> int:
     verify_parser.add_argument("--ctest", type=Path, required=True)
     verify_parser.add_argument("--python", type=Path, required=True)
 
+    verify_suite_parser = subparsers.add_parser(
+        "verify-suite-execution",
+        help="Verify one executor manifest against a planner JSON.",
+    )
+    verify_suite_parser.add_argument("--plan", type=Path, required=True)
+    verify_suite_parser.add_argument("--manifest", type=Path, required=True)
+    verify_suite_parser.add_argument(
+        "--executor", choices=sorted(SUPPORTED_EXECUTORS), required=True
+    )
+
     run_parser = subparsers.add_parser(
         "run", help="Execute planner-selected automatic Python suites."
     )
@@ -1471,6 +1539,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "verify-plan-execution":
             return _cmd_verify_plan_execution(
                 args.plan.resolve(), args.ctest.resolve(), args.python.resolve()
+            )
+        if args.command == "verify-suite-execution":
+            return _cmd_verify_suite_execution(
+                args.plan.resolve(), args.manifest.resolve(), args.executor
             )
         if args.command == "run":
             return _cmd_run(

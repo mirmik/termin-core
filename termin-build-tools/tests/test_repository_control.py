@@ -609,3 +609,62 @@ def test_verify_plan_execution_rejects_wrong_identity_and_unexpected_entries(
     assert json.loads(capsys.readouterr().out)["unexpected_ctest_modules"] == [
         "unplanned"
     ]
+
+
+def test_verify_suite_execution_requires_exact_executor_coverage(
+    tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    manifest = tmp_path / "process.json"
+    _write_json(
+        plan,
+        {
+            "schema": 1,
+            "profile": "sdk-installed",
+            "platform": "linux",
+            "suites": [
+                {
+                    "id": "installed-smoke",
+                    "executor": "process-smoke",
+                    "module": "alpha",
+                },
+                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+            ],
+        },
+    )
+    _write_json(
+        manifest,
+        {
+            "schema": 1,
+            "profile": "sdk-installed",
+            "platform": "linux",
+            "selected": [
+                {"id": "installed-smoke", "executor": "process-smoke"}
+            ],
+            "executed": [
+                {"id": "installed-smoke", "executor": "process-smoke"}
+            ],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+
+    result = repository_control._cmd_verify_suite_execution(
+        plan, manifest, "process-smoke"
+    )
+
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["expected_suites"] == 1
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["executed"] = []
+    _write_json(manifest, payload)
+
+    result = repository_control._cmd_verify_suite_execution(
+        plan, manifest, "process-smoke"
+    )
+
+    assert result == 1
+    assert json.loads(capsys.readouterr().out)["missing_observed_suites"] == [
+        "installed-smoke"
+    ]
