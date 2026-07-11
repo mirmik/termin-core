@@ -79,6 +79,14 @@ public:
     // Serialize value (caller owns returned tc_value)
     tc_value serialize(const std::string& kind_name, const std::any& value) const;
 
+    // Serialize a registered field while retaining schema context for diagnostics.
+    tc_value serialize_field(
+        const std::string& kind_name,
+        const std::any& value,
+        const std::string& type_name,
+        const std::string& path
+    ) const;
+
     // Deserialize value
     std::any deserialize(const std::string& kind_name, const tc_value* data, void* context = nullptr) const;
 };
@@ -138,6 +146,34 @@ inline void register_builtin_cpp_kinds() {
     reg.register_kind("int",
         [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
         [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
+    );
+    reg.register_kind("uint32",
+        [](const std::any& v) {
+            return tc_value_int(static_cast<int64_t>(std::any_cast<unsigned int>(v)));
+        },
+        [](const tc_value* v, void*) -> std::any {
+            uint64_t parsed = 0;
+            if (v->type == TC_VALUE_INT && v->data.i >= 0) {
+                parsed = static_cast<uint64_t>(v->data.i);
+            } else if (v->type == TC_VALUE_STRING && v->data.s) {
+                char* end = nullptr;
+                errno = 0;
+                const unsigned long long raw = std::strtoull(v->data.s, &end, 10);
+                if (end == v->data.s || *end != '\0' || errno == ERANGE) {
+                    tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to uint32", v->data.s);
+                    return std::any{};
+                }
+                parsed = static_cast<uint64_t>(raw);
+            } else {
+                tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert tc_value type %d to uint32", v->type);
+                return std::any{};
+            }
+            if (parsed > static_cast<uint64_t>(std::numeric_limits<unsigned int>::max())) {
+                tc_log(TC_LOG_ERROR, "[Inspect] uint32 value is out of range");
+                return std::any{};
+            }
+            return static_cast<unsigned int>(parsed);
+        }
     );
     reg.register_kind("slider_int",
         [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },

@@ -545,13 +545,14 @@ public:
 
         std::string kind_copy = info.kind;
 
-        info.getter = [member, kind_copy](void* obj) -> tc_value {
-            T val = static_cast<C*>(obj)->*member;
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
-        };
-
         std::string type_copy = info.type_name;
         std::string path_copy = info.path;
+
+        info.getter = [member, kind_copy, type_copy, path_copy](void* obj) -> tc_value {
+            T val = static_cast<C*>(obj)->*member;
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(val), type_copy, path_copy);
+        };
 
         info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
             std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
@@ -599,13 +600,16 @@ public:
 
         std::string kind_copy = info.kind;
 
-        info.getter = [getter_fn = std::move(getter_fn), kind_copy](void* obj) -> tc_value {
-            T val = getter_fn(static_cast<C*>(obj));
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
-        };
-
         std::string type_copy = info.type_name;
         std::string path_copy = info.path;
+
+        info.getter = [
+            getter_fn = std::move(getter_fn), kind_copy, type_copy, path_copy
+        ](void* obj) -> tc_value {
+            T val = getter_fn(static_cast<C*>(obj));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(val), type_copy, path_copy);
+        };
 
         info.setter = [
             setter_fn = std::move(setter_fn),
@@ -669,9 +673,10 @@ public:
         std::string type_copy = type_name;
         std::string path_copy = path;
 
-        info.getter = [getter_fn, kind_copy](void* obj) -> tc_value {
+        info.getter = [getter_fn, kind_copy, type_copy, path_copy](void* obj) -> tc_value {
             T val = getter_fn(static_cast<C*>(obj));
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(val), type_copy, path_copy);
         };
 
         info.setter = [setter_fn, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
@@ -705,9 +710,10 @@ public:
         std::string type_copy = type_name;
         std::string path_copy = path;
 
-        info.getter = [member, kind_copy](void* obj) -> tc_value {
+        info.getter = [member, kind_copy, type_copy, path_copy](void* obj) -> tc_value {
             H val = static_cast<C*>(obj)->*member;
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(val), type_copy, path_copy);
         };
 
         info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
@@ -952,14 +958,15 @@ void register_inspect_field_choices(
     std::string type_copy = type_name;
     std::string path_copy = path;
 
-    info.getter = [member, kind_copy](void* obj) -> tc_value {
+    info.getter = [member, kind_copy, type_copy, path_copy](void* obj) -> tc_value {
         T val = static_cast<C*>(obj)->*member;
         if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
             if (kind_copy == "enum") {
                 return tc_value_string(val.c_str());
             }
         }
-        return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+        return KindRegistryCpp::instance().serialize_field(
+            kind_copy, std::any(val), type_copy, path_copy);
     };
 
     info.setter = [member, kind_copy, type_copy, path_copy](void* obj, tc_value value, void* context) {
@@ -1084,9 +1091,12 @@ struct InspectAccessorFieldRegistrar {
         std::string type_copy = info.type_name;
         std::string path_copy = info.path;
 
-        info.getter = [getter_fn = std::move(getter_fn), kind_copy](void* obj) -> tc_value {
+        info.getter = [
+            getter_fn = std::move(getter_fn), kind_copy, type_copy, path_copy
+        ](void* obj) -> tc_value {
             T val = getter_fn(static_cast<C*>(obj));
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(val), type_copy, path_copy);
         };
 
         info.setter = [
@@ -1154,9 +1164,12 @@ struct InspectAccessorFieldChoicesRegistrar {
         std::string type_copy = info.type_name;
         std::string path_copy = info.path;
 
-        info.getter = [getter_fn = std::move(getter_fn), kind_copy](void* obj) -> tc_value {
+        info.getter = [
+            getter_fn = std::move(getter_fn), kind_copy, type_copy, path_copy
+        ](void* obj) -> tc_value {
             T val = getter_fn(static_cast<C*>(obj));
-            return KindRegistryCpp::instance().serialize(kind_copy, std::any(val));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(val), type_copy, path_copy);
         };
 
         info.setter = [

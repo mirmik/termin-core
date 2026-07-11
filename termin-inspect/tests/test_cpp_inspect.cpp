@@ -1,9 +1,11 @@
 #include "tc_inspect_cpp.hpp"
 #include "inspect/tc_runtime_type_registry.h"
 
+#include <algorithm>
 #include <any>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,16 @@ struct CppChoiceComponent {
     int accessor_mode = 0;
     std::string string_mode = "average";
 };
+
+struct CppUnsignedComponent {
+    unsigned int stable_id = 0;
+};
+
+static std::vector<std::string> g_inspect_logs;
+
+void capture_inspect_log(tc_log_level, const char* message) {
+    g_inspect_logs.emplace_back(message ? message : "");
+}
 
 struct RuntimeInstanceProbe {
     tc_runtime_type_instance_link link;
@@ -94,6 +106,69 @@ TEST_CASE("C++ kind serialization mismatch is logged and returns nil") {
 
     CHECK(value.type == TC_VALUE_NIL);
     tc_value_free(&value);
+}
+
+TEST_CASE("C++ uint32 kind roundtrips the full unsigned int range") {
+    tc::init_cpp_inspect_vtable();
+    tc::register_builtin_cpp_kinds();
+
+    auto& reg = tc::InspectRegistry::instance();
+    reg.unregister_type("CppUnsignedComponent");
+    reg.add<CppUnsignedComponent, unsigned int>(
+        "CppUnsignedComponent",
+        &CppUnsignedComponent::stable_id,
+        "stable_id",
+        "Stable Id",
+        "uint32",
+        0.0,
+        static_cast<double>(std::numeric_limits<unsigned int>::max()),
+        1.0
+    );
+
+    CppUnsignedComponent object;
+    object.stable_id = 4000000000u;
+    tc_value serialized = reg.serialize_all(&object, "CppUnsignedComponent");
+    REQUIRE(serialized.type == TC_VALUE_DICT);
+    tc_value* stable_id = tc_value_dict_get(&serialized, "stable_id");
+    REQUIRE(stable_id != nullptr);
+    CHECK_EQ(stable_id->type, TC_VALUE_INT);
+    CHECK_EQ(stable_id->data.i, 4000000000LL);
+
+    object.stable_id = 0;
+    reg.deserialize_all(&object, "CppUnsignedComponent", &serialized, nullptr);
+    CHECK_EQ(object.stable_id, 4000000000u);
+    tc_value_free(&serialized);
+}
+
+TEST_CASE("C++ field serialization mismatch logs the registered type and path") {
+    tc::init_cpp_inspect_vtable();
+    tc::register_builtin_cpp_kinds();
+
+    auto& reg = tc::InspectRegistry::instance();
+    reg.unregister_type("CppUnsignedMismatch");
+    reg.add<CppUnsignedComponent, unsigned int>(
+        "CppUnsignedMismatch",
+        &CppUnsignedComponent::stable_id,
+        "stable_id",
+        "Stable Id",
+        "int"
+    );
+
+    g_inspect_logs.clear();
+    tc_log_set_callback(capture_inspect_log);
+    CppUnsignedComponent object;
+    tc_value value = reg.get_tc_value(&object, "CppUnsignedMismatch", "stable_id");
+    tc_log_set_callback(nullptr);
+
+    CHECK_EQ(value.type, TC_VALUE_NIL);
+    tc_value_free(&value);
+    CHECK(std::any_of(
+        g_inspect_logs.begin(),
+        g_inspect_logs.end(),
+        [](const std::string& message) {
+            return message.find("CppUnsignedMismatch.stable_id") != std::string::npos;
+        }
+    ));
 }
 
 TEST_CASE("C++ inspect registry roundtrips inherited fields") {

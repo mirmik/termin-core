@@ -54,7 +54,7 @@ class InspectField:
         if value is None:
             if self.kind == "string":
                 value = ""
-            elif self.kind in ("int", "float", "navmesh_area"):
+            elif self.kind in ("int", "uint32", "float", "navmesh_area"):
                 value = 0
             elif self.kind == "bool":
                 value = False

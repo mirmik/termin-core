@@ -151,6 +151,15 @@ void reset_kind_registry_cpp() {
 }
 
 tc_value KindRegistryCpp::serialize(const std::string& kind_name, const std::any& value) const {
+    return serialize_field(kind_name, value, "", "");
+}
+
+tc_value KindRegistryCpp::serialize_field(
+    const std::string& kind_name,
+    const std::any& value,
+    const std::string& type_name,
+    const std::string& path
+) const {
     auto* kind = get(kind_name);
     if (!kind) {
         tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' not registered in KindRegistryCpp", kind_name.c_str());
@@ -160,12 +169,23 @@ tc_value KindRegistryCpp::serialize(const std::string& kind_name, const std::any
         try {
             return kind->serialize(value);
         } catch (const std::bad_any_cast& e) {
-            tc_log(
-                TC_LOG_ERROR,
-                "[Inspect] Kind '%s' cannot serialize C++ value type '%s': %s",
-                kind_name.c_str(),
-                value.has_value() ? value.type().name() : "<empty>",
-                e.what());
+            if (!type_name.empty() && !path.empty()) {
+                tc_log(
+                    TC_LOG_ERROR,
+                    "[Inspect] Field '%s.%s' kind '%s' cannot serialize C++ value type '%s': %s",
+                    type_name.c_str(),
+                    path.c_str(),
+                    kind_name.c_str(),
+                    value.has_value() ? value.type().name() : "<empty>",
+                    e.what());
+            } else {
+                tc_log(
+                    TC_LOG_ERROR,
+                    "[Inspect] Kind '%s' cannot serialize C++ value type '%s': %s",
+                    kind_name.c_str(),
+                    value.has_value() ? value.type().name() : "<empty>",
+                    e.what());
+            }
             return tc_value_nil();
         }
     }

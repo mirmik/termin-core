@@ -5,6 +5,7 @@ preload_sdk_libs("termin_base", "termin_inspect")
 
 from termin.inspect.inspect_field import InspectAttr, InspectField, inspect
 from termin.inspect.kind import KindRegistry, register_kind
+from termin.inspect.numeric import UINT32_MAX, parse_uint32
 from termin.inspect.registry import InspectRegistry, InspectFieldInfo, TypeBackend, EnumChoice
 
 __all__ = [
@@ -17,4 +18,6 @@ __all__ = [
     "EnumChoice",
     "KindRegistry",
     "register_kind",
+    "UINT32_MAX",
+    "parse_uint32",
 ]
