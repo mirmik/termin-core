@@ -4,6 +4,8 @@ import json
 from io import StringIO
 from pathlib import Path
 
+import pytest
+
 from termin_build import repository_control
 
 
@@ -74,6 +76,18 @@ def _repository(tmp_path: Path) -> Path:
             ],
         },
     )
+    _write_json(
+        tmp_path / "build-system" / "docs-publication.json",
+        {
+            "schema": 1,
+            "inventory": {
+                "exclude_roots": ["build"],
+                "exclude_directory_names": [".git", "__pycache__"],
+            },
+            "public_sites": [],
+            "internal_roots": [],
+        },
+    )
     return tmp_path
 
 
@@ -90,6 +104,7 @@ def test_catalog_joins_python_packages_to_test_suites(tmp_path: Path) -> None:
             python_distribution="alpha-dist",
         ),
     )
+    assert catalog.documentation.sites == ()
     assert catalog.profiles[0].pytest_mark_expression == "not full"
     assert repository_control.validate_catalog(repo, catalog) == []
 
@@ -155,6 +170,46 @@ def test_catalog_rejects_orphan_python_test(tmp_path: Path) -> None:
     )
 
     assert errors == ["orphan Python test: unowned/tests/test_orphan.py"]
+
+
+def test_catalog_rejects_orphan_documentation_root(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    docs = repo / "alpha" / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text("# Alpha\n", encoding="utf-8")
+
+    errors = repository_control.validate_catalog(
+        repo, repository_control.load_catalog(repo)
+    )
+
+    assert errors == ["orphan documentation root: alpha/docs"]
+
+
+def test_docs_plan_uses_module_identity_and_publication_path(
+    tmp_path: Path, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    docs = repo / "alpha" / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text("# Alpha\n", encoding="utf-8")
+    config = repo / "alpha" / "mkdocs.yml"
+    config.write_text("site_name: Alpha\n", encoding="utf-8")
+    manifest = repo / repository_control.DOCS_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["public_sites"] = [
+        {
+            "module": "alpha",
+            "root": "alpha/docs",
+            "config": "alpha/mkdocs.yml",
+            "site_path": "alpha",
+        }
+    ]
+    _write_json(manifest, data)
+
+    result = repository_control._cmd_docs_plan(repo, json_output=False)
+
+    assert result == 0
+    assert capsys.readouterr().out == "alpha\talpha/mkdocs.yml\talpha\n"
 
 
 def test_catalog_rejects_multiple_python_test_owners(tmp_path: Path) -> None:
@@ -468,6 +523,7 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
     _write_json(
         selection,
         {
+            "schema": 1,
             "profile": "pr",
             "platform": "linux",
             "capabilities": ["host"],
@@ -513,6 +569,7 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
     _write_json(
         plan,
         {
+            "schema": 1,
             "profile": "pr",
             "platform": "linux",
             "suites": [
@@ -524,6 +581,9 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
     _write_json(
         ctest,
         {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
             "executed": [{"module": "alpha"}],
             "skipped": [],
             "failed": [],
@@ -532,6 +592,9 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
     _write_json(
         python,
         {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
             "executed": [{"id": "alpha-python"}],
             "skipped": [],
             "failed": [],
@@ -542,3 +605,119 @@ def test_verify_plan_execution_requires_python_and_ctest_coverage(
 
     assert result == 0
     assert json.loads(capsys.readouterr().out)["missing_python_suites"] == []
+
+
+def test_verify_plan_execution_rejects_wrong_identity_and_unexpected_entries(
+    tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    ctest = tmp_path / "ctest.json"
+    python = tmp_path / "python.json"
+    _write_json(
+        plan,
+        {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
+            "suites": [
+                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+                {"id": "alpha-native", "executor": "ctest", "module": "alpha"},
+            ],
+        },
+    )
+    _write_json(
+        ctest,
+        {
+            "schema": 1,
+            "profile": "linux-full",
+            "platform": "linux",
+            "executed": [{"module": "alpha"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+    _write_json(
+        python,
+        {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
+            "executed": [{"id": "alpha-python"}],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+
+    with pytest.raises(repository_control.ManifestError, match="profile does not match"):
+        repository_control._cmd_verify_plan_execution(plan, ctest, python)
+
+    ctest_payload = json.loads(ctest.read_text(encoding="utf-8"))
+    ctest_payload["profile"] = "pr"
+    ctest_payload["executed"].append({"module": "unplanned"})
+    _write_json(ctest, ctest_payload)
+
+    result = repository_control._cmd_verify_plan_execution(plan, ctest, python)
+
+    assert result == 1
+    assert json.loads(capsys.readouterr().out)["unexpected_ctest_modules"] == [
+        "unplanned"
+    ]
+
+
+def test_verify_suite_execution_requires_exact_executor_coverage(
+    tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    manifest = tmp_path / "process.json"
+    _write_json(
+        plan,
+        {
+            "schema": 1,
+            "profile": "sdk-installed",
+            "platform": "linux",
+            "suites": [
+                {
+                    "id": "installed-smoke",
+                    "executor": "process-smoke",
+                    "module": "alpha",
+                },
+                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+            ],
+        },
+    )
+    _write_json(
+        manifest,
+        {
+            "schema": 1,
+            "profile": "sdk-installed",
+            "platform": "linux",
+            "selected": [
+                {"id": "installed-smoke", "executor": "process-smoke"}
+            ],
+            "executed": [
+                {"id": "installed-smoke", "executor": "process-smoke"}
+            ],
+            "skipped": [],
+            "failed": [],
+        },
+    )
+
+    result = repository_control._cmd_verify_suite_execution(
+        plan, manifest, "process-smoke"
+    )
+
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["expected_suites"] == 1
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["executed"] = []
+    _write_json(manifest, payload)
+
+    result = repository_control._cmd_verify_suite_execution(
+        plan, manifest, "process-smoke"
+    )
+
+    assert result == 1
+    assert json.loads(capsys.readouterr().out)["missing_observed_suites"] == [
+        "installed-smoke"
+    ]
