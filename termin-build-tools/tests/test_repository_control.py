@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
 from pathlib import Path
 
 from termin_build import repository_control
@@ -315,11 +316,17 @@ def test_run_executes_manifest_pytest_suites(
     repo = _repository(tmp_path)
     calls = []
 
-    def fake_run(command, *, cwd, env, check):
-        calls.append((command, cwd, env, check))
-        return type("Result", (), {"returncode": 0})()
+    class FakeProcess:
+        stdout = StringIO("1 passed\n")
 
-    monkeypatch.setattr(repository_control.subprocess, "run", fake_run)
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(command, *, cwd, env, stdout, stderr, text, bufsize):
+        calls.append((command, cwd, env, stdout, stderr, text, bufsize))
+        return FakeProcess()
+
+    monkeypatch.setattr(repository_control.subprocess, "Popen", fake_popen)
 
     result = repository_control.main(
         [
@@ -336,7 +343,7 @@ def test_run_executes_manifest_pytest_suites(
 
     assert result == 0
     assert len(calls) == 1
-    command, cwd, environment, check = calls[0]
+    command, cwd, environment, stdout, stderr, text, bufsize = calls[0]
     assert command[:7] == [
         "/test/python",
         "-m",
@@ -348,17 +355,26 @@ def test_run_executes_manifest_pytest_suites(
     ]
     assert cwd == repo
     assert environment["TMPDIR"].startswith(str(repo / "build" / "pytest-temp"))
-    assert check is False
+    assert stdout is repository_control.subprocess.PIPE
+    assert stderr is repository_control.subprocess.STDOUT
+    assert text is True
+    assert bufsize == 1
     assert "Pytest suites: 1" in capsys.readouterr().out
 
 
 def test_run_accumulates_suite_failures(tmp_path: Path, monkeypatch, capsys) -> None:
     repo = _repository(tmp_path)
 
-    def fake_run(command, *, cwd, env, check):
-        return type("Result", (), {"returncode": 3})()
+    class FakeProcess:
+        stdout = StringIO("pytest failed\n")
 
-    monkeypatch.setattr(repository_control.subprocess, "run", fake_run)
+        def wait(self) -> int:
+            return 3
+
+    def fake_popen(command, *, cwd, env, stdout, stderr, text, bufsize):
+        return FakeProcess()
+
+    monkeypatch.setattr(repository_control.subprocess, "Popen", fake_popen)
 
     result = repository_control.main(
         ["--repo-root", str(repo), "run", "pr", "--platform", "linux"]
@@ -366,6 +382,37 @@ def test_run_accumulates_suite_failures(tmp_path: Path, monkeypatch, capsys) -> 
 
     assert result == 1
     assert "  - alpha-python" in capsys.readouterr().err
+
+
+def test_run_fails_when_pytest_emits_nanobind_shutdown_diagnostic(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo = _repository(tmp_path)
+
+    class FakeProcess:
+        stdout = StringIO(
+            "1 passed\n"
+            "nanobind: leaked 1 instances!\n"
+            " - leaked instance 0x1234\n"
+        )
+
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(command, *, cwd, env, stdout, stderr, text, bufsize):
+        return FakeProcess()
+
+    monkeypatch.setattr(repository_control.subprocess, "Popen", fake_popen)
+
+    result = repository_control.main(
+        ["--repo-root", str(repo), "run", "pr", "--platform", "linux"]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "nanobind shutdown leak diagnostics" in captured.err
+    assert "nanobind: leaked 1 instances!" in captured.err
+    assert "  - alpha-python" in captured.err
 
 
 def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> None:
