@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import threading
 import time
 from dataclasses import dataclass
@@ -22,6 +23,46 @@ class TerminMcpConfig:
     port: int
     token: str
     session_file: Path
+
+
+def create_secure_mcp_config(
+    *,
+    host: object,
+    port: object,
+    token: object,
+    session_file: str | Path,
+    default_host: str,
+    default_port: int,
+    log_prefix: str,
+) -> TerminMcpConfig:
+    resolved_host = host.strip() if isinstance(host, str) else ""
+    if not resolved_host:
+        log.error(f"[{log_prefix}] invalid empty MCP host; using {default_host}")
+        resolved_host = default_host
+
+    try:
+        resolved_port = int(port)
+    except (TypeError, ValueError):
+        resolved_port = default_port
+        log.error(f"[{log_prefix}] invalid MCP port {port!r}; using {default_port}")
+    if not 1 <= resolved_port <= 65535:
+        log.error(f"[{log_prefix}] MCP port {resolved_port} is outside 1..65535; using {default_port}")
+        resolved_port = default_port
+
+    resolved_token = token.strip() if isinstance(token, str) else ""
+    if not resolved_token:
+        resolved_token = secrets.token_urlsafe(24)
+        log.warning(
+            f"[{log_prefix}] empty or invalid MCP token replaced with a generated token; "
+            "unauthenticated execution is disabled"
+        )
+
+    return TerminMcpConfig(
+        host=resolved_host,
+        port=resolved_port,
+        token=resolved_token,
+        session_file=Path(session_file),
+    )
 
 
 class TerminMcpServer:
@@ -154,7 +195,8 @@ class TerminMcpServer:
             def _is_authorized(self) -> bool:
                 token = owner._config.token
                 if not token:
-                    return True
+                    log.error(f"[{owner._log_prefix}] refusing request because MCP token is empty")
+                    return False
                 header = self.headers.get("Authorization", "")
                 if header == f"Bearer {token}":
                     return True
