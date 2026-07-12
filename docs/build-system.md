@@ -135,8 +135,9 @@ Runtime population разделён на build и install:
 
 - `build-system/python-sdk-build-requirements.txt` фиксирует инструменты
   disposable build environment `build/python-runtime/build-env`;
-- `build-system/python-runtime-lock.txt` содержит exact pins только для
-  third-party runtime distributions;
+- `build-system/python-runtime-lock.txt` содержит exact pins для всех
+  third-party distributions, поставляемых с SDK, включая `pytest` и его
+  транзитивные зависимости;
 - external wheels материализуются в `build/python-runtime/external-wheels`
   (sdist-only `pyassimp` собирается в wheel на этой стадии);
 - все Termin wheels собираются из `build-system/packages.json` в
@@ -163,8 +164,9 @@ Developer/test environment не является вторым runtime venv. Ко
 ./setup-sdk-python-env.sh
 ```
 
-создаёт disposable слой `build/python-envs/test`: pinned pytest/Ruff/test-only
-dependencies и `overlay.json`. Manifest-driven finder загружает Python-исходники
+создаёт disposable слой `build/python-envs/test`: pinned Ruff и прочие
+test-only dependencies; `pytest` доступен прямо из bundled SDK. Затем создаётся
+`overlay.json`. Manifest-driven finder загружает Python-исходники
 Termin из checkout, но ищет native extensions прежде всего в соответствующем
 SDK. Overlay привязан к hash `sdk/termin-artifacts.json` и Python ABI; устаревший
 overlay завершается ошибкой вместо неявного смешивания сборок.

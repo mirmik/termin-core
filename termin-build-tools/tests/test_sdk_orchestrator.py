@@ -106,18 +106,26 @@ def test_native_extensions_for_source_reads_manifest():
     ]
 
 
-def test_base_sdk_runtime_seed_excludes_heavy_optional_packages():
+def test_sdk_runtime_seed_includes_pytest_and_excludes_heavy_optional_packages():
     repo_root = sdk.repo_root_from(Path(__file__))
     runtime_requirement_names = set(sdk._load_runtime_lock(repo_root))
 
     assert "scipy" not in runtime_requirement_names
     assert "pyopengl" not in runtime_requirement_names
     assert runtime_requirement_names == {
+        "colorama",
+        "exceptiongroup",
         "glfw",
+        "iniconfig",
         "numpy",
         "packaging",
+        "pluggy",
+        "pygments",
         "pyassimp",
+        "pytest",
         "pyyaml",
+        "tomli",
+        "typing-extensions",
         "watchdog",
     }
 
