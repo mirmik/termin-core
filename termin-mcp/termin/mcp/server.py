@@ -174,11 +174,18 @@ class TerminMcpServer:
                     return
 
                 if isinstance(request, list):
+                    if not request:
+                        self._send_json(self._error_response(None, -32600, "Invalid Request"))
+                        return
                     responses = [
                         response
                         for item in request
                         if (response := owner._handle_rpc(item)) is not None
                     ]
+                    if not responses:
+                        self.send_response(204)
+                        self.end_headers()
+                        return
                     self._send_json(responses)
                     return
 
@@ -227,12 +234,20 @@ class TerminMcpServer:
     def _handle_rpc(self, request: Any) -> dict[str, object] | None:
         if not isinstance(request, dict):
             return self._rpc_error(None, -32600, "Invalid Request")
-        request_id = request.get("id")
+        if request.get("jsonrpc") != "2.0":
+            return self._rpc_error(None, -32600, "Invalid Request")
         method = request.get("method")
+        if not isinstance(method, str) or not method:
+            return self._rpc_error(None, -32600, "Invalid Request")
+
+        is_notification = "id" not in request
+        request_id = request.get("id")
+        if not is_notification and (isinstance(request_id, bool) or not isinstance(request_id, (str, int, float, type(None)))):
+            return self._rpc_error(None, -32600, "Invalid Request")
 
         try:
             if method == "initialize":
-                return self._rpc_result(
+                response = self._rpc_result(
                     request_id,
                     {
                         "protocolVersion": "2024-11-05",
@@ -243,29 +258,31 @@ class TerminMcpServer:
                         },
                     },
                 )
-            if method == "notifications/initialized":
-                return None
-            if method == "ping":
-                return self._rpc_result(request_id, {})
-            if method == "tools/list":
-                return self._rpc_result(request_id, {"tools": self._tool_schemas()})
-            if method == "tools/call":
-                return self._handle_tool_call(request_id, request.get("params"))
-            if method == "termin/execute_python":
+            elif method == "ping":
+                response = self._rpc_result(request_id, {})
+            elif method == "tools/list":
+                response = self._rpc_result(request_id, {"tools": self._tool_schemas()})
+            elif method == "tools/call":
+                response = self._handle_tool_call(request_id, request.get("params"))
+            elif method == "termin/execute_python":
                 params = request.get("params")
                 if not isinstance(params, dict):
-                    return self._rpc_error(request_id, -32602, "Invalid params")
-                return self._rpc_result(
-                    request_id,
-                    self._execute_python_result(
-                        str(params.get("script", "")),
-                        timeout=float(params.get("timeout", 30.0)),
-                    ),
-                )
-            return self._rpc_error(request_id, -32601, f"Method not found: {method}")
+                    response = self._rpc_error(request_id, -32602, "Invalid params")
+                else:
+                    response = self._rpc_result(
+                        request_id,
+                        self._execute_python_result(
+                            str(params.get("script", "")),
+                            timeout=float(params.get("timeout", 30.0)),
+                        ),
+                    )
+            else:
+                response = self._rpc_error(request_id, -32601, f"Method not found: {method}")
         except Exception as exc:
             log.error(f"[{self._log_prefix}] request handling failed: {exc}")
-            return self._rpc_error(request_id, -32603, f"Internal error: {exc}")
+            response = self._rpc_error(request_id, -32603, f"Internal error: {exc}")
+
+        return None if is_notification else response
 
     def _handle_tool_call(
         self,
