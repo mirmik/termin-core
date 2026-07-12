@@ -5,9 +5,9 @@ from __future__ import annotations
 import code
 import contextlib
 import io
-import queue
 import threading
 import traceback
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -27,6 +27,7 @@ class _ExecutionRequest:
     script: str
     done: threading.Event
     result: PythonExecutionResult | None = None
+    state: str = "queued"
 
 
 class PythonScriptExecutor:
@@ -49,7 +50,8 @@ class PythonScriptExecutor:
         self._compile_filename = compile_filename
         self._console = code.InteractiveConsole(locals={})
         self._main_thread_id = threading.get_ident()
-        self._pending: queue.Queue[_ExecutionRequest] = queue.Queue()
+        self._pending: deque[_ExecutionRequest] = deque()
+        self._pending_lock = threading.Lock()
 
     def execute_repl_line(self, text: str) -> PythonExecutionResult:
         if not text.strip() and not self._console.buffer:
@@ -108,14 +110,61 @@ class PythonScriptExecutor:
             return self.execute_script(script)
 
         request = _ExecutionRequest(script=script, done=threading.Event())
-        self._pending.put(request)
-        if not request.done.wait(timeout=timeout):
-            log.error(f"[{self._log_prefix}] script execution timed out waiting for main thread")
-            return PythonExecutionResult(
-                ok=False,
-                output="",
-                error="Timed out waiting for main thread",
-            )
+        with self._pending_lock:
+            self._pending.append(request)
+
+        if request.done.wait(timeout=timeout):
+            return self._request_result(request)
+
+        with self._pending_lock:
+            if request.state == "queued":
+                request.state = "cancelled"
+                self._pending.remove(request)
+                request.done.set()
+                log.error(
+                    f"[{self._log_prefix}] script execution timed out waiting for main thread; "
+                    "cancelled before execution"
+                )
+                return PythonExecutionResult(
+                    ok=False,
+                    output="",
+                    error="Timed out waiting for main thread",
+                )
+
+        # The main thread claimed the request concurrently with the timeout.
+        # Waiting for that already-started execution avoids returning a timeout
+        # and then allowing the caller's script to mutate state later.
+        log.warning(
+            f"[{self._log_prefix}] script execution deadline elapsed after main-thread claim; "
+            "waiting for the started request to finish"
+        )
+        request.done.wait()
+        return self._request_result(request)
+
+    def process_pending(self, *, limit: int = 8) -> int:
+        processed = 0
+        while processed < limit:
+            with self._pending_lock:
+                if not self._pending:
+                    break
+                request = self._pending.popleft()
+                if request.state == "cancelled":
+                    continue
+                if request.state != "queued":
+                    log.error(
+                        f"[{self._log_prefix}] pending request entered invalid state {request.state}"
+                    )
+                    continue
+                request.state = "executing"
+            try:
+                request.result = self.execute_script(request.script)
+            finally:
+                request.state = "completed"
+                request.done.set()
+            processed += 1
+        return processed
+
+    def _request_result(self, request: _ExecutionRequest) -> PythonExecutionResult:
         if request.result is None:
             log.error(f"[{self._log_prefix}] script execution completed without a result")
             return PythonExecutionResult(
@@ -124,20 +173,6 @@ class PythonScriptExecutor:
                 error="Execution completed without a result",
             )
         return request.result
-
-    def process_pending(self, *, limit: int = 8) -> int:
-        processed = 0
-        while processed < limit:
-            try:
-                request = self._pending.get_nowait()
-            except queue.Empty:
-                break
-            try:
-                request.result = self.execute_script(request.script)
-            finally:
-                request.done.set()
-            processed += 1
-        return processed
 
     def _refresh_context(self) -> None:
         namespace = self._console.locals
