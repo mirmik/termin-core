@@ -79,8 +79,12 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
         return 1
 
     expected_root = sdk_prefix.resolve()
+    expected_python_home = (expected_root / "python").resolve()
     if Path(str(info.get("sdk_root", ""))).resolve() != expected_root:
         print("FAILED: SDK Python launcher reported the wrong SDK root", file=sys.stderr)
+        return 1
+    if Path(str(info.get("python_home", ""))).resolve() != expected_python_home:
+        print("FAILED: SDK Python launcher reported the wrong Python home", file=sys.stderr)
         return 1
     expected_flags = {
         "isolated": True,
@@ -98,10 +102,11 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
     smoke = (
         "import pathlib, site, sys, tcbase, termin.tween; "
         f"root = pathlib.Path({str(expected_root)!r}); "
+        f"python_home = pathlib.Path({str(expected_python_home)!r}); "
         "assert pathlib.Path(tcbase.__file__).resolve().is_relative_to(root); "
         "assert pathlib.Path(termin.tween.__file__).resolve().is_relative_to(root); "
         "assert site.ENABLE_USER_SITE is False; "
-        "assert pathlib.Path(sys.prefix).resolve() == root"
+        "assert pathlib.Path(sys.prefix).resolve() == python_home"
     )
     smoke_result = subprocess.run(
         [str(launcher), "-c", smoke],
