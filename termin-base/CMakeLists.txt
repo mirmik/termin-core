@@ -102,6 +102,14 @@ if(TERMIN_BASE_BUILD_TESTS)
     )
     target_link_libraries(termin_base_geometry_test PRIVATE termin_base)
     add_test(NAME termin_base_geometry_test COMMAND termin_base_geometry_test)
+
+    add_executable(termin_base_profiler_test tests/test_tc_profiler.c)
+    set_target_properties(termin_base_profiler_test PROPERTIES LINKER_LANGUAGE CXX)
+    target_include_directories(termin_base_profiler_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
+    target_link_libraries(termin_base_profiler_test PRIVATE termin_base)
+    add_test(NAME termin_base_profiler_test COMMAND termin_base_profiler_test)
 endif()
 
 # Install

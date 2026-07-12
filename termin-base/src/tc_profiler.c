@@ -35,6 +35,10 @@ typedef struct {
     int section_stack[TC_PROFILER_MAX_DEPTH];
     double section_start_times[TC_PROFILER_MAX_DEPTH];
     int stack_depth;
+    // Number of balanced nested sections beyond section_stack's fixed
+    // capacity. They are deliberately not recorded, but must still be
+    // counted so their end_section calls cannot pop a valid stored section.
+    int overflow_depth;
     // stack_depth at which the outermost muted section was opened.
     // While stack_depth >= muted_depth, every begin_section is treated
     // as a sentinel (no recording) so callees inside don't need to
@@ -60,6 +64,7 @@ void tc_profiler_set_enabled(bool enabled) {
     if (!enabled) {
         g_profiler.current_frame = NULL;
         g_profiler.stack_depth = 0;
+        g_profiler.overflow_depth = 0;
     }
 }
 
@@ -103,6 +108,7 @@ void tc_profiler_begin_frame(void) {
 
     g_profiler.current_frame = frame;
     g_profiler.stack_depth = 0;
+    g_profiler.overflow_depth = 0;
     g_profiler.muted_depth = -1;
     g_profiler.frame_start_time = get_time_ms();
 }
@@ -195,13 +201,10 @@ static void begin_section_internal(const char* name, bool muted) {
                 TC_PROFILER_MAX_DEPTH, name);
             s_depth_logged = 1;
         }
-        // Still push a sentinel so the paired end_section is harmless —
-        // otherwise it would pop somebody else's section off the stack
-        // and accumulate elapsed time on the wrong record.
-        if (g_profiler.stack_depth < TC_PROFILER_MAX_DEPTH * 2) {
-            g_profiler.section_stack[TC_PROFILER_MAX_DEPTH - 1] = -1;
-        }
-        g_profiler.stack_depth++;
+        // Do not touch the fixed arrays: their final slot contains the
+        // deepest valid section. Count overflow separately so each matching
+        // end_section is harmless and valid parent timing stays intact.
+        g_profiler.overflow_depth++;
         return;
     }
 
@@ -246,6 +249,10 @@ void tc_profiler_begin_section_muted(const char* name) {
 void tc_profiler_end_section(void) {
     if (!g_profiler.enabled) return;
     if (g_profiler.current_frame == NULL) return;
+    if (g_profiler.overflow_depth > 0) {
+        g_profiler.overflow_depth--;
+        return;
+    }
     if (g_profiler.stack_depth <= 0) return;
 
     g_profiler.stack_depth--;
