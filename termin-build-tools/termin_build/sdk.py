@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import base64
-import csv
-import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -1508,7 +1504,6 @@ def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
 # Runtime package metadata and final verification have independent lifecycles,
 # but remain re-exported here for callers of the historical sdk module.
 from .sdk_runtime_metadata import (
-    _clear_legacy_bundled_runtime_packages,
     _clear_target_python_package_metadata,
     _load_runtime_lock,
     write_python_runtime_manifest,

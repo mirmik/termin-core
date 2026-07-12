@@ -45,6 +45,19 @@ typedef struct tc_tensor {
     ptrdiff_t strides[TC_TENSOR_MAX_DIMS]; // byte strides
 } tc_tensor;
 
+// Describes externally owned tensor storage. The descriptor keeps the C ABI
+// extensible without growing tc_tensor_init_external's parameter list.
+typedef struct tc_tensor_external_desc {
+    void* data;
+    void* owner;
+    tc_tensor_release_fn release_owner;
+    tc_dtype dtype;
+    uint8_t ndim;
+    const size_t* shape;
+    const ptrdiff_t* strides;
+    uint32_t flags;
+} tc_tensor_external_desc;
+
 TCBASE_API size_t tc_dtype_size(tc_dtype dtype);
 TCBASE_API const char* tc_dtype_name(tc_dtype dtype);
 
@@ -62,14 +75,7 @@ TCBASE_API bool tc_tensor_init_borrowed(
 
 TCBASE_API bool tc_tensor_init_external(
     tc_tensor* tensor,
-    void* data,
-    void* owner,
-    tc_tensor_release_fn release_owner,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    const ptrdiff_t* strides,
-    uint32_t flags
+    const tc_tensor_external_desc* desc
 );
 
 TCBASE_API bool tc_tensor_init_owned(

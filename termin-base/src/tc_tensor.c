@@ -118,45 +118,42 @@ bool tc_tensor_make_c_strides(
 
 static bool init_tensor(
     tc_tensor* tensor,
-    void* data,
-    void* owner,
-    tc_tensor_release_fn release_owner,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    const ptrdiff_t* strides,
-    uint32_t flags
+    const tc_tensor_external_desc* desc
 ) {
     if (!tensor) {
         tc_log_error("tc_tensor: tensor is NULL");
         return false;
     }
+    if (!desc) {
+        tc_log_error("tc_tensor: external descriptor is NULL");
+        return false;
+    }
     *tensor = tc_tensor_empty();
 
-    if (!validate_shape(ndim, shape)) {
+    if (!validate_shape(desc->ndim, desc->shape)) {
         return false;
     }
-    if (tc_dtype_size(dtype) == 0) {
-        tc_log_error("tc_tensor: invalid dtype=%d", (int)dtype);
+    if (tc_dtype_size(desc->dtype) == 0) {
+        tc_log_error("tc_tensor: invalid dtype=%d", (int)desc->dtype);
         return false;
     }
 
-    tensor->data = data;
-    tensor->owner = owner;
-    tensor->release_owner = release_owner;
-    tensor->dtype = dtype;
-    tensor->ndim = ndim;
-    tensor->flags = flags;
+    tensor->data = desc->data;
+    tensor->owner = desc->owner;
+    tensor->release_owner = desc->release_owner;
+    tensor->dtype = desc->dtype;
+    tensor->ndim = desc->ndim;
+    tensor->flags = desc->flags;
 
-    for (uint8_t i = 0; i < ndim; ++i) {
-        tensor->shape[i] = shape[i];
+    for (uint8_t i = 0; i < desc->ndim; ++i) {
+        tensor->shape[i] = desc->shape[i];
     }
 
-    if (strides) {
-        for (uint8_t i = 0; i < ndim; ++i) {
-            tensor->strides[i] = strides[i];
+    if (desc->strides) {
+        for (uint8_t i = 0; i < desc->ndim; ++i) {
+            tensor->strides[i] = desc->strides[i];
         }
-    } else if (!tc_tensor_make_c_strides(dtype, ndim, shape, tensor->strides)) {
+    } else if (!tc_tensor_make_c_strides(desc->dtype, desc->ndim, desc->shape, tensor->strides)) {
         *tensor = tc_tensor_empty();
         return false;
     }
@@ -173,21 +170,15 @@ bool tc_tensor_init_borrowed(
     const ptrdiff_t* strides,
     uint32_t flags
 ) {
-    return init_tensor(tensor, data, NULL, NULL, dtype, ndim, shape, strides, flags);
+    const tc_tensor_external_desc desc = {data, NULL, NULL, dtype, ndim, shape, strides, flags};
+    return init_tensor(tensor, &desc);
 }
 
 bool tc_tensor_init_external(
     tc_tensor* tensor,
-    void* data,
-    void* owner,
-    tc_tensor_release_fn release_owner,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    const ptrdiff_t* strides,
-    uint32_t flags
+    const tc_tensor_external_desc* desc
 ) {
-    return init_tensor(tensor, data, owner, release_owner, dtype, ndim, shape, strides, flags);
+    return init_tensor(tensor, desc);
 }
 
 bool tc_tensor_init_owned(
@@ -230,7 +221,8 @@ bool tc_tensor_init_owned(
         }
     }
 
-    if (!init_tensor(tensor, data, data, free, dtype, ndim, shape, NULL, flags)) {
+    const tc_tensor_external_desc desc = {data, data, free, dtype, ndim, shape, NULL, flags};
+    if (!init_tensor(tensor, &desc)) {
         free(data);
         return false;
     }
@@ -316,6 +308,14 @@ bool tc_tensor_copy_contiguous(tc_tensor* dst, const tc_tensor* src) {
     }
 
     const size_t count = tc_tensor_element_count(src);
+    if (count == 0) {
+        return true;
+    }
+    if (!src->data || !dst->data) {
+        tc_log_error("tc_tensor_copy_contiguous: non-empty tensor has no storage");
+        tc_tensor_free(dst);
+        return false;
+    }
     const size_t item_size = tc_dtype_size(src->dtype);
     const char* src_bytes = (const char*)src->data;
     char* dst_bytes = (char*)dst->data;
