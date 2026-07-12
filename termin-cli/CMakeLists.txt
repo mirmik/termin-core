@@ -33,17 +33,22 @@ function(termin_cli_add_tool target)
     install(TARGETS ${target} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endfunction()
 
+add_library(termin_cli_python_backend STATIC src/termin_python_backend.cpp)
+target_include_directories(termin_cli_python_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 termin_cli_add_tool(termin src/termin.cpp)
 termin_cli_add_tool(termin_modules_cli src/termin_modules_cli.cpp)
+target_link_libraries(termin_modules_cli PRIVATE termin_cli_python_backend)
 termin_cli_add_tool(termin_stdlib src/termin_stdlib.cpp)
 
 if(TERMIN_BUILD_PYTHON)
     termin_cli_add_tool(termin_python src/termin_python.cpp)
+    target_link_libraries(termin_python PRIVATE termin_cli_python_backend)
     target_link_libraries(termin_python PRIVATE Python::Python)
 endif()
 
 termin_cli_add_tool(termin_builder src/termin_builder.cpp)
-target_link_libraries(termin_builder PRIVATE tcbase::termin_base)
+target_link_libraries(termin_builder PRIVATE tcbase::termin_base termin_cli_python_backend)
 
 termin_cli_add_tool(termin_runner src/termin_runner.cpp)
 target_link_libraries(termin_runner PRIVATE tcbase::termin_base)
