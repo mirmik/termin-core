@@ -8,7 +8,7 @@ import pytest
 from setuptools import Distribution
 from setuptools.config.pyprojecttoml import apply_configuration
 
-from termin_build import sdk, sdk_runtime_metadata
+from termin_build import sdk, sdk_runtime_metadata, sdk_verification
 from termin_build.package_manifest import NativeExtension, PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
 
@@ -232,12 +232,16 @@ def test_verify_sdk_python_launcher_rejects_missing_launcher(tmp_path, capsys):
     assert "SDK Python launcher is missing" in capsys.readouterr().err
 
 
-def test_verify_sdk_python_launcher_checks_isolation_and_imports(
+@pytest.mark.parametrize("is_windows", [False, True])
+def test_verify_sdk_python_launcher_checks_platform_layout_isolation_and_imports(
     tmp_path,
     monkeypatch,
+    is_windows,
 ):
     sdk_prefix = tmp_path / "sdk"
-    launcher = sdk_prefix / "bin" / "termin_python"
+    python_home = sdk_prefix / "python" if is_windows else sdk_prefix
+    launcher_name = "termin_python.exe" if is_windows else "termin_python"
+    launcher = sdk_prefix / "bin" / launcher_name
     launcher.parent.mkdir(parents=True)
     launcher.write_text("launcher", encoding="utf-8")
     commands = []
@@ -251,6 +255,7 @@ def test_verify_sdk_python_launcher_checks_isolation_and_imports(
                 stdout=json.dumps(
                     {
                         "sdk_root": str(sdk_prefix.resolve()),
+                        "python_home": str(python_home.resolve()),
                         "isolated": True,
                         "use_environment": False,
                         "user_site": False,
@@ -260,7 +265,7 @@ def test_verify_sdk_python_launcher_checks_isolation_and_imports(
             )
         return sdk.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: is_windows)
     monkeypatch.setattr(sdk.subprocess, "run", fake_run)
 
     assert sdk.verify_sdk_python_launcher(sdk_prefix) == 0

@@ -79,7 +79,12 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
         return 1
 
     expected_root = sdk_prefix.resolve()
-    expected_python_home = (expected_root / "python").resolve()
+    # Windows ships an embedded distribution under ``sdk/python``.  On POSIX
+    # the SDK root itself is Python home and the standard library lives below
+    # ``sdk/lib/pythonX.Y``; keep this contract aligned with termin_python.
+    expected_python_home = (
+        (expected_root / "python").resolve() if _is_windows() else expected_root
+    )
     if Path(str(info.get("sdk_root", ""))).resolve() != expected_root:
         print("FAILED: SDK Python launcher reported the wrong SDK root", file=sys.stderr)
         return 1
