@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -50,7 +51,7 @@ def test_activate_overlay_rejects_stale_sdk_fingerprint(
                 "schema": 1,
                 "sdk_root": str(sdk_root),
                 "sdk_fingerprint": "stale",
-                "python_abi": "3.10",
+                "python_abi": f"{sys.version_info.major}.{sys.version_info.minor}",
                 "extra_sites": [],
                 "mappings": {},
             }

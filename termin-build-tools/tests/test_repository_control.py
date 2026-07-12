@@ -436,7 +436,7 @@ def test_run_executes_manifest_pytest_suites(
         "--basetemp",
     ]
     assert cwd == repo
-    assert environment["TMPDIR"].startswith(str(repo / "build" / "pytest-temp"))
+    assert environment["TMPDIR"].startswith(str(repo / "build" / "pt"))
     assert stdout is repository_control.subprocess.PIPE
     assert stderr is repository_control.subprocess.STDOUT
     assert text is True

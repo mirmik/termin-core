@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -1003,7 +1004,7 @@ def run_pytest_plan(
     pytest_suites = [
         suite for suite in plan["suites"] if suite["executor"] == "pytest"
     ]
-    run_root = repo_root / "build" / "pytest-temp" / uuid.uuid4().hex
+    run_root = repo_root / "build" / "pt" / uuid.uuid4().hex[:8]
     cache_root = repo_root / "build" / "pytest-cache"
     run_root.mkdir(parents=True, exist_ok=True)
     cache_root.mkdir(parents=True, exist_ok=True)
@@ -1019,7 +1020,7 @@ def run_pytest_plan(
     for suite in pytest_suites:
         suite_id = suite["id"]
         safe_suite_id = _safe_suite_directory(suite_id)
-        suite_temp = run_root / safe_suite_id
+        suite_temp = run_root / hashlib.sha256(safe_suite_id.encode("utf-8")).hexdigest()[:8]
         suite_cache = cache_root / safe_suite_id
         suite_temp.mkdir(parents=True, exist_ok=True)
         suite_cache.mkdir(parents=True, exist_ok=True)
