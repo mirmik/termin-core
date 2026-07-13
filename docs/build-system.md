@@ -181,8 +181,8 @@ sdk/bin/termin_python --termin-overlay build/python-envs/test/overlay.json -m py
 sdk/bin/termin_python -c "import tcbase, termin.engine"
 ```
 
-`setup-test-venv.sh` пока является compatibility wrapper. Новый workflow не
-копирует `.so`/`.pyd` в source tree и не требует `--force` после пересборки
+Старые `setup-test-venv.*` и корневой `.venv` workflow удалены. Новый workflow
+не копирует `.so`/`.pyd` в source tree и не требует `--force` после пересборки
 bindings; после изменения SDK нужно лишь перегенерировать overlay.
 
 ---

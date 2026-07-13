@@ -1486,6 +1486,10 @@ def run_sdk_build(
 ) -> int:
     sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
     build_dir = _build_dir(repo_root, build_type)
+    build_env = os.environ.copy()
+    build_python = _python_executable()
+    build_env["PYTHON_BIN"] = build_python
+    build_env["PYTHON_EXECUTABLE"] = build_python
 
     stages = (
         (
@@ -1506,7 +1510,7 @@ def run_sdk_build(
         if dry_run:
             print("+ " + " ".join(command))
         else:
-            result = _run(command, cwd=repo_root)
+            result = _run(command, cwd=repo_root, env=build_env)
             if result != 0:
                 return result
 

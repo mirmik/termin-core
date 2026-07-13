@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from .python_interpreter import resolve_python_executable
 
 
 def _is_windows() -> bool:
@@ -15,10 +16,7 @@ def _is_windows() -> bool:
 
 
 def _python_executable() -> str:
-    env_python = os.environ.get("PYTHON_EXECUTABLE") or os.environ.get("PYTHON_BIN")
-    if env_python:
-        return env_python
-    return sys.executable
+    return resolve_python_executable()
 
 
 def _python_version_and_paths(py_exec: str) -> dict[str, object]:

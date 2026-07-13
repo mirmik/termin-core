@@ -6,7 +6,6 @@ import base64
 import csv
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -14,6 +13,7 @@ import sys
 from pathlib import Path
 
 from .package_manifest import load_manifest
+from .python_interpreter import resolve_python_executable
 
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
@@ -25,7 +25,7 @@ LEGACY_BUNDLED_RUNTIME_PACKAGES = {
 
 
 def _python_executable() -> str:
-    return os.environ.get("PYTHON_EXECUTABLE") or os.environ.get("PYTHON_BIN") or sys.executable
+    return resolve_python_executable()
 
 
 def _python_version_and_paths(py_exec: str) -> dict[str, object]:

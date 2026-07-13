@@ -46,6 +46,48 @@ def test_build_tools_package_config_excludes_generated_build_tree():
     assert distribution.packages == ["termin_build"]
 
 
+def test_python_interpreter_rejects_conflicting_overrides(tmp_path, monkeypatch):
+    first = tmp_path / "python-a"
+    second = tmp_path / "python-b"
+    first.write_text("", encoding="utf-8")
+    second.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PYTHON_BIN", str(first))
+    monkeypatch.setenv("PYTHON_EXECUTABLE", str(second))
+
+    with pytest.raises(RuntimeError, match="different interpreters"):
+        sdk_python_layout._python_executable()
+
+
+def test_sdk_build_propagates_one_absolute_python_to_child_stages(
+    tmp_path,
+    monkeypatch,
+):
+    interpreter = tmp_path / "python"
+    interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
+    captured = []
+
+    def run(command, *, cwd, env=None):
+        captured.append((command, cwd, env))
+        return 1
+
+    monkeypatch.setattr(sdk, "_run", run)
+
+    result = sdk.run_sdk_build(
+        repo_root=tmp_path,
+        build_type="Release",
+        stage_args=[],
+        build_wheels=False,
+        dry_run=False,
+    )
+
+    assert result == 1
+    assert len(captured) == 1
+    child_env = captured[0][2]
+    assert child_env["PYTHON_BIN"] == str(interpreter)
+    assert child_env["PYTHON_EXECUTABLE"] == str(interpreter)
+
+
 def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
     tmp_path,
     monkeypatch,
