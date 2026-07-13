@@ -8,7 +8,7 @@ import pytest
 from setuptools import Distribution
 from setuptools.config.pyprojecttoml import apply_configuration
 
-from termin_build import sdk, sdk_runtime_metadata, sdk_verification
+from termin_build import sdk, sdk_python_layout, sdk_runtime_metadata, sdk_verification
 from termin_build.package_manifest import NativeExtension, PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
 
@@ -506,10 +506,10 @@ def test_sdk_python_layout_rejects_multiple_runtime_abis(tmp_path, monkeypatch):
     (sdk_prefix / "lib" / "python3.10" / "site-packages").mkdir(parents=True)
     (sdk_prefix / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_python_layout, "_python_executable", lambda: "python")
     monkeypatch.setattr(
-        sdk,
+        sdk_python_layout,
         "_python_version_and_paths",
         lambda _py_exec: {"version": "3.10"},
     )
@@ -522,10 +522,10 @@ def test_sdk_python_layout_rejects_active_python_abi_mismatch(tmp_path, monkeypa
     sdk_prefix = tmp_path / "sdk"
     (sdk_prefix / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_python_layout, "_python_executable", lambda: "python")
     monkeypatch.setattr(
-        sdk,
+        sdk_python_layout,
         "_python_version_and_paths",
         lambda _py_exec: {"version": "3.10"},
     )
@@ -539,10 +539,10 @@ def test_sdk_python_layout_can_require_native_bindings(tmp_path, monkeypatch):
     tcbase_dir = sdk_prefix / "lib" / "python3.10" / "site-packages" / "tcbase"
     tcbase_dir.mkdir(parents=True)
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_python_layout, "_python_executable", lambda: "python")
     monkeypatch.setattr(
-        sdk,
+        sdk_python_layout,
         "_python_version_and_paths",
         lambda _py_exec: {"version": "3.10"},
     )
@@ -584,10 +584,10 @@ def test_publish_cmake_python_install_normalizes_staged_bindings(
     (cache_dir / "__init__.cpython-310.pyc").write_bytes(b"bytecode")
     (staged_package / "runtime.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_python_layout, "_python_executable", lambda: "python")
     monkeypatch.setattr(
-        sdk,
+        sdk_python_layout,
         "_python_version_and_paths",
         lambda _py_exec: {"version": "3.10"},
     )
@@ -617,10 +617,10 @@ def test_publish_cmake_python_install_removes_windows_legacy_tree(
     (tcbase_dir / "_tcbase_native.cp310-win_amd64.pyd").write_bytes(b"native")
     (legacy_package / "_sample_native.cp310-win_amd64.pyd").write_bytes(b"sample")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python.exe")
+    monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_python_layout, "_python_executable", lambda: "python.exe")
     monkeypatch.setattr(
-        sdk,
+        sdk_python_layout,
         "_python_version_and_paths",
         lambda _py_exec: {"version": "3.10"},
     )
@@ -840,6 +840,7 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     calls = []
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: is_windows)
+    monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: is_windows)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
