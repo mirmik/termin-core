@@ -11,14 +11,15 @@ nanobind module so dependent shared libraries are visible to the dynamic linker.
 """
 
 import ctypes
+import logging
 import os
 import sys
 from pathlib import Path
 
 _sdk_root = None
 _preloaded = set()
-_windows_dirs_registered = False
-_windows_local_dirs = set()
+_windows_dll_directory_handles = {}
+_log = logging.getLogger(__name__)
 
 
 def find_sdk():
@@ -100,28 +101,46 @@ def _caller_lib_dirs():
 
 
 def _register_windows_dll_dirs(local_dirs):
-    global _windows_dirs_registered
-    if _windows_dirs_registered:
-        for d in local_dirs:
-            key = str(d)
-            if key not in _windows_local_dirs:
-                os.add_dll_directory(key)
-                _windows_local_dirs.add(key)
-        return
-    if not hasattr(os, "add_dll_directory"):
-        return
-    for d in local_dirs:
-        os.add_dll_directory(str(d))
-        _windows_local_dirs.add(str(d))
+    for directory in local_dirs:
+        _register_windows_dll_dir(directory)
     sdk = find_sdk()
     if sdk is None:
-        _windows_dirs_registered = True
         return
     for sub in ("bin", "lib"):
-        d = sdk / sub
-        if d.is_dir():
-            os.add_dll_directory(str(d))
-    _windows_dirs_registered = True
+        directory = sdk / sub
+        if directory.is_dir():
+            _register_windows_dll_dir(directory)
+
+
+def _register_windows_dll_dir(directory):
+    """Register one normalized Windows DLL search path for module lifetime."""
+    key = os.path.normcase(os.path.normpath(os.path.abspath(os.fspath(directory))))
+    if key in _windows_dll_directory_handles:
+        return
+    try:
+        handle = os.add_dll_directory(key)
+    except OSError as exc:
+        _log.error("Failed to register Windows DLL directory '%s': %s", key, exc)
+        raise ImportError(f"Failed to register required DLL directory: {key}") from exc
+    _windows_dll_directory_handles[key] = handle
+
+
+def close_windows_dll_directories():
+    """Remove registered DLL directories during an explicit embedding shutdown.
+
+    Normal package use deliberately keeps the handles alive until interpreter
+    teardown, because closing them earlier makes later native imports fragile.
+    Hosts that unload Termin before process exit may call this after all Termin
+    extension modules have been released.
+    """
+    handles = list(_windows_dll_directory_handles.items())
+    for key, handle in reversed(handles):
+        try:
+            handle.close()
+        except OSError as exc:
+            _log.error("Failed to remove Windows DLL directory '%s': %s", key, exc)
+        finally:
+            del _windows_dll_directory_handles[key]
 
 
 def _find_library(name, lib_dirs):
