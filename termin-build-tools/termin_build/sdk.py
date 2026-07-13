@@ -709,6 +709,64 @@ def resolve_sdk_python_layout(
     return site_packages
 
 
+def publish_cmake_python_install(
+    install_dir: Path,
+    sdk_prefix: Path,
+) -> Path:
+    """Normalize CMake-installed Python modules into SDK site-packages."""
+    info = _python_version_and_paths(_python_executable())
+    version = str(info["version"])
+    site_packages = resolve_sdk_python_layout(sdk_prefix)
+
+    source_roots = [install_dir / "lib" / "python"]
+    if _is_windows():
+        source_roots.append(install_dir / "python" / "Lib" / "site-packages")
+    else:
+        staged_python = _find_bundled_python_dir(
+            install_dir,
+            expected_version=version,
+        )
+        if staged_python is not None:
+            source_roots.append(staged_python / "site-packages")
+
+    published_roots = []
+    for source_root in source_roots:
+        if not source_root.is_dir():
+            continue
+        if source_root.resolve() != site_packages.resolve():
+            _copy_tree_contents(
+                source_root,
+                site_packages,
+                set(),
+            )
+        published_roots.append(source_root)
+
+    if not published_roots:
+        rendered = ", ".join(str(path) for path in source_roots)
+        raise RuntimeError(
+            f"CMake Python install tree was not found; searched: {rendered}"
+        )
+
+    sdk_root = sdk_prefix.resolve()
+    for source_root in published_roots:
+        resolved_source = source_root.resolve()
+        if resolved_source == site_packages.resolve():
+            continue
+        if resolved_source.is_relative_to(sdk_root):
+            shutil.rmtree(source_root)
+
+    for cache_dir in list(site_packages.rglob("__pycache__")):
+        if cache_dir.is_dir():
+            shutil.rmtree(cache_dir)
+    for bytecode in list(site_packages.rglob("*.py[co]")):
+        if bytecode.is_file():
+            bytecode.unlink()
+
+    resolve_sdk_python_layout(sdk_prefix, require_native_bindings=True)
+    print(f"Published CMake Python install to {site_packages}")
+    return site_packages
+
+
 def install_python_packages(
     repo_root: Path,
     sdk_prefix: Path,
@@ -1829,6 +1887,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Require the tcbase native extension in the resolved layout.",
     )
 
+    publish_python_parser = subparsers.add_parser(
+        "publish-cmake-python",
+        help="Normalize the staged CMake Python install into SDK site-packages.",
+    )
+    publish_python_parser.add_argument("--install-dir", type=Path, required=True)
+    publish_python_parser.add_argument("--sdk-prefix", type=Path, required=True)
+
     install_packages_parser = subparsers.add_parser(
         "install-packages",
         help="Install Termin Python packages into the current Python or --target.",
@@ -1914,6 +1979,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: {error}", file=sys.stderr)
             return 1
         print(site_packages.resolve())
+        return 0
+    if args.command == "publish-cmake-python":
+        try:
+            publish_cmake_python_install(
+                install_dir=args.install_dir,
+                sdk_prefix=args.sdk_prefix,
+            )
+        except RuntimeError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
         return 0
     if args.command == "install-packages":
         if unknown_args:

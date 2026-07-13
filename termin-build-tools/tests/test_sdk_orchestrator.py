@@ -557,6 +557,83 @@ def test_sdk_python_layout_can_require_native_bindings(tmp_path, monkeypatch):
     ) == tcbase_dir.parent
 
 
+def test_publish_cmake_python_install_normalizes_staged_bindings(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    install_dir = tmp_path / "install"
+    site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
+    legacy_tcbase = install_dir / "lib" / "python" / "tcbase"
+    staged_package = (
+        install_dir
+        / "lib"
+        / "python3.10"
+        / "site-packages"
+        / "termin"
+        / "editor"
+    )
+    site_packages.mkdir(parents=True)
+    legacy_tcbase.mkdir(parents=True)
+    staged_package.mkdir(parents=True)
+    native_name = "_tcbase_native.cpython-310-x86_64-linux-gnu.so"
+    (legacy_tcbase / native_name).write_bytes(b"native")
+    (legacy_tcbase / "__init__.py").write_text("", encoding="utf-8")
+    cache_dir = legacy_tcbase / "__pycache__"
+    cache_dir.mkdir()
+    (cache_dir / "__init__.cpython-310.pyc").write_bytes(b"bytecode")
+    (staged_package / "runtime.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {"version": "3.10"},
+    )
+
+    result = sdk.publish_cmake_python_install(install_dir, sdk_prefix)
+
+    assert result == site_packages
+    assert (site_packages / "tcbase" / native_name).read_bytes() == b"native"
+    assert (site_packages / "termin" / "editor" / "runtime.py").read_text() == (
+        "VALUE = 1\n"
+    )
+    assert not (sdk_prefix / "lib" / "python").exists()
+    assert not list(site_packages.rglob("__pycache__"))
+    assert not list(site_packages.rglob("*.pyc"))
+
+
+def test_publish_cmake_python_install_removes_windows_legacy_tree(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    site_packages = sdk_prefix / "python" / "Lib" / "site-packages"
+    tcbase_dir = site_packages / "tcbase"
+    legacy_package = sdk_prefix / "lib" / "python" / "termin" / "sample"
+    tcbase_dir.mkdir(parents=True)
+    legacy_package.mkdir(parents=True)
+    (tcbase_dir / "_tcbase_native.cp310-win_amd64.pyd").write_bytes(b"native")
+    (legacy_package / "_sample_native.cp310-win_amd64.pyd").write_bytes(b"sample")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python.exe")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {"version": "3.10"},
+    )
+
+    result = sdk.publish_cmake_python_install(sdk_prefix, sdk_prefix)
+
+    assert result == site_packages
+    assert (
+        site_packages / "termin" / "sample" / "_sample_native.cp310-win_amd64.pyd"
+    ).read_bytes() == b"sample"
+    assert not (sdk_prefix / "lib" / "python").exists()
+
+
 def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_path):
     target_dir = tmp_path / "site-packages"
     target_dir.mkdir()
