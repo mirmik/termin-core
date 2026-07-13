@@ -647,7 +647,11 @@ def write_artifacts(
     return 0
 
 
-def _find_bundled_python_dir(sdk_prefix: Path) -> Path | None:
+def _find_bundled_python_dir(
+    sdk_prefix: Path,
+    *,
+    expected_version: str | None = None,
+) -> Path | None:
     if _is_windows():
         windows_lib = sdk_prefix / "python" / "Lib"
         if windows_lib.is_dir():
@@ -656,7 +660,53 @@ def _find_bundled_python_dir(sdk_prefix: Path) -> Path | None:
     if not lib_dir.is_dir():
         return None
     matches = sorted(path for path in lib_dir.glob("python3.*") if path.is_dir())
-    return matches[0] if matches else None
+    if len(matches) > 1:
+        rendered = ", ".join(str(path) for path in matches)
+        raise RuntimeError(
+            f"SDK contains multiple bundled Python runtimes: {rendered}. "
+            "Rebuild the SDK with one Python ABI."
+        )
+    if not matches:
+        return None
+    bundled_py_dir = matches[0]
+    if expected_version is not None:
+        expected = lib_dir / f"python{expected_version}"
+        if bundled_py_dir != expected:
+            raise RuntimeError(
+                f"SDK Python ABI mismatch: expected {expected}, found {bundled_py_dir}. "
+                "Rebuild the SDK with the active Python interpreter."
+            )
+    return bundled_py_dir
+
+
+def resolve_sdk_python_layout(
+    sdk_prefix: Path,
+    *,
+    require_native_bindings: bool = False,
+) -> Path:
+    info = _python_version_and_paths(_python_executable())
+    version = str(info["version"])
+    bundled_py_dir = _find_bundled_python_dir(
+        sdk_prefix,
+        expected_version=version,
+    )
+    if bundled_py_dir is None:
+        raise RuntimeError(
+            f"SDK Python {version} runtime was not found under {sdk_prefix}"
+        )
+    site_packages = bundled_py_dir / "site-packages"
+    if not site_packages.is_dir():
+        raise RuntimeError(f"SDK site-packages directory was not found: {site_packages}")
+    if require_native_bindings:
+        tcbase_dir = site_packages / "tcbase"
+        native_bindings = tuple(tcbase_dir.glob("_tcbase_native*.so")) + tuple(
+            tcbase_dir.glob("_tcbase_native*.pyd")
+        )
+        if not native_bindings:
+            raise RuntimeError(
+                f"SDK Python {version} native bindings were not found under {tcbase_dir}"
+            )
+    return site_packages
 
 
 def install_python_packages(
@@ -666,7 +716,14 @@ def install_python_packages(
 ) -> int:
     py_exec = _python_executable()
     info = _python_version_and_paths(py_exec)
-    bundled_py_dir = _find_bundled_python_dir(sdk_prefix)
+    try:
+        bundled_py_dir = _find_bundled_python_dir(
+            sdk_prefix,
+            expected_version=str(info["version"]),
+        )
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
     if bundled_py_dir is None or not (bundled_py_dir / "ensurepip").is_dir():
         reason = "not found" if bundled_py_dir is None else "missing ensurepip"
         print(f"Bundled Python stdlib {reason}; syncing it from host Python.")
@@ -736,7 +793,14 @@ def prepare_build_python_runtime(sdk_prefix: Path) -> int:
         return 0
 
     info = _python_version_and_paths(_python_executable())
-    bundled_py_dir = _find_bundled_python_dir(sdk_prefix)
+    try:
+        bundled_py_dir = _find_bundled_python_dir(
+            sdk_prefix,
+            expected_version=str(info["version"]),
+        )
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
     if bundled_py_dir is not None:
         _remove_linux_python_config_artifacts(bundled_py_dir)
     _ensure_linux_python_shared_library(sdk_prefix, info)
@@ -1754,6 +1818,17 @@ def main(argv: list[str] | None = None) -> int:
         help="SDK install prefix. Defaults to SDK_PREFIX or ./sdk.",
     )
 
+    resolve_python_parser = subparsers.add_parser(
+        "resolve-python-layout",
+        help="Validate the SDK Python ABI and print its site-packages path.",
+    )
+    resolve_python_parser.add_argument("--sdk-prefix", type=Path, required=True)
+    resolve_python_parser.add_argument(
+        "--require-native-bindings",
+        action="store_true",
+        help="Require the tcbase native extension in the resolved layout.",
+    )
+
     install_packages_parser = subparsers.add_parser(
         "install-packages",
         help="Install Termin Python packages into the current Python or --target.",
@@ -1829,6 +1904,17 @@ def main(argv: list[str] | None = None) -> int:
         if sdk_prefix is None:
             sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
         return prepare_build_python_runtime(sdk_prefix)
+    if args.command == "resolve-python-layout":
+        try:
+            site_packages = resolve_sdk_python_layout(
+                args.sdk_prefix,
+                require_native_bindings=args.require_native_bindings,
+            )
+        except RuntimeError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
+        print(site_packages.resolve())
+        return 0
     if args.command == "install-packages":
         if unknown_args:
             print(

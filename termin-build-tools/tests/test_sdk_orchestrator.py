@@ -501,6 +501,62 @@ def test_prepare_build_python_runtime_sanitizes_sdk_before_cmake(
     assert (sdk_prefix / "lib" / "libpython3.10.so").read_bytes() == b"shared"
 
 
+def test_sdk_python_layout_rejects_multiple_runtime_abis(tmp_path, monkeypatch):
+    sdk_prefix = tmp_path / "sdk"
+    (sdk_prefix / "lib" / "python3.10" / "site-packages").mkdir(parents=True)
+    (sdk_prefix / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {"version": "3.10"},
+    )
+
+    with pytest.raises(RuntimeError, match="multiple bundled Python runtimes"):
+        sdk.resolve_sdk_python_layout(sdk_prefix)
+
+
+def test_sdk_python_layout_rejects_active_python_abi_mismatch(tmp_path, monkeypatch):
+    sdk_prefix = tmp_path / "sdk"
+    (sdk_prefix / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {"version": "3.10"},
+    )
+
+    with pytest.raises(RuntimeError, match="SDK Python ABI mismatch"):
+        sdk.resolve_sdk_python_layout(sdk_prefix)
+
+
+def test_sdk_python_layout_can_require_native_bindings(tmp_path, monkeypatch):
+    sdk_prefix = tmp_path / "sdk"
+    tcbase_dir = sdk_prefix / "lib" / "python3.10" / "site-packages" / "tcbase"
+    tcbase_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {"version": "3.10"},
+    )
+
+    with pytest.raises(RuntimeError, match="native bindings were not found"):
+        sdk.resolve_sdk_python_layout(sdk_prefix, require_native_bindings=True)
+
+    (tcbase_dir / "_tcbase_native.cpython-310-x86_64-linux-gnu.so").touch()
+    assert sdk.resolve_sdk_python_layout(
+        sdk_prefix,
+        require_native_bindings=True,
+    ) == tcbase_dir.parent
+
+
 def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_path):
     target_dir = tmp_path / "site-packages"
     target_dir.mkdir()
