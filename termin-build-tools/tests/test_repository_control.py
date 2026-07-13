@@ -42,13 +42,13 @@ def _repository(tmp_path: Path) -> Path:
             "schema": 1,
             "python_test_inventory": {
                 "patterns": ["test_*.py", "*_test.py"],
-                "exclude_roots": ["build"],
+                "exclude_roots": ["build", "termin-app/install"],
                 "exclude_directory_names": ["__pycache__"],
             },
             "native_test_inventory": {
                 "patterns": ["test_*", "tests_*", "*_test.*"],
                 "extensions": [".c", ".cc", ".cpp", ".cxx"],
-                "exclude_roots": ["build"],
+                "exclude_roots": ["build", "termin-app/install"],
                 "exclude_directory_names": ["__pycache__"],
             },
             "suite_defaults": {
@@ -95,7 +95,7 @@ def _repository(tmp_path: Path) -> Path:
             "source_size": {
                 "threshold": 2000,
                 "extensions": [".py", ".cpp"],
-                "exclude_roots": ["build"],
+                "exclude_roots": ["build", "termin-app/install"],
             },
         },
     )
@@ -249,16 +249,36 @@ def test_catalog_rejects_multiple_python_test_owners(tmp_path: Path) -> None:
     ]
 
 
-def test_python_test_discovery_honors_declared_exclusions(tmp_path: Path) -> None:
+def test_test_discovery_ignores_generated_build_and_install_trees(
+    tmp_path: Path,
+) -> None:
     repo = _repository(tmp_path)
-    ignored = repo / "build" / "tests" / "test_generated.py"
-    ignored.parent.mkdir(parents=True)
-    ignored.write_text("def test_generated(): pass\n", encoding="utf-8")
+    ignored_python_tests = (
+        repo / "build" / "tests" / "test_generated.py",
+        repo
+        / "termin-app"
+        / "install"
+        / "lib"
+        / "python3.10"
+        / "site-packages"
+        / "numpy"
+        / "tests"
+        / "test_generated.py",
+    )
+    for ignored in ignored_python_tests:
+        ignored.parent.mkdir(parents=True, exist_ok=True)
+        ignored.write_text("def test_generated(): pass\n", encoding="utf-8")
+    ignored_native = repo / "termin-app" / "install" / "tests" / "test_generated.cpp"
+    ignored_native.parent.mkdir(parents=True)
+    ignored_native.write_text("int main() { return 0; }\n", encoding="utf-8")
 
     catalog = repository_control.load_catalog(repo)
 
     assert repository_control.discover_python_tests(
         repo, catalog.python_test_inventory
+    ) == ()
+    assert repository_control.discover_native_tests(
+        repo, catalog.native_test_inventory
     ) == ()
 
 
@@ -390,6 +410,33 @@ def test_check_profile_enforces_source_size_policy(tmp_path: Path, capsys) -> No
     assert "source-size policy violation: alpha/oversized.py: 3 lines" in (
         capsys.readouterr().err
     )
+
+
+def test_check_ignores_sources_in_generated_install_tree(
+    tmp_path: Path, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    policy_path = repo / "build-system" / "repository-policies.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["source_size"]["threshold"] = 3
+    _write_json(policy_path, policy)
+    generated = (
+        repo
+        / "termin-app"
+        / "install"
+        / "lib"
+        / "python3.10"
+        / "site-packages"
+        / "vendor"
+        / "oversized.py"
+    )
+    generated.parent.mkdir(parents=True)
+    generated.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    result = repository_control.main(["--repo-root", str(repo), "check"])
+
+    assert result == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_run_executes_manifest_pytest_suites(
