@@ -543,6 +543,38 @@ def test_prepare_build_python_runtime_sanitizes_sdk_before_cmake(
     assert (sdk_prefix / "lib" / "libpython3.10.so").read_bytes() == b"shared"
 
 
+def test_prepare_build_python_runtime_creates_runtime_for_clean_sdk(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    stdlib = tmp_path / "host" / "lib" / "python3.10"
+    host_libdir = tmp_path / "host" / "lib"
+    (stdlib / "ensurepip").mkdir(parents=True)
+    (stdlib / "os.py").write_text("", encoding="utf-8")
+    (host_libdir / "libpython3.10.so").write_bytes(b"shared")
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: {
+            "version": "3.10",
+            "stdlib": str(stdlib),
+            "libdir": str(host_libdir),
+            "sitepackages": [],
+        },
+    )
+
+    result = sdk.prepare_build_python_runtime(sdk_prefix)
+
+    assert result == 0
+    assert (sdk_prefix / "lib" / "python3.10" / "os.py").is_file()
+    assert (sdk_prefix / "lib" / "python3.10" / "site-packages").is_dir()
+    assert (sdk_prefix / "lib" / "libpython3.10.so").read_bytes() == b"shared"
+
+
 def test_sdk_python_layout_rejects_multiple_runtime_abis(tmp_path, monkeypatch):
     sdk_prefix = tmp_path / "sdk"
     (sdk_prefix / "lib" / "python3.10" / "site-packages").mkdir(parents=True)

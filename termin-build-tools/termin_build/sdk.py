@@ -689,13 +689,15 @@ def prepare_build_python_runtime(sdk_prefix: Path) -> int:
             sdk_prefix,
             expected_version=str(info["version"]),
         )
+        if bundled_py_dir is None:
+            bundled_py_dir = ensure_bundled_python_runtime(sdk_prefix)
+        else:
+            _remove_linux_python_config_artifacts(bundled_py_dir)
+            _ensure_linux_python_shared_library(sdk_prefix, info)
     except RuntimeError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    if bundled_py_dir is not None:
-        _remove_linux_python_config_artifacts(bundled_py_dir)
-    _ensure_linux_python_shared_library(sdk_prefix, info)
-    print(f"Prepared bundled Python runtime for native build: {sdk_prefix}")
+    print(f"Prepared bundled Python runtime for native build: {bundled_py_dir}")
     return 0
 
 
