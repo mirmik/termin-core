@@ -41,6 +41,7 @@ struct KindCpp {
     std::string name;
     std::function<tc_value(const std::any&)> serialize;
     std::function<std::any(const tc_value*, void*)> deserialize;
+    bool is_handle = false;
 
     bool is_valid() const {
         return serialize && deserialize;
@@ -69,6 +70,7 @@ public:
     const KindCpp* get(const std::string& name) const;
 
     bool has(const std::string& name) const;
+    void mark_handle_kind(const std::string& name);
 
     // Get all registered kind names
     std::vector<std::string> kinds() const;

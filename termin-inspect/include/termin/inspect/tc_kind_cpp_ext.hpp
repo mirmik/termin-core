@@ -1,6 +1,7 @@
 // tc_kind_cpp_ext.hpp - C++ helpers for registering handle kinds.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,19 +53,45 @@ H deserialize_handle_value(const tc_value* v, void* context) {
 }
 
 template<typename H>
+bool handle_value_is_valid(const H& value) {
+    if constexpr (requires(const H& x) { x.valid(); }) {
+        return value.valid();
+    } else if constexpr (requires(const H& x) { x.is_valid(); }) {
+        return value.is_valid();
+    } else {
+        return true;
+    }
+}
+
+template<typename H>
+std::optional<H> deserialize_handle_value_checked(const tc_value* value, void* context) {
+    if (value == nullptr || value->type != TC_VALUE_DICT) return std::nullopt;
+    tc_value* uuid = tc_value_dict_get(const_cast<tc_value*>(value), "uuid");
+    if (uuid == nullptr) return H{}; // Canonical null handle.
+    if (uuid->type != TC_VALUE_STRING || uuid->data.s == nullptr) return std::nullopt;
+    if (uuid->data.s[0] == '\0') return H{};
+    H result = deserialize_handle_value<H>(value, context);
+    if (!handle_value_is_valid(result)) return std::nullopt;
+    return result;
+}
+
+template<typename H>
 void register_cpp_handle_kind(const std::string& kind_name) {
-    KindRegistryCpp::instance().register_kind(kind_name,
+    KindRegistryCpp& registry = KindRegistryCpp::instance();
+    registry.register_kind(kind_name,
         [](const std::any& value) -> tc_value {
             const H& h = std::any_cast<const H&>(value);
             return serialize_handle_value(h);
         },
         [](const tc_value* v, void* context) -> std::any {
-            return deserialize_handle_value<H>(v, context);
+            auto value = deserialize_handle_value_checked<H>(v, context);
+            return value ? std::any(std::move(*value)) : std::any();
         }
     );
+    registry.mark_handle_kind(kind_name);
 
     std::string list_kind = "list[" + kind_name + "]";
-    KindRegistryCpp::instance().register_kind(list_kind,
+    registry.register_kind(list_kind,
         [](const std::any& value) -> tc_value {
             const auto& vec = std::any_cast<const std::vector<H>&>(value);
             tc_value result = tc_value_list_new();
@@ -75,16 +102,18 @@ void register_cpp_handle_kind(const std::string& kind_name) {
             return result;
         },
         [](const tc_value* v, void* context) -> std::any {
+            if (!v || v->type != TC_VALUE_LIST) return std::any();
             std::vector<H> vec;
-            if (v && v->type == TC_VALUE_LIST) {
-                for (size_t i = 0; i < v->data.list.count; i++) {
-                    H h = deserialize_handle_value<H>(&v->data.list.items[i], context);
-                    vec.push_back(h);
-                }
+            for (size_t i = 0; i < v->data.list.count; i++) {
+                auto value = deserialize_handle_value_checked<H>(
+                    &v->data.list.items[i], context);
+                if (!value) return std::any();
+                vec.push_back(std::move(*value));
             }
-            return vec;
+            return std::any(std::move(vec));
         }
     );
+    registry.mark_handle_kind(list_kind);
 }
 
 } // namespace tc

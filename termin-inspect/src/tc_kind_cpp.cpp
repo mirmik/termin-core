@@ -131,6 +131,14 @@ bool KindRegistryCpp::has(const std::string& name) const {
     return _kinds.find(name) != _kinds.end();
 }
 
+void KindRegistryCpp::mark_handle_kind(const std::string& name) {
+    auto it = _kinds.find(name);
+    if (it == _kinds.end()) {
+        throw std::runtime_error("cannot mark unregistered kind '" + name + "' as a handle");
+    }
+    it->second.is_handle = true;
+}
+
 std::vector<std::string> KindRegistryCpp::kinds() const {
     std::vector<std::string> result;
     result.reserve(_kinds.size());
