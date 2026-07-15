@@ -66,8 +66,13 @@ static tc_value cpp_get(void* obj, const char* type_name, const char* path, void
 static bool cpp_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
     (void)ctx;
     try {
-        InspectRegistry::instance().set_tc_value(obj, type_name, path, value, context);
-        return true;
+        const bool applied = InspectRegistry::instance().set_tc_value(
+            obj, type_name ? type_name : "", path ? path : "", value, context);
+        if (!applied) {
+            tc_log(TC_LOG_ERROR, "[Inspect] C++ setter rejected value for type '%s' field '%s'",
+                   type_name ? type_name : "", path ? path : "");
+        }
+        return applied;
     } catch (const std::exception& error) {
         tc_log(TC_LOG_ERROR, "[Inspect] C++ set failed for type '%s' field '%s': %s",
                type_name ? type_name : "", path ? path : "", error.what());

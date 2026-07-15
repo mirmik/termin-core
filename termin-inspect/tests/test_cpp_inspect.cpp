@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -30,6 +32,11 @@ struct CppChoiceComponent {
 
 struct CppUnsignedComponent {
     unsigned int stable_id = 0;
+};
+
+struct CheckedSetterComponent {
+    int value = 3;
+    std::optional<int> nullable = 7;
 };
 
 static std::vector<std::string> g_inspect_logs;
@@ -169,6 +176,79 @@ TEST_CASE("C++ field serialization mismatch logs the registered type and path") 
             return message.find("CppUnsignedMismatch.stable_id") != std::string::npos;
         }
     ));
+}
+
+TEST_CASE("checked C++ setters report conversion, access, and callback failures") {
+    tc::init_cpp_inspect_vtable();
+    tc::register_builtin_cpp_kinds();
+
+    auto& kinds = tc::KindRegistryCpp::instance();
+    kinds.register_kind(
+        "optional_int",
+        [](const std::any& value) {
+            const auto optional = std::any_cast<std::optional<int>>(value);
+            return optional ? tc_value_int(*optional) : tc_value_nil();
+        },
+        [](const tc_value* value, void*) -> std::any {
+            if (value->type == TC_VALUE_NIL) {
+                return std::optional<int>{};
+            }
+            return std::optional<int>{tc::tc_value_to_int(value)};
+        });
+
+    auto& reg = tc::InspectRegistry::instance();
+    reg.unregister_type("CheckedSetterComponent");
+    reg.add<CheckedSetterComponent, int>(
+        "CheckedSetterComponent", &CheckedSetterComponent::value,
+        "value", "Value", "int");
+    reg.add<CheckedSetterComponent, std::optional<int>>(
+        "CheckedSetterComponent", &CheckedSetterComponent::nullable,
+        "nullable", "Nullable", "optional_int");
+    reg.add_with_callbacks<CheckedSetterComponent, int>(
+        "CheckedSetterComponent", "throwing", "Throwing", "int",
+        [](CheckedSetterComponent* object) { return object->value; },
+        [](CheckedSetterComponent*, int) { throw std::runtime_error("setter refused value"); });
+
+    tc::InspectFieldInfo read_only;
+    read_only.type_name = "CheckedSetterComponent";
+    read_only.path = "read_only";
+    read_only.kind = "int";
+    read_only.getter = [](void* object) {
+        return tc_value_int(static_cast<CheckedSetterComponent*>(object)->value);
+    };
+    reg.add_serializable_field("CheckedSetterComponent", std::move(read_only));
+
+    CheckedSetterComponent object;
+    CHECK(tc_inspect_set_checked(
+        &object, "CheckedSetterComponent", "value", tc_value_int(11), nullptr));
+    CHECK_EQ(object.value, 11);
+
+    tc_value invalid = tc_value_string("not-an-int");
+    CHECK(!tc_inspect_set_checked(
+        &object, "CheckedSetterComponent", "value", invalid, nullptr));
+    tc_value_free(&invalid);
+    CHECK_EQ(object.value, 11);
+
+    CHECK(!tc_inspect_set_checked(
+        &object, "CheckedSetterComponent", "throwing", tc_value_int(12), nullptr));
+    CHECK(!tc_inspect_set_checked(
+        &object, "CheckedSetterComponent", "missing", tc_value_int(12), nullptr));
+    CHECK(!tc_inspect_set_checked(
+        &object, "CheckedSetterComponent", "read_only", tc_value_int(12), nullptr));
+
+    CHECK(tc_inspect_set_checked(
+        &object, "CheckedSetterComponent", "nullable", tc_value_nil(), nullptr));
+    CHECK(!object.nullable.has_value());
+
+    object.nullable = 21;
+    tc_value nullable_payload = tc_value_dict_new();
+    tc_value_dict_set(&nullable_payload, "nullable", tc_value_nil());
+    const tc_inspect_apply_result nullable_result = tc_inspect_deserialize_checked(
+        &object, "CheckedSetterComponent", &nullable_payload, nullptr);
+    CHECK_EQ(nullable_result.status, TC_INSPECT_APPLY_OK);
+    CHECK_EQ(nullable_result.applied_fields, 1u);
+    CHECK(!object.nullable.has_value());
+    tc_value_free(&nullable_payload);
 }
 
 TEST_CASE("C++ inspect registry roundtrips inherited fields") {

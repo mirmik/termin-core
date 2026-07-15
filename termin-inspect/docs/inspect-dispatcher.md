@@ -29,6 +29,24 @@ tc_inspect_set(obj, "Player", "hp", new_value, context);
 bool accepted = tc_inspect_set_checked(obj, "Player", "hp", new_value, context);
 ```
 
+`accepted == true` означает, что поле найдено, доступно для записи, kind
+conversion завершилась и setter действительно применил значение. Ошибка
+конвертации, исключение setter-а, неизвестное или read-only поле возвращают
+`false` и логируются. Само значение `TC_VALUE_NIL` не является признаком
+ошибки: nullable-поле может успешно принять его; результат операции передаётся
+только отдельным `bool`.
+
+`tc_inspect_deserialize_checked` также передаёт `TC_VALUE_NIL` в checked
+setter, не прогоняя его через старый kind API, где `nil` исторически служит
+sentinel-ом ошибки. Поэтому nullable setter применит значение, а non-nullable
+setter вернёт обычную проверяемую ошибку.
+
+C++-регистрации полей используют тот же контракт через
+`InspectFieldInfo::setter` и `InspectRegistry::set_tc_value`. Ручной setter
+обязан вернуть `true` только после применения значения. Python backend
+преобразует исключение kind handler-а или setter-а в `false`, не пропуская его
+через C ABI.
+
 ### Сериализация / десериализация
 
 ```c

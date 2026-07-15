@@ -58,8 +58,13 @@ static bool python_inspect_set(void* obj, const char* type_name, const char* pat
     (void)ctx;
     nb::gil_scoped_acquire gil;
     try {
-        InspectRegistry::instance().set_tc_value(obj, type_name ? type_name : "", path ? path : "", value, context);
-        return true;
+        const bool applied = InspectRegistry::instance().set_tc_value(
+            obj, type_name ? type_name : "", path ? path : "", value, context);
+        if (!applied) {
+            tc_log(TC_LOG_ERROR, "[Inspect] Python setter rejected value for type '%s' field '%s'",
+                   type_name ? type_name : "", path ? path : "");
+        }
+        return applied;
     } catch (const std::exception& e) {
         tc::Log::error(e, "[Inspect] Python set failed for type '%s' field '%s'",
                        type_name ? type_name : "", path ? path : "");
@@ -288,7 +293,7 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
 
                 if (!py_setter.is_none()) {
                     py_setter(py_obj, py_value);
-                    return;
+                    return true;
                 }
 
                 // Use setattr for path resolution
@@ -305,8 +310,10 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
                     target = nb::getattr(target, parts[i].c_str());
                 }
                 nb::setattr(target, parts.back().c_str(), py_value);
+                return true;
             } catch (const std::exception& e) {
                 tc::Log::warn(e, "[Inspect] Python setter error for field '%s'", path_copy.c_str());
+                return false;
             }
         };
 
@@ -343,8 +350,11 @@ void InspectRegistryPythonExt::set(InspectRegistry& reg, void* obj, const std::s
         throw nb::type_error(("No setter for field: " + field_path).c_str());
     }
     tc_value val = nb_to_tc_value(value);
-    f->setter(obj, val, context);
+    const bool applied = f->setter(obj, val, context);
     tc_value_free(&val);
+    if (!applied) {
+        throw nb::value_error(("Setter rejected value for field: " + field_path).c_str());
+    }
 }
 
 void InspectRegistryPythonExt::deserialize_all_py(InspectRegistry& reg, void* obj,

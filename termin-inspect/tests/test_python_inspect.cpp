@@ -24,9 +24,10 @@ int main() {
     tc::init_cpp_inspect_vtable();
     (void)tc::KindRegistryCpp::instance();
     tc::register_builtin_cpp_kinds();
-    tc::init_python_lang_vtable();
 
     Py_Initialize();
+    tc::init_python_lang_vtable();
+    tc::init_python_inspect_vtable();
     {
         auto& reg = tc::InspectRegistry::instance();
         reg.unregister_type("PyBaseComponent");
@@ -58,12 +59,19 @@ class PyDerivedComponent(PyBaseComponent):
     def __init__(self):
         super().__init__()
         self.child_name = "child"
+        self.nullable = 9
+        self.rejected = 0
+
+def reject_value(obj, value):
+    raise ValueError("setter refused value")
 
 base_fields = {
     "base_value": InspectField(kind="int", label="Base Value")
 }
 derived_fields = {
-    "child_name": InspectField(kind="string", label="Child Name")
+    "child_name": InspectField(kind="string", label="Child Name"),
+    "nullable": InspectField(kind="nullable", label="Nullable"),
+    "rejected": InspectField(kind="int", label="Rejected", setter=reject_value)
 }
 obj = PyDerivedComponent()
 )PY";
@@ -86,8 +94,8 @@ obj = PyDerivedComponent()
                            "base component backend is Python")) return 1;
         if (!require_check(reg.get_type_backend("PyDerivedComponent") == tc::TypeBackend::Python,
                            "derived component backend is Python")) return 1;
-        if (!require_check(reg.all_fields_count("PyDerivedComponent") == 2,
-                           "derived component inherits two fields")) return 1;
+        if (!require_check(reg.all_fields_count("PyDerivedComponent") == 4,
+                           "derived component inherits and exposes all fields")) return 1;
         if (!require_check(reg.find_field("PyDerivedComponent", "base_value") != nullptr,
                            "derived component exposes inherited field")) return 1;
         if (!require_check(reg.find_field("PyDerivedComponent", "child_name") != nullptr,
@@ -102,6 +110,18 @@ obj = PyDerivedComponent()
                            "inherited value writes through registry")) return 1;
         if (!require_check(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "updated",
                            "own string value writes through registry")) return 1;
+
+        if (!require_check(tc_inspect_set_checked(
+                               obj.ptr(), "PyDerivedComponent", "nullable", tc_value_nil(), nullptr),
+                           "checked Python setter accepts nil as a value")) return 1;
+        if (!require_check(nb::getattr(obj, "nullable").is_none(),
+                           "nil assignment stores Python None")) return 1;
+        if (!require_check(!tc_inspect_set_checked(
+                               obj.ptr(), "PyDerivedComponent", "rejected", tc_value_int(8), nullptr),
+                           "checked Python setter reports callback exception")) return 1;
+        if (!require_check(!tc_inspect_set_checked(
+                               obj.ptr(), "PyDerivedComponent", "missing", tc_value_int(8), nullptr),
+                           "checked Python setter reports a missing field")) return 1;
 
         tc_value serialized = reg.serialize_all(obj.ptr(), "PyDerivedComponent");
         if (!require_check(serialized.type == TC_VALUE_DICT, "serialize_all returns dict")) return 1;

@@ -170,6 +170,10 @@ void tc_inspect_set(void* obj, const char* type_name, const char* path, tc_value
 }
 
 bool tc_inspect_set_checked(void* obj, const char* type_name, const char* path, tc_value value, void* context) {
+    if (!obj || !type_name || !path) {
+        tc_log(TC_LOG_ERROR, "[Inspect] tc_inspect_set_checked: object, type and path are required");
+        return false;
+    }
     tc_inspect_lang lang = tc_inspect_type_lang(type_name);
     if (lang >= TC_INSPECT_LANG_COUNT) {
         tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set: type '%s' not found in any language vtable", type_name ? type_name : "null");
@@ -296,13 +300,18 @@ tc_inspect_apply_result tc_inspect_deserialize_checked(
             result.field_path = key;
             return result;
         }
-        if (!field_data || field_data->type == TC_VALUE_NIL) {
-            continue;
+        if (!field_data) {
+            result.status = TC_INSPECT_APPLY_INVALID_ARGUMENT;
+            result.field_path = key;
+            return result;
         }
 
         tc_value value = *field_data;
         bool owns_value = false;
-        if (tc_kind_exists(field.kind)) {
+        // Nil is a real nullable input. Bypass the legacy kind conversion API,
+        // where nil is also the failure sentinel, and let the checked backend
+        // setter decide whether this particular field accepts it.
+        if (field_data->type != TC_VALUE_NIL && tc_kind_exists(field.kind)) {
             value = tc_kind_deserialize_any(field.kind, field_data, context);
             if (value.type == TC_VALUE_NIL) {
                 result.status = TC_INSPECT_APPLY_KIND_CONVERSION_FAILED;
