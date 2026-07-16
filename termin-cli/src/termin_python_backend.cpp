@@ -70,6 +70,20 @@ void prepend_env_path(const char *name, const fs::path &value) {
     set_env_value(name, next);
 }
 
+fs::path resolve_sdk_root(const fs::path &install_root, const fs::path &exe_dir) {
+    std::error_code ec;
+    for (fs::path dir = exe_dir; !dir.empty(); dir = dir.parent_path()) {
+        const fs::path checkout_sdk = dir / "sdk";
+        if (fs::exists(checkout_sdk / "bin" / "termin_python", ec)
+            || fs::exists(checkout_sdk / "bin" / "termin_python.exe", ec)) {
+            return checkout_sdk;
+        }
+        if (dir == dir.root_path())
+            break;
+    }
+    return install_root;
+}
+
 void append_python_prefix_paths(std::vector<fs::path> &paths, const fs::path &prefix_root) {
     std::error_code ec;
 #ifdef _WIN32
@@ -101,14 +115,12 @@ void append_python_prefix_paths(std::vector<fs::path> &paths, const fs::path &pr
 std::vector<fs::path> python_module_paths(const fs::path &install_root, const fs::path &exe_dir) {
     std::vector<fs::path> paths;
     std::error_code ec;
-    append_python_prefix_paths(paths, install_root);
-    append_python_prefix_paths(paths, install_root / "sdk-install-staging");
     for (fs::path dir = exe_dir; !dir.empty(); dir = dir.parent_path()) {
-        append_python_prefix_paths(paths, dir / "sdk");
         const std::pair<const char *, const char *> dev_packages[] = {
             {"termin-app", "__init__.py"},
             {"termin-player", "player/__init__.py"},
             {"termin-mcp", "mcp/__init__.py"},
+            {"termin-project-build/python", "project_build/__init__.py"},
         };
         bool found_dev_checkout = false;
         for (const auto &[package_dir_name, package_probe] : dev_packages) {
@@ -118,17 +130,24 @@ std::vector<fs::path> python_module_paths(const fs::path &install_root, const fs
                 found_dev_checkout = true;
             }
         }
+        append_python_prefix_paths(paths, dir / "sdk");
         if (found_dev_checkout || dir == dir.root_path())
             break;
     }
+    // In a source checkout the current Python implementation must win over an
+    // older copy installed in sdk/. Installed distributions have no checkout
+    // packages and therefore still resolve exclusively from install_root.
+    append_python_prefix_paths(paths, install_root);
+    append_python_prefix_paths(paths, install_root / "sdk-install-staging");
     return paths;
 }
 
 void configure_environment() {
     fs::path exe_dir = executable_dir();
     fs::path install_root = exe_dir.parent_path();
+    const fs::path sdk_root = resolve_sdk_root(install_root, exe_dir);
     if (current_env("TERMIN_SDK").empty())
-        set_env_value("TERMIN_SDK", install_root.string());
+        set_env_value("TERMIN_SDK", sdk_root.string());
     prepend_env_path("PATH", exe_dir);
     std::string pythonpath_prefix;
     for (const fs::path &path : python_module_paths(install_root, exe_dir)) {
@@ -166,8 +185,10 @@ std::optional<fs::path> bundled_python_executable(const fs::path &install_root) 
 }
 
 std::vector<std::string> python_module_command(const std::string &module_name) {
-    fs::path install_root = executable_dir().parent_path();
-    if (std::optional<fs::path> python = bundled_python_executable(install_root)) {
+    const fs::path exe_dir = executable_dir();
+    const fs::path install_root = exe_dir.parent_path();
+    const fs::path sdk_root = resolve_sdk_root(install_root, exe_dir);
+    if (std::optional<fs::path> python = bundled_python_executable(sdk_root)) {
         return {python->string(), "-m", module_name};
     }
     return {

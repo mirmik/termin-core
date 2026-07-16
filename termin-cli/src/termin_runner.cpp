@@ -2,6 +2,7 @@
 #include <tcbase/trent/trent.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -111,6 +112,21 @@ void prepend_env_path(const char* name, const fs::path& value) {
     set_env_value(name, next);
 }
 
+fs::path resolve_sdk_root(const fs::path& install_root, const fs::path& exe_dir) {
+    std::error_code ec;
+    for (fs::path dir = exe_dir; !dir.empty(); dir = dir.parent_path()) {
+        const fs::path checkout_sdk = dir / "sdk";
+        if (fs::exists(checkout_sdk / "bin" / "termin_python", ec)
+            || fs::exists(checkout_sdk / "bin" / "termin_python.exe", ec)) {
+            return checkout_sdk;
+        }
+        if (dir == dir.root_path()) {
+            break;
+        }
+    }
+    return install_root;
+}
+
 std::vector<fs::path> python_module_paths(const fs::path& install_root, const fs::path& exe_dir) {
     std::vector<fs::path> paths;
 #ifdef _WIN32
@@ -151,6 +167,7 @@ std::vector<fs::path> python_module_paths(const fs::path& install_root, const fs
             {"termin-app", "__init__.py"},
             {"termin-player", "player/__init__.py"},
             {"termin-mcp", "mcp/__init__.py"},
+            {"termin-project-build/python", "project_build/__init__.py"},
         };
         bool found_dev_checkout = false;
         for (const auto& [package_dir_name, package_probe] : dev_packages) {
@@ -174,9 +191,10 @@ std::vector<fs::path> python_module_paths(const fs::path& install_root, const fs
 void configure_python_backend_environment() {
     fs::path exe_dir = executable_dir();
     fs::path install_root = exe_dir.parent_path();
+    const fs::path sdk_root = resolve_sdk_root(install_root, exe_dir);
 
     if (current_env("TERMIN_SDK").empty()) {
-        set_env_value("TERMIN_SDK", install_root.string());
+        set_env_value("TERMIN_SDK", sdk_root.string());
     }
     prepend_env_path("PATH", exe_dir);
 
@@ -639,68 +657,64 @@ fs::path resolve_profiles_path(const RunnerOptions& options, const fs::path& pro
     return project_root / kDefaultProfilePath;
 }
 
-const nos::trent& profile_map(const nos::trent& root) {
-    if (!root.is_dict()) {
-        throw std::runtime_error("build profiles root must be a JSON object");
-    }
-    const nos::trent* profiles = root._get("profiles");
-    if (profiles == nullptr) {
-        throw std::runtime_error("build profiles file must contain a 'profiles' object");
-    }
-    if (!profiles->is_dict()) {
-        throw std::runtime_error("'profiles' must be a JSON object");
-    }
-    return *profiles;
-}
-
-std::string optional_string_field(const nos::trent& object, const char* key) {
+std::string required_request_string(const nos::trent& object, const char* key) {
     const nos::trent* value = object._get(key);
-    if (value == nullptr || value->is_nil()) {
-        return "";
-    }
-    if (!value->is_string()) {
-        throw std::runtime_error(std::string("profile field must be a string: ") + key);
+    if (value == nullptr || !value->is_string() || value->as_string().empty()) {
+        throw std::runtime_error(
+            std::string("resolved build request field must be a non-empty string: ") + key
+        );
     }
     return value->as_string();
 }
 
-BuildProfile read_profile(const std::string& name, const nos::trent& value) {
-    if (!value.is_dict()) {
-        throw std::runtime_error("profile '" + name + "' must be a JSON object");
+BuildProfile resolve_profile_request(
+    const fs::path& project_root,
+    const fs::path& profiles_path,
+    const std::string& profile_name
+) {
+    configure_python_backend_environment();
+    const auto nonce = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    const fs::path request_path = fs::temp_directory_path()
+        / ("termin-profile-request-" + std::to_string(nonce) + ".json");
+    const std::vector<std::string> command = {
+        "termin_builder",
+        "resolve",
+        profile_name,
+        "--project",
+        project_root.string(),
+        "--profiles",
+        profiles_path.string(),
+        "--request-output",
+        request_path.string(),
+    };
+    const int resolve_code = run_process(command);
+    if (resolve_code != 0) {
+        std::error_code remove_ec;
+        fs::remove(request_path, remove_ec);
+        throw std::runtime_error(
+            "failed to resolve build profile '" + profile_name
+            + "' through the canonical profile backend"
+        );
     }
 
-    BuildProfile profile;
-    profile.name = name;
-    profile.target = optional_string_field(value, "target");
-    profile.entry_scene = optional_string_field(value, "entry_scene");
-    profile.output_dir = optional_string_field(value, "output_dir");
-
-    if (profile.target.empty()) {
-        throw std::runtime_error("profile '" + name + "' has no target");
+    try {
+        nos::trent request = nos::json::parse_file(request_path.string());
+        std::error_code remove_ec;
+        fs::remove(request_path, remove_ec);
+        if (!request.is_dict()) {
+            throw std::runtime_error("resolved build request root must be a JSON object");
+        }
+        return BuildProfile{
+            required_request_string(request, "profile"),
+            required_request_string(request, "target"),
+            required_request_string(request, "entry_scene"),
+            required_request_string(request, "output_dir"),
+        };
+    } catch (...) {
+        std::error_code remove_ec;
+        fs::remove(request_path, remove_ec);
+        throw;
     }
-    if (profile.entry_scene.empty()) {
-        throw std::runtime_error("profile '" + name + "' has no entry_scene");
-    }
-    if (profile.output_dir.empty()) {
-        throw std::runtime_error("profile '" + name + "' has no output_dir");
-    }
-    return profile;
-}
-
-nos::trent load_profiles_file(const fs::path& path) {
-    std::error_code ec;
-    if (!fs::exists(path, ec)) {
-        throw std::runtime_error("build profiles file does not exist: " + path.string());
-    }
-    return nos::json::parse_file(path.string());
-}
-
-BuildProfile find_profile(const nos::trent& profiles, const std::string& name) {
-    const nos::trent* value = profiles._get(name);
-    if (value == nullptr) {
-        throw std::runtime_error("unknown build profile: " + name);
-    }
-    return read_profile(name, *value);
 }
 
 fs::path resolve_output_dir(const fs::path& project_root, const BuildProfile& profile) {
@@ -878,8 +892,7 @@ std::vector<std::string> python_module_command() {
 int command_run(const ParsedArgs& args) {
     fs::path project_root = find_project_root(args.options.project_root);
     fs::path profiles_path = resolve_profiles_path(args.options, project_root);
-    nos::trent root = load_profiles_file(profiles_path);
-    BuildProfile profile = find_profile(profile_map(root), args.profile_name);
+    BuildProfile profile = resolve_profile_request(project_root, profiles_path, args.profile_name);
     fs::path output_dir = resolve_output_dir(project_root, profile);
     fs::path app_manifest_path = output_dir / "app.json";
     fs::path package_manifest_path = output_dir / "package" / "manifest.json";
