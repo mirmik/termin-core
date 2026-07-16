@@ -1484,6 +1484,7 @@ def run_sdk_build(
     build_type: str,
     stage_args: list[str],
     build_wheels: bool,
+    build_csharp: bool,
     dry_run: bool,
 ) -> int:
     sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
@@ -1493,28 +1494,34 @@ def run_sdk_build(
     build_env["PYTHON_BIN"] = build_python
     build_env["PYTHON_EXECUTABLE"] = build_python
 
-    stages = (
-        (
-            "Stage 1/4: C/C++ libraries + Python bindings",
-            _stage_script(repo_root, "build-sdk-bindings") + stage_args,
-        ),
-        (
-            "Stage 2/4: C# bindings",
-            _stage_script(repo_root, "build-sdk-csharp") + stage_args,
-        ),
-    )
-    for title, command in stages:
-        print("")
-        print("========================================")
-        print(f"  {title}")
-        print("========================================")
-        print("")
+    print("")
+    print("========================================")
+    print("  Stage 1/4: C/C++ libraries + Python bindings")
+    print("========================================")
+    print("")
+    command = _stage_script(repo_root, "build-sdk-bindings") + stage_args
+    if dry_run:
+        print("+ " + " ".join(command))
+    else:
+        result = _run(command, cwd=repo_root, env=build_env)
+        if result != 0:
+            return result
+
+    print("")
+    print("========================================")
+    print("  Stage 2/4: C# bindings")
+    print("========================================")
+    print("")
+    if build_csharp:
+        command = _stage_script(repo_root, "build-sdk-csharp") + stage_args
         if dry_run:
             print("+ " + " ".join(command))
         else:
             result = _run(command, cwd=repo_root, env=build_env)
             if result != 0:
                 return result
+    else:
+        print("Skipping C# bindings (use --csharp on Linux).")
 
     print("")
     print("========================================")
@@ -1761,6 +1768,11 @@ def main(argv: list[str] | None = None) -> int:
     build_parser.add_argument("--debug", "-d", action="store_true")
     build_parser.add_argument("--no-wheels", action="store_true")
     build_parser.add_argument(
+        "--csharp",
+        action="store_true",
+        help="Build C# bindings on Linux (enabled by default on Windows).",
+    )
+    build_parser.add_argument(
         "--wheels",
         action="store_true",
         help="Build the SDK Python wheelhouse explicitly.",
@@ -1872,6 +1884,7 @@ def main(argv: list[str] | None = None) -> int:
             build_type=build_type,
             stage_args=stage_args,
             build_wheels=not args.no_wheels,
+            build_csharp=_is_windows() or args.csharp,
             dry_run=args.dry_run,
         )
 

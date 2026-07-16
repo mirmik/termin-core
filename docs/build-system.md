@@ -8,7 +8,7 @@
 
 Сборка через `./build-sdk.sh` проходит в четыре стадии:
 1. **C/C++ библиотеки + Python bindings** — shared libraries, заголовки, CMake config, nanobind-модули и Python-исходники
-2. **C# bindings** (требует SWIG и `dotnet`; под Linux собирает `Termin.Native`, WPF-проект не входит в этот граф)
+2. **C# bindings** — на Windows включены по умолчанию, на Linux включаются флагом `--csharp` и требуют SWIG и `dotnet`; Linux-сборка содержит только `Termin.Native`, без WPF
 3. **Bundled Python site-packages** — установка Python-пакетов в bundled runtime SDK
 4. **SDK Python wheelhouse** — сборка `sdk/wheels` (отключается через `--no-wheels`)
 
@@ -25,6 +25,12 @@
 
 ```bash
 ./build-sdk.sh --sdl --no-wheels
+```
+
+Чтобы дополнительно собрать cross-platform C# bindings на Linux:
+
+```bash
+./build-sdk.sh --sdl --no-wheels --csharp
 ```
 
 Для WPF/C# D3D11-профиля SDK собирается без SDL, Vulkan и legacy OpenGL. После C++ SDK стадии C# слой нужно собрать в Windows-only plot profile, чтобы в `sdk/csharp` попали только tcplot/WPF runtime DLL и D3D11 shader artifacts:

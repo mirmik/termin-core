@@ -78,6 +78,7 @@ def test_sdk_build_propagates_one_absolute_python_to_child_stages(
         build_type="Release",
         stage_args=[],
         build_wheels=False,
+        build_csharp=False,
         dry_run=False,
     )
 
@@ -112,6 +113,7 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
         build_type="Release",
         stage_args=["--no-parallel"],
         build_wheels=False,
+        build_csharp=True,
         dry_run=True,
     )
 
@@ -121,6 +123,46 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
     assert "build-sdk-bindings.ps1 --no-parallel" in output
     assert "build-sdk-csharp.ps1 --no-parallel" in output
     assert "sdk/python/Lib/site-packages" in output.replace("\\", "/")
+
+
+def test_linux_sdk_build_skips_csharp_unless_requested(tmp_path, monkeypatch, capsys):
+    interpreter = tmp_path / "python"
+    interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
+
+    result = sdk.run_sdk_build(
+        repo_root=tmp_path,
+        build_type="Release",
+        stage_args=[],
+        build_wheels=False,
+        build_csharp=False,
+        dry_run=True,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "build-sdk-bindings.sh" in output
+    assert "build-sdk-csharp.sh" not in output
+    assert "Skipping C# bindings (use --csharp on Linux)." in output
+
+
+def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
+    interpreter = tmp_path / "python"
+    interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
+
+    result = sdk.run_sdk_build(
+        repo_root=tmp_path,
+        build_type="Release",
+        stage_args=[],
+        build_wheels=False,
+        build_csharp=True,
+        dry_run=True,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "build-sdk-csharp.sh" in output
 
 
 def test_wheelhouse_arg_parser_keeps_stage_args_but_extracts_wheel_options(tmp_path):
@@ -320,6 +362,7 @@ def test_verify_sdk_python_launcher_checks_platform_layout_isolation_and_imports
 
     assert sdk.verify_sdk_python_launcher(sdk_prefix) == 0
     assert len(commands) == 2
+    assert "termin.engine" in commands[1][0][-1]
     for _command, kwargs in commands:
         assert kwargs["env"]["PYTHONHOME"].endswith("__invalid_python_home__")
         assert kwargs["env"]["PYTHONPATH"].endswith("__invalid_python_path__")

@@ -105,7 +105,7 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
             return 1
 
     smoke = (
-        "import pathlib, site, sys, tcbase, termin.tween; "
+        "import pathlib, site, sys, tcbase, termin.engine, termin.tween; "
         f"root = pathlib.Path({str(expected_root)!r}); "
         f"python_home = pathlib.Path({str(expected_python_home)!r}); "
         "assert pathlib.Path(tcbase.__file__).resolve().is_relative_to(root); "
