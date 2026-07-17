@@ -44,8 +44,22 @@ class SectionTiming:
 @dataclass
 class FrameProfile:
     frame_number: int
+    start_time_ms: float = 0.0
+    interval_ms: float = 0.0
+    active_ms: float = 0.0
     total_ms: float = 0.0
+    target_interval_ms: float = 0.0
+    deadline_lateness_ms: float = 0.0
+    missed_intervals: int = 0
     sections: Dict[str, SectionTiming] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class HistoryBatch:
+    frames: tuple[FrameProfile, ...]
+    dropped_count: int
+    oldest_frame_number: int
+    newest_frame_number: int
 
 
 class Profiler:
@@ -132,10 +146,31 @@ class Profiler:
     def _convert_frame(self, c_frame) -> FrameProfile:
         frame = FrameProfile(
             frame_number=c_frame.frame_number,
+            start_time_ms=c_frame.start_time_ms,
+            interval_ms=c_frame.interval_ms,
+            active_ms=c_frame.active_ms,
             total_ms=c_frame.total_ms,
+            target_interval_ms=c_frame.target_interval_ms,
+            deadline_lateness_ms=c_frame.deadline_lateness_ms,
+            missed_intervals=c_frame.missed_intervals,
         )
         self._build_sections(c_frame.sections, frame.sections)
         return frame
+
+    def history_after(self, last_frame_number: int) -> HistoryBatch:
+        """Copy every retained complete frame newer than ``last_frame_number``.
+
+        ``dropped_count`` reports the gap between the cursor and the oldest
+        retained frame when the bounded native ring has overwritten samples.
+        The currently open frame is never included.
+        """
+        batch = self._tc.history_after(int(last_frame_number))
+        return HistoryBatch(
+            frames=tuple(self._convert_frame(frame) for frame in batch.frames),
+            dropped_count=batch.dropped_count,
+            oldest_frame_number=batch.oldest_frame_number,
+            newest_frame_number=batch.newest_frame_number,
+        )
 
     def _build_sections(self, c_sections: list, out: Dict[str, SectionTiming],
                         parent_idx: int = -1) -> None:

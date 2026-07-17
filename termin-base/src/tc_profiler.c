@@ -32,6 +32,8 @@ typedef struct {
     int frame_count;
     tc_frame_profile* current_frame;
     double frame_start_time;
+    double previous_frame_start_time;
+    bool has_previous_frame_start_time;
     int section_stack[TC_PROFILER_MAX_DEPTH];
     double section_start_times[TC_PROFILER_MAX_DEPTH];
     int stack_depth;
@@ -84,7 +86,7 @@ void tc_profiler_set_detailed_rendering(bool enabled) {
     g_profiler.detailed_rendering = enabled;
 }
 
-void tc_profiler_begin_frame(void) {
+void tc_profiler_begin_frame_with_info(const tc_profiler_frame_info* info) {
     if (!g_profiler.enabled) return;
     if (g_profiler.current_frame != NULL) {
         tc_log(TC_LOG_ERROR,
@@ -106,11 +108,28 @@ void tc_profiler_begin_frame(void) {
     memset(frame, 0, sizeof(tc_frame_profile));
     frame->frame_number = g_profiler.frame_count++;
 
+    const double measured_start_time = get_time_ms();
+    frame->start_time_ms = info ? info->start_time_ms : measured_start_time;
+    if (info) {
+        frame->interval_ms = info->interval_ms;
+        frame->target_interval_ms = info->target_interval_ms;
+        frame->deadline_lateness_ms = info->deadline_lateness_ms;
+        frame->missed_intervals = info->missed_intervals;
+    } else if (g_profiler.has_previous_frame_start_time) {
+        frame->interval_ms = measured_start_time - g_profiler.previous_frame_start_time;
+    }
+    g_profiler.previous_frame_start_time = frame->start_time_ms;
+    g_profiler.has_previous_frame_start_time = true;
+
     g_profiler.current_frame = frame;
     g_profiler.stack_depth = 0;
     g_profiler.overflow_depth = 0;
     g_profiler.muted_depth = -1;
-    g_profiler.frame_start_time = get_time_ms();
+    g_profiler.frame_start_time = measured_start_time;
+}
+
+void tc_profiler_begin_frame(void) {
+    tc_profiler_begin_frame_with_info(NULL);
 }
 
 void tc_profiler_end_frame(void) {
@@ -122,7 +141,8 @@ void tc_profiler_end_frame(void) {
         return;
     }
 
-    g_profiler.current_frame->total_ms = get_time_ms() - g_profiler.frame_start_time;
+    g_profiler.current_frame->active_ms = get_time_ms() - g_profiler.frame_start_time;
+    g_profiler.current_frame->total_ms = g_profiler.current_frame->active_ms;
     g_profiler.current_frame = NULL;
 }
 
@@ -295,9 +315,53 @@ tc_frame_profile* tc_profiler_history_at(int index) {
     return &g_profiler.history[slot];
 }
 
+bool tc_profiler_history_after(
+    int last_frame_number,
+    tc_profiler_history_range* out_range
+) {
+    if (!out_range) {
+        tc_log(TC_LOG_ERROR, "tc_profiler_history_after: out_range must not be NULL");
+        return false;
+    }
+    memset(out_range, 0, sizeof(*out_range));
+    out_range->oldest_frame_number = -1;
+    out_range->newest_frame_number = -1;
+
+    int complete_count = g_profiler.history_count;
+    if (g_profiler.current_frame != NULL && complete_count > 0) {
+        complete_count--;
+    }
+    if (complete_count <= 0) return true;
+
+    tc_frame_profile* oldest = tc_profiler_history_at(0);
+    tc_frame_profile* newest = tc_profiler_history_at(complete_count - 1);
+    if (!oldest || !newest) {
+        tc_log(TC_LOG_ERROR, "tc_profiler_history_after: inconsistent history ring");
+        return false;
+    }
+    out_range->oldest_frame_number = oldest->frame_number;
+    out_range->newest_frame_number = newest->frame_number;
+    if (last_frame_number >= 0 && oldest->frame_number > last_frame_number + 1) {
+        out_range->dropped_count = oldest->frame_number - last_frame_number - 1;
+    }
+
+    int first_index = complete_count;
+    for (int index = 0; index < complete_count; ++index) {
+        tc_frame_profile* frame = tc_profiler_history_at(index);
+        if (frame && frame->frame_number > last_frame_number) {
+            first_index = index;
+            break;
+        }
+    }
+    out_range->first_index = first_index;
+    out_range->count = complete_count - first_index;
+    return true;
+}
+
 void tc_profiler_clear_history(void) {
     g_profiler.history_start = 0;
     g_profiler.history_count = 0;
+    g_profiler.has_previous_frame_start_time = false;
 }
 
 int tc_profiler_frame_count(void) {
