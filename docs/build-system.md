@@ -523,6 +523,14 @@ python3 -m termin_build.repository_control --repo-root . \
 plan pr --platform linux --json
 ```
 
+JSON-план содержит как выбранные `suites`, так и `inapplicable` suites с
+детерминированной причиной несовпадения profile/platform. Configured CTest
+selection аналогично записывает capability exclusions в `skipped` с причиной.
+Execution manifest обязан классифицировать каждую выбранную suite ровно один
+раз как `executed`, `skipped` или `failed`; для `skipped` требуется непустая
+причина. Потерянная suite, дублирующий outcome или исключение без причины
+считаются ошибкой completeness gate.
+
 Focused-вызов `run-tests-python.* <pytest-target ...>` остаётся прямым pytest
 запуском и не меняет repository inventory.
 

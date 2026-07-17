@@ -330,6 +330,60 @@ def test_ctest_inventory_requires_standard_labels_and_registered_module(
     ]
 
 
+def test_ctest_plan_reports_capability_exclusion_reason(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suite_defaults"]["ctest"] = {
+        "profiles": ["pr"],
+        "environment": "cmake-top-level",
+        "platforms": ["linux"],
+        "capabilities": ["host"],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-native",
+            "module": "alpha",
+            "executor": "ctest",
+            "roots": ["alpha/tests"],
+        }
+    )
+    _write_json(manifest, data)
+    catalog = repository_control.load_catalog(repo)
+    ctest_payload = {
+        "tests": [
+            {
+                "name": "alpha_vulkan_test",
+                "properties": [
+                    {
+                        "name": "LABELS",
+                        "value": [
+                            "termin:module:alpha",
+                            "termin:tier:pr",
+                            "termin:capability:host",
+                            "termin:capability:vulkan",
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    plan = repository_control.build_ctest_execution_plan(
+        catalog, ctest_payload, "pr", "linux", ("host",)
+    )
+
+    assert plan["selected"] == []
+    assert plan["skipped"] == [
+        {
+            "name": "alpha_vulkan_test",
+            "module": "alpha",
+            "capabilities": ["host", "vulkan"],
+            "reason": "missing capabilities: vulkan",
+        }
+    ]
+
+
 def test_native_compile_inventory_rejects_source_outside_cmake_graph(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
     source = repo / "alpha" / "tests" / "test_native.cpp"
@@ -366,6 +420,14 @@ def test_plan_filters_by_profile_and_platform(tmp_path: Path) -> None:
 
     assert [suite["id"] for suite in linux_plan["suites"]] == ["alpha-python"]
     assert windows_plan["suites"] == []
+    assert windows_plan["inapplicable"] == [
+        {
+            "id": "alpha-python",
+            "module": "alpha",
+            "executor": "pytest",
+            "reason": "platform 'windows' is not in declared platforms: linux",
+        }
+    ]
 
 
 def test_cli_emits_stable_json_plan(tmp_path: Path, capsys) -> None:
@@ -381,6 +443,55 @@ def test_cli_emits_stable_json_plan(tmp_path: Path, capsys) -> None:
     assert output["profile"] == "pr"
     assert output["platform"] == "linux"
     assert [suite["id"] for suite in output["suites"]] == ["alpha-python"]
+    assert output["inapplicable"] == []
+
+
+def test_plan_reports_profile_and_platform_exclusions(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["profiles"].append(
+        {
+            "id": "nightly",
+            "description": "Nightly tests",
+            "pytest_mark_expression": None,
+        }
+    )
+    data["suites"][0]["profiles"] = ["nightly"]
+    _write_json(manifest, data)
+
+    plan = repository_control.build_plan(
+        repository_control.load_catalog(repo), "pr", "windows"
+    )
+
+    assert plan["suites"] == []
+    assert plan["inapplicable"][0]["reason"] == (
+        "profile 'pr' is not in declared profiles: nightly; "
+        "platform 'windows' is not in declared platforms: linux"
+    )
+
+
+def test_native_source_exclusion_requires_reason(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    source = repo / "alpha" / "tests" / "test_native.cpp"
+    source.write_text("int main() { return 0; }\n", encoding="utf-8")
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["native_test_inventory"]["source_classifications"] = [
+        {
+            "path": "alpha/tests/test_native.cpp",
+            "profiles": ["pr"],
+            "capabilities": ["window"],
+            "reason": "",
+        }
+    ]
+    _write_json(manifest, data)
+
+    with pytest.raises(
+        repository_control.ManifestError,
+        match="source_classifications\\[0\\]: reason must be a non-empty string",
+    ):
+        repository_control.load_catalog(repo)
 
 
 def test_cli_logs_manifest_errors(tmp_path: Path, capsys) -> None:
@@ -795,3 +906,51 @@ def test_verify_suite_execution_requires_exact_executor_coverage(
     assert json.loads(capsys.readouterr().out)["missing_observed_suites"] == [
         "installed-smoke"
     ]
+
+
+def test_execution_manifest_requires_skip_reason_and_single_outcome(
+    tmp_path: Path,
+) -> None:
+    plan = tmp_path / "plan.json"
+    manifest = tmp_path / "process.json"
+    _write_json(
+        plan,
+        {
+            "schema": 1,
+            "profile": "pr",
+            "platform": "linux",
+            "suites": [
+                {"id": "alpha-smoke", "executor": "process-smoke"}
+            ],
+        },
+    )
+    payload = {
+        "schema": 1,
+        "profile": "pr",
+        "platform": "linux",
+        "selected": [{"id": "alpha-smoke"}],
+        "executed": [],
+        "skipped": [{"id": "alpha-smoke"}],
+        "failed": [],
+    }
+    _write_json(manifest, payload)
+
+    with pytest.raises(
+        repository_control.ManifestError,
+        match="skipped execution entry has no explicit reason: alpha-smoke",
+    ):
+        repository_control._cmd_verify_suite_execution(
+            plan, manifest, "process-smoke"
+        )
+
+    payload["skipped"][0]["reason"] = "unsupported display"
+    payload["executed"] = [{"id": "alpha-smoke"}]
+    _write_json(manifest, payload)
+
+    with pytest.raises(
+        repository_control.ManifestError,
+        match="multiple outcomes .*alpha-smoke",
+    ):
+        repository_control._cmd_verify_suite_execution(
+            plan, manifest, "process-smoke"
+        )

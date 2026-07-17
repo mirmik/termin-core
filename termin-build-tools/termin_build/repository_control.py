@@ -886,17 +886,37 @@ def build_plan(
         raise ManifestError(f"unsupported platform: {platform}")
 
     suites = []
+    inapplicable = []
     for suite in catalog.suites:
+        reasons = []
         if profile not in suite.profiles:
-            continue
+            reasons.append(
+                f"profile {profile!r} is not in declared profiles: "
+                + ", ".join(suite.profiles)
+            )
         if platform is not None and suite.platforms and platform not in suite.platforms:
-            continue
-        suites.append(asdict(suite))
+            reasons.append(
+                f"platform {platform!r} is not in declared platforms: "
+                + ", ".join(suite.platforms)
+            )
+        entry = asdict(suite)
+        if reasons:
+            inapplicable.append(
+                {
+                    "id": suite.id,
+                    "module": suite.module,
+                    "executor": suite.executor,
+                    "reason": "; ".join(reasons),
+                }
+            )
+        else:
+            suites.append(entry)
     return {
         "schema": 1,
         "profile": profile,
         "platform": platform,
         "suites": suites,
+        "inapplicable": inapplicable,
     }
 
 
@@ -1362,7 +1382,18 @@ def _entry_values(manifest: dict[str, object], field: str, key: str) -> set[str]
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get(key), str):
             raise ManifestError(f"invalid {field} entry in execution manifest")
-        values.add(entry[key])
+        value = entry[key]
+        if value in values:
+            raise ManifestError(
+                f"duplicate {field} entry in execution manifest: {value}"
+            )
+        if field == "skipped":
+            reason = entry.get("reason")
+            if not isinstance(reason, str) or not reason.strip():
+                raise ManifestError(
+                    f"skipped execution entry has no explicit reason: {value}"
+                )
+        values.add(value)
     return values
 
 
@@ -1388,10 +1419,23 @@ def _validate_execution_identity(
 def _execution_observed_ids(
     manifest: dict[str, object], key: str
 ) -> tuple[set[str], set[str]]:
-    observed = set()
-    for field in ("executed", "skipped", "failed"):
-        observed |= _entry_values(manifest, field, key)
-    return observed, _entry_values(manifest, "failed", key)
+    outcomes = {
+        field: _entry_values(manifest, field, key)
+        for field in ("executed", "skipped", "failed")
+    }
+    for left, right in (
+        ("executed", "skipped"),
+        ("executed", "failed"),
+        ("skipped", "failed"),
+    ):
+        overlap = sorted(outcomes[left] & outcomes[right])
+        if overlap:
+            raise ManifestError(
+                f"execution entries have multiple outcomes ({left}, {right}): "
+                + ", ".join(overlap)
+            )
+    observed = outcomes["executed"] | outcomes["skipped"] | outcomes["failed"]
+    return observed, outcomes["failed"]
 
 
 def _cmd_verify_suite_execution(
