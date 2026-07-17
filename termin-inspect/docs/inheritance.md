@@ -31,9 +31,12 @@ record:
 
 ### C++
 
-Новый код регистрирует компонент и родителя явно из `register_type()`:
+Каждый `register_type()` регистрирует только собственный тип. Composition root
+регистрирует prerequisites в явном топологическом порядке; автономный тест или
+platform smoke обязан сделать то же самое перед регистрацией производного типа:
 
 ```cpp
+MeshComponent::register_type();
 void MeshRenderer::register_type() {
     register_component_type<MeshRenderer>("MeshRenderer", "Component");
     // inspect fields принадлежат той же registration boundary
