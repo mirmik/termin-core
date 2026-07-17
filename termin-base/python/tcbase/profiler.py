@@ -90,14 +90,6 @@ class Profiler:
         self._tc.enabled = value
 
     @property
-    def detailed_rendering(self) -> bool:
-        return self._tc.detailed_rendering
-
-    @detailed_rendering.setter
-    def detailed_rendering(self, value: bool) -> None:
-        self._tc.detailed_rendering = value
-
-    @property
     def history(self) -> List[FrameProfile]:
         return self._convert_history()
 

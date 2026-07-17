@@ -75,12 +75,6 @@ public:
     bool enabled() const { return tc_profiler_enabled(); }
     void set_enabled(bool v) { tc_profiler_set_enabled(v); }
 
-    bool profile_components() const { return tc_profiler_profile_components(); }
-    void set_profile_components(bool v) { tc_profiler_set_profile_components(v); }
-
-    bool detailed_rendering() const { return tc_profiler_detailed_rendering(); }
-    void set_detailed_rendering(bool v) { tc_profiler_set_detailed_rendering(v); }
-
     void begin_frame() { tc_profiler_begin_frame(); }
     void begin_frame_with_info(
         double start_time_ms,
@@ -193,8 +187,6 @@ void bind_profiler(nb::module_& m) {
     nb::class_<TcProfiler>(m, "TcProfiler")
         .def_static("instance", &TcProfiler::instance, nb::rv_policy::reference)
         .def_prop_rw("enabled", &TcProfiler::enabled, &TcProfiler::set_enabled)
-        .def_prop_rw("profile_components", &TcProfiler::profile_components, &TcProfiler::set_profile_components)
-        .def_prop_rw("detailed_rendering", &TcProfiler::detailed_rendering, &TcProfiler::set_detailed_rendering)
         .def("begin_frame", &TcProfiler::begin_frame)
         .def("begin_frame_with_info", &TcProfiler::begin_frame_with_info,
              nb::arg("start_time_ms"), nb::arg("interval_ms"),

@@ -66,10 +66,6 @@ typedef struct tc_profiler_history_range {
 TCBASE_API void* tc_profiler_instance(void);
 TCBASE_API bool tc_profiler_enabled(void);
 TCBASE_API void tc_profiler_set_enabled(bool enabled);
-TCBASE_API bool tc_profiler_profile_components(void);
-TCBASE_API void tc_profiler_set_profile_components(bool enabled);
-TCBASE_API bool tc_profiler_detailed_rendering(void);
-TCBASE_API void tc_profiler_set_detailed_rendering(bool enabled);
 TCBASE_API void tc_profiler_begin_frame(void);
 TCBASE_API void tc_profiler_begin_frame_with_info(const tc_profiler_frame_info* info);
 TCBASE_API void tc_profiler_end_frame(void);
