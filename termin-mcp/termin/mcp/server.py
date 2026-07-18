@@ -45,8 +45,8 @@ def create_secure_mcp_config(
     except (TypeError, ValueError):
         resolved_port = default_port
         log.error(f"[{log_prefix}] invalid MCP port {port!r}; using {default_port}")
-    if not 1 <= resolved_port <= 65535:
-        log.error(f"[{log_prefix}] MCP port {resolved_port} is outside 1..65535; using {default_port}")
+    if not 0 <= resolved_port <= 65535:
+        log.error(f"[{log_prefix}] MCP port {resolved_port} is outside 0..65535; using {default_port}")
         resolved_port = default_port
 
     resolved_token = token.strip() if isinstance(token, str) else ""
