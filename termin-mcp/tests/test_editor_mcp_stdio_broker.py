@@ -44,21 +44,7 @@ class _EditorEndpoint:
                 endpoint.requests.append(request)
 
                 method = request["method"]
-                if method == "tools/list":
-                    result = {
-                        "tools": [
-                            {
-                                "name": "execute_python_script",
-                                "description": "Execute Python in the editor.",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {"script": {"type": "string"}},
-                                    "required": ["script"],
-                                },
-                            }
-                        ]
-                    }
-                elif method == "tools/call":
+                if method == "tools/call":
                     result = {
                         "content": [{"type": "text", "text": "editor result\n"}],
                         "isError": False,
@@ -68,9 +54,7 @@ class _EditorEndpoint:
                     self.end_headers()
                     return
 
-                body = json.dumps(
-                    {"jsonrpc": "2.0", "id": request["id"], "result": result}
-                ).encode()
+                body = json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -159,9 +143,7 @@ def _initialize(broker: _BrokerProcess) -> None:
 def test_stdio_broker_enforces_lifecycle_and_negotiates_version(tmp_path: Path):
     broker = _BrokerProcess(tmp_path / "missing-session.json")
     try:
-        before_initialize = broker.request(
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-        )
+        before_initialize = broker.request({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
         assert before_initialize["error"] == {
             "code": -32002,
             "message": "Server not initialized",
@@ -181,20 +163,22 @@ def test_stdio_broker_enforces_lifecycle_and_negotiates_version(tmp_path: Path):
         )
         assert initialized["result"]["protocolVersion"] == "2025-11-25"
 
-        before_ready = broker.request(
-            {"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}}
-        )
+        before_ready = broker.request({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}})
         assert before_ready["error"]["code"] == -32002
 
         broker.notify({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        unavailable = broker.request(
-            {"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}}
-        )
-        assert unavailable["error"]["code"] == -32050
+        listed = broker.request({"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}})
+        assert [tool["name"] for tool in listed["result"]["tools"]] == [
+            "execute_python_script",
+            "capture_editor_screenshot",
+            "inspect_framegraph",
+            "capture_framegraph_resource",
+            "capture_framegraph_pass_symbol",
+        ]
 
         stdout_tail, stderr = broker.close()
         assert stdout_tail == ""
-        assert "Session file not found" in stderr
+        assert stderr == ""
     finally:
         if broker.process.poll() is None:
             broker.process.terminate()
@@ -208,9 +192,7 @@ def test_stdio_broker_proxies_tools_without_polluting_stdout(tmp_path: Path):
     broker = _BrokerProcess(session_file)
     try:
         _initialize(broker)
-        listed = broker.request(
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
-        )
+        listed = broker.request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         assert listed["result"]["tools"][0]["name"] == "execute_python_script"
 
         called = broker.request(
@@ -224,13 +206,8 @@ def test_stdio_broker_proxies_tools_without_polluting_stdout(tmp_path: Path):
                 },
             }
         )
-        assert called["result"]["content"] == [
-            {"type": "text", "text": "editor result\n"}
-        ]
-        assert [request["method"] for request in endpoint.requests] == [
-            "tools/list",
-            "tools/call",
-        ]
+        assert called["result"]["content"] == [{"type": "text", "text": "editor result\n"}]
+        assert [request["method"] for request in endpoint.requests] == ["tools/call"]
         stdout_tail, stderr = broker.close()
         assert stdout_tail == ""
         assert stderr == ""
@@ -246,8 +223,19 @@ def test_stdio_broker_reports_unavailable_and_reconnects(tmp_path: Path):
     endpoint = _EditorEndpoint("replacement-token")
     try:
         _initialize(broker)
+        listed = broker.request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        assert listed["result"]["tools"][0]["name"] == "execute_python_script"
+
         unavailable = broker.request(
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "execute_python_script",
+                    "arguments": {"script": "print('before editor')"},
+                },
+            }
         )
         assert unavailable["error"]["code"] == -32050
         assert unavailable["error"]["message"] == "Termin Editor is unavailable"
@@ -255,10 +243,19 @@ def test_stdio_broker_reports_unavailable_and_reconnects(tmp_path: Path):
 
         endpoint.start()
         _write_session(session_file, endpoint)
-        listed = broker.request(
-            {"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}}
+        called = broker.request(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "execute_python_script",
+                    "arguments": {"script": "print('after editor')"},
+                },
+            }
         )
-        assert listed["result"]["tools"][0]["name"] == "execute_python_script"
+        assert called["result"]["content"] == [{"type": "text", "text": "editor result\n"}]
+        assert [request["method"] for request in endpoint.requests] == ["tools/call"]
 
         stdout_tail, stderr = broker.close()
         assert stdout_tail == ""
