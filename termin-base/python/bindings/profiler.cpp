@@ -28,6 +28,7 @@ struct PyFrameProfile {
     double target_interval_ms;
     double deadline_lateness_ms;
     int missed_intervals;
+    bool sections_profiled;
     std::vector<PySectionTiming> sections;
 };
 
@@ -48,6 +49,7 @@ static PyFrameProfile convert_frame(const tc_frame_profile* frame) {
     result.target_interval_ms = frame->target_interval_ms;
     result.deadline_lateness_ms = frame->deadline_lateness_ms;
     result.missed_intervals = frame->missed_intervals;
+    result.sections_profiled = frame->sections_profiled;
 
     for (int i = 0; i < frame->section_count; i++) {
         const tc_section_timing* s = &frame->sections[i];
@@ -174,6 +176,7 @@ void bind_profiler(nb::module_& m) {
         .def_ro("target_interval_ms", &PyFrameProfile::target_interval_ms)
         .def_ro("deadline_lateness_ms", &PyFrameProfile::deadline_lateness_ms)
         .def_ro("missed_intervals", &PyFrameProfile::missed_intervals)
+        .def_ro("sections_profiled", &PyFrameProfile::sections_profiled)
         .def_ro("sections", &PyFrameProfile::sections)
         ;
 

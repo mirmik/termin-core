@@ -51,6 +51,7 @@ class FrameProfile:
     target_interval_ms: float = 0.0
     deadline_lateness_ms: float = 0.0
     missed_intervals: int = 0
+    sections_profiled: bool = False
     sections: Dict[str, SectionTiming] = field(default_factory=dict)
 
 
@@ -145,6 +146,7 @@ class Profiler:
             target_interval_ms=c_frame.target_interval_ms,
             deadline_lateness_ms=c_frame.deadline_lateness_ms,
             missed_intervals=c_frame.missed_intervals,
+            sections_profiled=c_frame.sections_profiled,
         )
         self._build_sections(c_frame.sections, frame.sections)
         return frame
@@ -182,9 +184,13 @@ class Profiler:
         return history[-1] if history else None
 
     def last_complete_frame(self) -> FrameProfile | None:
-        """Return the newest closed frame, excluding the currently open slot."""
+        """Return the newest closed frame.
+
+        The native history contains completed frames only; an open frame lives
+        in separate scratch storage and never occupies a history slot.
+        """
         count = self._tc.history_count
-        index = count - 2 if self._tc.current_frame is not None else count - 1
+        index = count - 1
         if index < 0:
             return None
         frame = self._tc.history_at(index)
