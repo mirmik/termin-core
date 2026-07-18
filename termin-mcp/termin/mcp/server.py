@@ -7,6 +7,7 @@ import os
 import secrets
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -82,8 +83,13 @@ class TerminMcpServer:
         self._server_name = server_name
         self._server_version = server_version
         self._thread_name = thread_name
+        self._instance_id = uuid.uuid4().hex
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+
+    @property
+    def instance_id(self) -> str:
+        return self._instance_id
 
     @property
     def url(self) -> str:
@@ -117,14 +123,11 @@ class TerminMcpServer:
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
-        try:
-            self._config.session_file.unlink(missing_ok=True)
-        except OSError as exc:
-            log.error(f"[{self._log_prefix}] failed to remove session file: {exc}")
+        self._remove_owned_session_file()
 
-    def _write_session_file(self) -> None:
-        path = self._config.session_file
-        payload = {
+    def _session_payload(self) -> dict[str, object]:
+        return {
+            "instance_id": self._instance_id,
             "pid": os.getpid(),
             "url": self.url,
             "token": self._config.token,
@@ -132,14 +135,36 @@ class TerminMcpServer:
             "server": self._server_name,
             "tools": [schema["name"] for schema in self._tool_schemas()],
         }
+
+    def _write_session_file(self) -> None:
+        path = self._config.session_file
+        payload = self._session_payload()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp = path.with_name(f".{path.name}.{self._instance_id}.tmp")
             tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             os.chmod(tmp, 0o600)
             tmp.replace(path)
         except OSError as exc:
             log.error(f"[{self._log_prefix}] failed to write session file '{path}': {exc}")
+
+    def _remove_owned_session_file(self) -> None:
+        path = self._config.session_file
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, json.JSONDecodeError) as exc:
+            log.error(f"[{self._log_prefix}] failed to verify session file ownership: {exc}")
+            return
+
+        if not isinstance(payload, dict) or payload.get("instance_id") != self._instance_id:
+            log.warning(f"[{self._log_prefix}] session file ownership changed; refusing to remove '{path}'")
+            return
+        try:
+            path.unlink()
+        except OSError as exc:
+            log.error(f"[{self._log_prefix}] failed to remove session file: {exc}")
 
     def _make_handler(self):
         owner = self
@@ -177,11 +202,7 @@ class TerminMcpServer:
                     if not request:
                         self._send_json(self._error_response(None, -32600, "Invalid Request"))
                         return
-                    responses = [
-                        response
-                        for item in request
-                        if (response := owner._handle_rpc(item)) is not None
-                    ]
+                    responses = [response for item in request if (response := owner._handle_rpc(item)) is not None]
                     if not responses:
                         self.send_response(204)
                         self.end_headers()
@@ -242,7 +263,9 @@ class TerminMcpServer:
 
         is_notification = "id" not in request
         request_id = request.get("id")
-        if not is_notification and (isinstance(request_id, bool) or not isinstance(request_id, (str, int, float, type(None)))):
+        if not is_notification and (
+            isinstance(request_id, bool) or not isinstance(request_id, (str, int, float, type(None)))
+        ):
             return self._rpc_error(None, -32600, "Invalid Request")
 
         try:

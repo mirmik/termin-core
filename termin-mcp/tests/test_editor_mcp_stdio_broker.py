@@ -49,6 +49,8 @@ class _EditorEndpoint:
                         "content": [{"type": "text", "text": "editor result\n"}],
                         "isError": False,
                     }
+                elif method == "ping":
+                    result = {}
                 else:
                     self.send_response(204)
                     self.end_headers()
@@ -71,9 +73,26 @@ class _EditorEndpoint:
 
 
 class _BrokerProcess:
-    def __init__(self, session_file: Path) -> None:
+    def __init__(
+        self,
+        session_file: Path | None = None,
+        *,
+        registry_dir: Path | None = None,
+        project: Path | None = None,
+        instance_id: str | None = None,
+    ) -> None:
+        args = [sys.executable, str(HELPER)]
+        if session_file is not None:
+            args.extend(["--session", str(session_file)])
+        if registry_dir is not None:
+            args.extend(["--registry", str(registry_dir)])
+        if project is not None:
+            args.extend(["--project", str(project)])
+        if instance_id is not None:
+            args.extend(["--instance", instance_id])
+        args.append("serve")
         self.process = subprocess.Popen(
-            [sys.executable, str(HELPER), "--session", str(session_file), "serve"],
+            args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -115,9 +134,25 @@ class _BrokerProcess:
             self._responses.put(line)
 
 
-def _write_session(path: Path, endpoint: _EditorEndpoint) -> None:
+def _write_session(
+    path: Path,
+    endpoint: _EditorEndpoint,
+    *,
+    instance_id: str = "test-instance",
+    project_path: Path | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"url": endpoint.url, "token": endpoint.token}),
+        json.dumps(
+            {
+                "instance_id": instance_id,
+                "pid": 123,
+                "project_path": str(project_path) if project_path is not None else None,
+                "started_at": 1.0,
+                "url": endpoint.url,
+                "token": endpoint.token,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -185,6 +220,208 @@ def test_two_brokers_keep_explicit_editor_sessions_isolated(tmp_path: Path):
             first_broker.process.terminate()
         if second_broker.process.poll() is None:
             second_broker.process.terminate()
+
+
+def test_registry_broker_selects_user_editor_by_project(tmp_path: Path):
+    first_endpoint = _EditorEndpoint("first-token")
+    second_endpoint = _EditorEndpoint("second-token")
+    first_endpoint.start()
+    second_endpoint.start()
+    registry = tmp_path / "registry"
+    first_project = tmp_path / "first-project"
+    second_project = tmp_path / "second-project"
+    first_project.mkdir()
+    second_project.mkdir()
+    _write_session(
+        registry / "first.json",
+        first_endpoint,
+        instance_id="first-instance",
+        project_path=first_project,
+    )
+    _write_session(
+        registry / "second.json",
+        second_endpoint,
+        instance_id="second-instance",
+        project_path=second_project,
+    )
+    broker = _BrokerProcess(registry_dir=registry, project=first_project)
+    try:
+        _initialize(broker)
+
+        called = _call_execute(broker, "project-call", "selected-project")
+
+        assert called["result"]["isError"] is False
+        assert first_endpoint.requests[0]["params"]["arguments"]["script"] == ("print('selected-project')")
+        assert second_endpoint.requests == []
+        assert broker.close() == ("", "")
+    finally:
+        first_endpoint.stop()
+        second_endpoint.stop()
+        if broker.process.poll() is None:
+            broker.process.terminate()
+
+
+def test_registry_broker_reports_ambiguity_for_two_live_editors_of_one_project(
+    tmp_path: Path,
+):
+    first_endpoint = _EditorEndpoint("first-token")
+    second_endpoint = _EditorEndpoint("second-token")
+    first_endpoint.start()
+    second_endpoint.start()
+    registry = tmp_path / "registry"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_session(
+        registry / "first.json",
+        first_endpoint,
+        instance_id="first-instance",
+        project_path=project,
+    )
+    _write_session(
+        registry / "second.json",
+        second_endpoint,
+        instance_id="second-instance",
+        project_path=project,
+    )
+    broker = _BrokerProcess(registry_dir=registry, project=project)
+    try:
+        _initialize(broker)
+
+        unavailable = _call_execute(broker, "ambiguous-call", "ambiguous")
+
+        assert unavailable["error"]["code"] == -32050
+        assert "Multiple editor instances" in unavailable["error"]["data"]["detail"]
+        assert "first-instance" in unavailable["error"]["data"]["detail"]
+        assert "second-instance" in unavailable["error"]["data"]["detail"]
+        assert [request["method"] for request in first_endpoint.requests] == ["ping"]
+        assert [request["method"] for request in second_endpoint.requests] == ["ping"]
+        _, stderr = broker.close()
+        assert "Multiple editor instances" in stderr
+    finally:
+        first_endpoint.stop()
+        second_endpoint.stop()
+        if broker.process.poll() is None:
+            broker.process.terminate()
+
+
+def test_registry_broker_can_select_one_instance_explicitly(tmp_path: Path):
+    first_endpoint = _EditorEndpoint("first-token")
+    second_endpoint = _EditorEndpoint("second-token")
+    first_endpoint.start()
+    second_endpoint.start()
+    registry = tmp_path / "registry"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_session(
+        registry / "first.json",
+        first_endpoint,
+        instance_id="first-instance",
+        project_path=project,
+    )
+    _write_session(
+        registry / "second.json",
+        second_endpoint,
+        instance_id="second-instance",
+        project_path=project,
+    )
+    broker = _BrokerProcess(
+        registry_dir=registry,
+        project=project,
+        instance_id="second-instance",
+    )
+    try:
+        _initialize(broker)
+
+        called = _call_execute(broker, "instance-call", "second")
+
+        assert called["result"]["isError"] is False
+        assert first_endpoint.requests == []
+        assert second_endpoint.requests[0]["params"]["arguments"]["script"] == "print('second')"
+        assert broker.close() == ("", "")
+    finally:
+        first_endpoint.stop()
+        second_endpoint.stop()
+        if broker.process.poll() is None:
+            broker.process.terminate()
+
+
+def test_sessions_command_lists_reachability_without_tokens(tmp_path: Path):
+    endpoint = _EditorEndpoint("secret-token")
+    endpoint.start()
+    registry = tmp_path / "registry"
+    project = tmp_path / "project"
+    _write_session(
+        registry / "editor.json",
+        endpoint,
+        instance_id="listed-instance",
+        project_path=project,
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(HELPER), "--registry", str(registry), "sessions"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+
+        sessions = json.loads(completed.stdout)
+        assert sessions == [
+            {
+                "instanceId": "listed-instance",
+                "pid": 123,
+                "projectPath": str(project),
+                "startedAt": 1.0,
+                "sessionFile": str(registry / "editor.json"),
+                "reachable": True,
+            }
+        ]
+        assert "secret-token" not in completed.stdout
+    finally:
+        endpoint.stop()
+
+
+def test_registry_broker_ignores_stale_descriptor_when_one_match_is_live(tmp_path: Path):
+    endpoint = _EditorEndpoint("live-token")
+    endpoint.start()
+    registry = tmp_path / "registry"
+    project = tmp_path / "project"
+    project.mkdir()
+    stale = registry / "stale.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(
+        json.dumps(
+            {
+                "instance_id": "stale-instance",
+                "pid": 999999,
+                "project_path": str(project),
+                "started_at": 0.0,
+                "url": "http://127.0.0.1:1/mcp",
+                "token": "stale-token",
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_session(
+        registry / "live.json",
+        endpoint,
+        instance_id="live-instance",
+        project_path=project,
+    )
+    broker = _BrokerProcess(registry_dir=registry, project=project)
+    try:
+        _initialize(broker)
+
+        called = _call_execute(broker, "live-call", "live")
+
+        assert called["result"]["isError"] is False
+        assert [request["method"] for request in endpoint.requests] == ["ping", "tools/call"]
+        assert stale.exists()
+        assert broker.close() == ("", "")
+    finally:
+        endpoint.stop()
+        if broker.process.poll() is None:
+            broker.process.terminate()
 
 
 def test_stdio_broker_enforces_lifecycle_and_negotiates_version(tmp_path: Path):
