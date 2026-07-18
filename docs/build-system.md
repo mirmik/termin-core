@@ -523,13 +523,51 @@ python3 -m termin_build.repository_control --repo-root . \
 plan pr --platform linux --json
 ```
 
-JSON-план содержит как выбранные `suites`, так и `inapplicable` suites с
-детерминированной причиной несовпадения profile/platform. Configured CTest
-selection аналогично записывает capability exclusions в `skipped` с причиной.
-Execution manifest обязан классифицировать каждую выбранную suite ровно один
-раз как `executed`, `skipped` или `failed`; для `skipped` требуется непустая
-причина. Потерянная suite, дублирующий outcome или исключение без причины
-считаются ошибкой completeness gate.
+Команда `plan --json` выдаёт канонический expected manifest
+`termin-test-expected` для текущего checkout, profile и platform. Поле `suites`
+содержит применимые suites, а `inapplicable` — неприменимые suites с
+детерминированной причиной несовпадения profile/platform. `fingerprint` —
+SHA-256 канонического содержимого manifest; executor result принимается только
+для того expected manifest, fingerprint которого он явно указывает. Поэтому
+manifest с другим test inventory нельзя случайно принять за результат текущего
+набора.
+
+Каждый естественный executor (`pytest`, `ctest`, `process-smoke`) формирует
+отдельный `termin-test-execution` manifest и не передаёт управление тестами
+универсальному runner. Общий suite-level контракт содержит:
+
+- `executor`, `profile`, `platform` и `expected_fingerprint`;
+- `selected` — suites, которые adapter принял к исполнению;
+- ровно один terminal outcome для каждой применимой suite: `executed`,
+  `skipped` или `failed`;
+- обязательную непустую `reason` для каждого `skipped` outcome;
+- executor-specific подробности, например CTest registrations или pytest
+  diagnostics, в необязательном `details`, не меняющем suite-level результат.
+
+`missing` не записывается самим executor: его вычисляет verifier как разность
+между locally computed expected coverage и terminal outcomes. Это не позволяет
+сломавшемуся adapter объявить потерянную suite корректно обработанной.
+Неизвестная suite, несовпадающий fingerprint, отсутствие selection/result,
+`failed`, дублирующий outcome или skip без причины делают verification красной.
+Неприменимые suites учитываются из expected manifest и уже несут валидированную
+причину.
+
+Несколько независимых execution manifests проверяются одной командой:
+
+```bash
+sdk/bin/termin_python -m termin_build.repository_control \
+  verify-execution \
+  --expected build/expected-pr-linux.json \
+  --manifest build/python-execution-manifest.json \
+  --manifest build/ctest-execution-manifest.json
+```
+
+Команда возвращает ненулевой exit code при неполном или неуспешном покрытии и
+печатает `termin-test-verification` report с `selected`, `executed`, `skipped`,
+`failed`, `missing`, `inapplicable` и неожиданными результатами. Адаптеры и
+canonical runner integration развиваются отдельно: Windows CTest использует
+этот контракт в #539, process-smoke в #454, а локальное вычисление expected в
+CI — в #540.
 
 Focused-вызов `run-tests-python.* <pytest-target ...>` остаётся прямым pytest
 запуском и не меняет repository inventory.

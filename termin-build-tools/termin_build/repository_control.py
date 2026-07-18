@@ -16,6 +16,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .execution_manifest import (
+    TestExecutionContractError,
+    build_execution_manifest,
+    build_expected_manifest,
+    read_manifest,
+    validate_expected_manifest,
+    verify_execution_manifests,
+)
 from .package_manifest import load_manifest as load_package_manifest
 from .package_manifest import repo_root_from
 from .source_size_policy import (
@@ -882,8 +890,9 @@ def build_plan(
     profile_ids = {entry.id for entry in catalog.profiles}
     if profile not in profile_ids:
         raise ManifestError(f"unknown profile: {profile}")
-    if platform is not None and platform not in SUPPORTED_PLATFORMS:
-        raise ManifestError(f"unsupported platform: {platform}")
+    resolved_platform = platform or _host_platform()
+    if resolved_platform not in SUPPORTED_PLATFORMS:
+        raise ManifestError(f"unsupported platform: {resolved_platform}")
 
     suites = []
     inapplicable = []
@@ -894,9 +903,9 @@ def build_plan(
                 f"profile {profile!r} is not in declared profiles: "
                 + ", ".join(suite.profiles)
             )
-        if platform is not None and suite.platforms and platform not in suite.platforms:
+        if suite.platforms and resolved_platform not in suite.platforms:
             reasons.append(
-                f"platform {platform!r} is not in declared platforms: "
+                f"platform {resolved_platform!r} is not in declared platforms: "
                 + ", ".join(suite.platforms)
             )
         entry = asdict(suite)
@@ -911,13 +920,12 @@ def build_plan(
             )
         else:
             suites.append(entry)
-    return {
-        "schema": 1,
-        "profile": profile,
-        "platform": platform,
-        "suites": suites,
-        "inapplicable": inapplicable,
-    }
+    try:
+        return build_expected_manifest(
+            profile, resolved_platform, suites, inapplicable
+        )
+    except TestExecutionContractError as exc:
+        raise ManifestError(str(exc)) from exc
 
 
 def load_plan_file(
@@ -934,26 +942,20 @@ def load_plan_file(
         raise ManifestError(f"invalid planner JSON in {path}: {exc}") from exc
     if not isinstance(raw_plan, dict):
         raise ManifestError(f"planner JSON root must be an object: {path}")
+    try:
+        validate_expected_manifest(raw_plan)
+    except TestExecutionContractError as exc:
+        raise ManifestError(f"invalid expected manifest {path}: {exc}") from exc
     if raw_plan.get("profile") != profile or raw_plan.get("platform") != platform:
         raise ManifestError(
             f"planner JSON profile/platform does not match requested {profile}/{platform}"
         )
-    raw_suites = raw_plan.get("suites")
-    if not isinstance(raw_suites, list):
-        raise ManifestError(f"planner JSON has no suites list: {path}")
-    actual_ids = []
-    for entry in raw_suites:
-        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
-            raise ManifestError(f"planner JSON has an invalid suite entry: {path}")
-        actual_ids.append(entry["id"])
-    expected_ids = [
-        entry["id"] for entry in build_plan(catalog, profile, platform)["suites"]
-    ]
-    if sorted(actual_ids) != sorted(expected_ids):
+    local_expected = build_plan(catalog, profile, platform)
+    if raw_plan["fingerprint"] != local_expected["fingerprint"]:
         raise ManifestError(
-            f"planner JSON suite inventory differs from local {profile}/{platform} plan"
+            f"expected manifest differs from local {profile}/{platform} checkout"
         )
-    return tuple(actual_ids)
+    return tuple(entry["id"] for entry in raw_plan["suites"])
 
 
 def _host_platform() -> str:
@@ -1441,6 +1443,42 @@ def _execution_observed_ids(
 def _cmd_verify_suite_execution(
     plan_path: Path, manifest_path: Path, executor: str
 ) -> int:
+    expected = read_manifest(plan_path, "expected manifest")
+    manifest = read_manifest(manifest_path, f"{executor} execution manifest")
+    if manifest.get("kind") == "termin-test-execution":
+        if manifest.get("executor") != executor:
+            raise ManifestError(
+                f"execution manifest executor does not match requested {executor}"
+            )
+        try:
+            report = verify_execution_manifests(expected, [manifest])
+        except TestExecutionContractError as exc:
+            raise ManifestError(str(exc)) from exc
+        expected_executors = {
+            suite["executor"] for suite in expected["suites"]
+        }
+        unrelated_missing = {
+            suite["id"]
+            for suite in expected["suites"]
+            if suite["executor"] != executor
+        }
+        relevant_missing = set(report["missing"]) - unrelated_missing
+        relevant_missing_selected = set(report["missing_selected"]) - unrelated_missing
+        failed = bool(
+            report["failed"]
+            or relevant_missing
+            or relevant_missing_selected
+            or report["unexpected_selected"]
+            or report["unexpected_results"]
+            or report["unexpected_executors"]
+            or executor not in expected_executors
+        )
+        report["missing"] = sorted(relevant_missing)
+        report["missing_selected"] = sorted(relevant_missing_selected)
+        report["success"] = not failed
+        _print_json(report)
+        return 1 if failed else 0
+
     plan = _read_execution_json(plan_path, "planner JSON")
     manifest = _read_execution_json(manifest_path, f"{executor} execution manifest")
     if plan.get("schema") != 1:
@@ -1487,6 +1525,21 @@ def _cmd_verify_suite_execution(
         or unexpected_observed
         or failures
     ) else 0
+
+
+def _cmd_verify_execution(
+    expected_path: Path, manifest_paths: tuple[Path, ...]
+) -> int:
+    expected = read_manifest(expected_path, "expected manifest")
+    manifests = [
+        read_manifest(path, "execution manifest") for path in manifest_paths
+    ]
+    try:
+        report = verify_execution_manifests(expected, manifests)
+    except TestExecutionContractError as exc:
+        raise ManifestError(str(exc)) from exc
+    _print_json(report)
+    return 0 if report["success"] else 1
 
 
 def _cmd_verify_plan_execution(
@@ -1561,16 +1614,9 @@ def _cmd_run(
 ) -> int:
     resolved_platform = platform or _host_platform()
     catalog = _load_valid_catalog(repo_root)
+    expected = build_plan(catalog, profile, resolved_platform)
     if plan_file is not None:
-        suite_ids = set(load_plan_file(plan_file, catalog, profile, resolved_platform))
-        catalog = RepositoryCatalog(
-            modules=catalog.modules,
-            profiles=catalog.profiles,
-            suites=tuple(suite for suite in catalog.suites if suite.id in suite_ids),
-            python_test_inventory=catalog.python_test_inventory,
-            native_test_inventory=catalog.native_test_inventory,
-            documentation=catalog.documentation,
-        )
+        load_plan_file(plan_file, catalog, profile, resolved_platform)
     if executor_filter:
         catalog = RepositoryCatalog(
             modules=catalog.modules,
@@ -1609,19 +1655,26 @@ def _cmd_run(
         exit_code |= process_exit_code
         failures.extend(process_failures)
     if report_output is not None:
-        selected = [
-            {"id": suite["id"], "executor": suite["executor"]}
-            for suite in plan["suites"]
-        ]
-        manifest = {
-            "schema": 1,
-            "profile": profile,
-            "platform": resolved_platform,
-            "selected": selected,
-            "executed": [entry for entry in selected if entry["id"] not in failures],
-            "skipped": [],
-            "failed": [entry for entry in selected if entry["id"] in failures],
-        }
+        report_executors = set(executor_filter) if executor_filter else executors
+        if len(report_executors) != 1:
+            raise ManifestError(
+                "execution report requires exactly one executor; pass --executor"
+            )
+        executor = next(iter(report_executors))
+        selected = [suite["id"] for suite in plan["suites"]]
+        failure_ids = set(failures)
+        manifest = build_execution_manifest(
+            expected,
+            executor,
+            selected=selected,
+            executed=[suite_id for suite_id in selected if suite_id not in failure_ids],
+            skipped={},
+            failed={
+                suite_id: "executor returned a failing result"
+                for suite_id in selected
+                if suite_id in failure_ids
+            },
+        )
         report_output.parent.mkdir(parents=True, exist_ok=True)
         report_output.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -1645,7 +1698,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     docs_plan_parser.add_argument("--json", action="store_true", dest="json_output")
 
-    plan_parser = subparsers.add_parser("plan", help="Build a test execution plan.")
+    plan_parser = subparsers.add_parser(
+        "plan", help="Build the canonical expected coverage manifest."
+    )
     plan_parser.add_argument("profile")
     plan_parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     plan_parser.add_argument("--json", action="store_true", dest="json_output")
@@ -1692,6 +1747,15 @@ def main(argv: list[str] | None = None) -> int:
     verify_suite_parser.add_argument("--manifest", type=Path, required=True)
     verify_suite_parser.add_argument(
         "--executor", choices=sorted(SUPPORTED_EXECUTORS), required=True
+    )
+
+    verify_execution_parser = subparsers.add_parser(
+        "verify-execution",
+        help="Verify canonical executor manifests against expected coverage.",
+    )
+    verify_execution_parser.add_argument("--expected", type=Path, required=True)
+    verify_execution_parser.add_argument(
+        "--manifest", type=Path, action="append", default=[]
     )
 
     run_parser = subparsers.add_parser(
@@ -1753,6 +1817,11 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_verify_suite_execution(
                 args.plan.resolve(), args.manifest.resolve(), args.executor
             )
+        if args.command == "verify-execution":
+            return _cmd_verify_execution(
+                args.expected.resolve(),
+                tuple(path.resolve() for path in args.manifest),
+            )
         if args.command == "run":
             return _cmd_run(
                 repo_root,
@@ -1764,7 +1833,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.plan_file.resolve() if args.plan_file else None,
                 args.report_output.resolve() if args.report_output else None,
             )
-    except (ManifestError, OSError) as exc:
+    except (ManifestError, TestExecutionContractError, OSError) as exc:
         for line in str(exc).splitlines():
             print(f"ERROR: {line}", file=sys.stderr)
         return 1

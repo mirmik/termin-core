@@ -440,8 +440,10 @@ def test_cli_emits_stable_json_plan(tmp_path: Path, capsys) -> None:
     assert result == 0
     output = json.loads(capsys.readouterr().out)
     assert output["schema"] == 1
+    assert output["kind"] == "termin-test-expected"
     assert output["profile"] == "pr"
     assert output["platform"] == "linux"
+    assert len(output["fingerprint"]) == 64
     assert [suite["id"] for suite in output["suites"]] == ["alpha-python"]
     assert output["inapplicable"] == []
 
@@ -685,6 +687,7 @@ def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> Non
     command.parent.mkdir()
     command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     command.chmod(0o755)
+    report_path = repo / "build" / "process-execution.json"
     calls = []
 
     def fake_run(args, *, cwd, check):
@@ -694,11 +697,25 @@ def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(repository_control.subprocess, "run", fake_run)
 
     result = repository_control.main(
-        ["--repo-root", str(repo), "run", "editor-smoke", "--platform", "linux"]
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "editor-smoke",
+            "--platform",
+            "linux",
+            "--report-output",
+            str(report_path),
+        ]
     )
 
     assert result == 0
     assert calls == [([str(command)], repo, False)]
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["kind"] == "termin-test-execution"
+    assert report["executor"] == "process-smoke"
+    assert report["selected"] == [{"id": "alpha-editor-smoke"}]
+    assert report["executed"] == [{"id": "alpha-editor-smoke"}]
 
 
 def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> None:
