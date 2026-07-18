@@ -70,3 +70,21 @@ settings.save()
 - может быть протестирован отдельно от основного приложения.
 
 Если utility начинает знать о runtime lifecycle конкретного модуля, он должен остаться в этом модуле или переехать в более подходящий слой.
+
+## Profiler timing vocabulary
+
+`tc_frame_profile` хранит сырые, не сглаженные величины:
+
+- `interval_ms` — start-to-start интервал между соседними кадрами;
+- `active_ms` — wall-clock CPU duration между `begin_frame` и `end_frame`;
+- `target_interval_ms` — целевой интервал scheduler-а;
+- `deadline_lateness_ms` — насколько фактический старт опоздал относительно ожидаемого;
+- `missed_intervals` — число полных target-интервалов в этом опоздании.
+
+`total_ms` пока сохраняется как compatibility alias для `active_ms`. Разница
+`interval_ms - active_ms` сама по себе не является чистым `sleep`: в ней могут
+быть OS scheduling, presentation wait и другая работа между frame scopes.
+
+История ограничена кольцевым буфером. Для последовательного потребления следует
+использовать `tc_profiler_history_after` / `Profiler.history_after`: API исключает
+открытый кадр и явно возвращает `dropped_count`, если cursor отстал от буфера.
