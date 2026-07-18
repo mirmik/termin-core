@@ -140,6 +140,53 @@ def _initialize(broker: _BrokerProcess) -> None:
     broker.notify({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
 
+def _call_execute(broker: _BrokerProcess, request_id: str, marker: str) -> dict[str, object]:
+    return broker.request(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {
+                "name": "execute_python_script",
+                "arguments": {"script": f"print({marker!r})"},
+            },
+        }
+    )
+
+
+def test_two_brokers_keep_explicit_editor_sessions_isolated(tmp_path: Path):
+    first_endpoint = _EditorEndpoint("first-token")
+    second_endpoint = _EditorEndpoint("second-token")
+    first_endpoint.start()
+    second_endpoint.start()
+    first_session = tmp_path / "first" / "session.json"
+    second_session = tmp_path / "second" / "session.json"
+    first_session.parent.mkdir()
+    second_session.parent.mkdir()
+    _write_session(first_session, first_endpoint)
+    _write_session(second_session, second_endpoint)
+    first_broker = _BrokerProcess(first_session)
+    second_broker = _BrokerProcess(second_session)
+    try:
+        _initialize(first_broker)
+        _initialize(second_broker)
+
+        assert _call_execute(first_broker, "first-call", "first")["result"]["isError"] is False
+        assert _call_execute(second_broker, "second-call", "second")["result"]["isError"] is False
+        assert first_endpoint.requests[0]["params"]["arguments"]["script"] == "print('first')"
+        assert second_endpoint.requests[0]["params"]["arguments"]["script"] == "print('second')"
+
+        assert first_broker.close() == ("", "")
+        assert second_broker.close() == ("", "")
+    finally:
+        first_endpoint.stop()
+        second_endpoint.stop()
+        if first_broker.process.poll() is None:
+            first_broker.process.terminate()
+        if second_broker.process.poll() is None:
+            second_broker.process.terminate()
+
+
 def test_stdio_broker_enforces_lifecycle_and_negotiates_version(tmp_path: Path):
     broker = _BrokerProcess(tmp_path / "missing-session.json")
     try:
@@ -220,7 +267,8 @@ def test_stdio_broker_proxies_tools_without_polluting_stdout(tmp_path: Path):
 def test_stdio_broker_reports_unavailable_and_reconnects(tmp_path: Path):
     session_file = tmp_path / "editor-session.json"
     broker = _BrokerProcess(session_file)
-    endpoint = _EditorEndpoint("replacement-token")
+    endpoint = _EditorEndpoint("initial-token")
+    replacement_endpoint = _EditorEndpoint("replacement-token")
     try:
         _initialize(broker)
         listed = broker.request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
@@ -257,10 +305,42 @@ def test_stdio_broker_reports_unavailable_and_reconnects(tmp_path: Path):
         assert called["result"]["content"] == [{"type": "text", "text": "editor result\n"}]
         assert [request["method"] for request in endpoint.requests] == ["tools/call"]
 
+        endpoint.stop()
+        unavailable_after_stop = broker.request(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "execute_python_script",
+                    "arguments": {"script": "print('during restart')"},
+                },
+            }
+        )
+        assert unavailable_after_stop["error"]["code"] == -32050
+        assert unavailable_after_stop["error"]["message"] == "Termin Editor is unavailable"
+
+        replacement_endpoint.start()
+        _write_session(session_file, replacement_endpoint)
+        called_after_restart = broker.request(
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "execute_python_script",
+                    "arguments": {"script": "print('after restart')"},
+                },
+            }
+        )
+        assert called_after_restart["result"]["content"] == [{"type": "text", "text": "editor result\n"}]
+        assert [request["method"] for request in replacement_endpoint.requests] == ["tools/call"]
+
         stdout_tail, stderr = broker.close()
         assert stdout_tail == ""
         assert "Session file not found" in stderr
     finally:
         endpoint.stop()
+        replacement_endpoint.stop()
         if broker.process.poll() is None:
             broker.process.terminate()
