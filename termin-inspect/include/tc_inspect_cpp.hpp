@@ -143,10 +143,6 @@ inline InspectFieldInfo make_inspect_field_info(const InspectFieldSpec& spec) {
     return info;
 }
 
-// ============================================================================
-// InspectRegistry - C++ only version
-// ============================================================================
-
 #ifdef _WIN32
     #ifdef TERMIN_INSPECT_CPP_EXPORTS
         #define TC_INSPECT_API __declspec(dllexport)
@@ -157,27 +153,273 @@ inline InspectFieldInfo make_inspect_field_info(const InspectFieldSpec& spec) {
     #define TC_INSPECT_API __attribute__((visibility("default")))
 #endif
 
+namespace detail {
+
+struct InspectFacetPayload {
+    std::string type_name;
+    std::vector<InspectFieldInfo> fields;
+    TypeBackend backend = TypeBackend::Cpp;
+    bool has_backend = false;
+    tc_value metadata;
+    bool has_metadata = false;
+
+    explicit InspectFacetPayload(std::string type_name_)
+        : type_name(std::move(type_name_))
+        , metadata(tc_value_nil()) {}
+
+    InspectFacetPayload(const InspectFacetPayload& other)
+        : type_name(other.type_name)
+        , fields(other.fields)
+        , backend(other.backend)
+        , has_backend(other.has_backend)
+        , metadata(other.has_metadata ? tc_value_copy(&other.metadata) : tc_value_nil())
+        , has_metadata(other.has_metadata) {}
+
+    InspectFacetPayload& operator=(const InspectFacetPayload&) = delete;
+
+    ~InspectFacetPayload() {
+        if (has_metadata) {
+            tc_value_free(&metadata);
+        }
+    }
+};
+
+inline void destroy_inspect_facet(void* payload) {
+    delete static_cast<InspectFacetPayload*>(payload);
+}
+
+} // namespace detail
+
+// Builds a complete inspect facet without exposing it through the live runtime
+// registry. attach_to() transfers the validated payload to a staged runtime
+// type descriptor, so callbacks become visible only with descriptor commit.
+class TC_INSPECT_API InspectFacetBuilder {
+    std::unique_ptr<detail::InspectFacetPayload> _payload;
+    std::string _error;
+
+    bool reject(const std::string& message) {
+        if (_error.empty()) {
+            _error = message;
+            tc_log(TC_LOG_ERROR, "[Inspect] InspectFacetBuilder rejected: %s", message.c_str());
+        }
+        return false;
+    }
+
+    bool validate_field(const InspectFieldInfo& info) {
+        if (info.path.empty()) {
+            return reject("field path must not be empty for type '" + type_name() + "'");
+        }
+        if (info.kind.empty()) {
+            return reject(
+                "field '" + type_name() + "." + info.path + "' has no kind"
+            );
+        }
+        if (!info.type_name.empty() && info.type_name != type_name()) {
+            return reject(
+                "field '" + info.path + "' belongs to type '" + info.type_name +
+                "', expected '" + type_name() + "'"
+            );
+        }
+        if (info.kind == "button") {
+            if (!info.action) {
+                return reject(
+                    "button field '" + type_name() + "." + info.path + "' has no action"
+                );
+            }
+        } else if (!info.getter && !info.setter) {
+            return reject(
+                "field '" + type_name() + "." + info.path + "' has no callbacks"
+            );
+        } else if (info.is_serializable && !info.getter) {
+            return reject(
+                "serializable field '" + type_name() + "." + info.path + "' has no getter"
+            );
+        }
+        return true;
+    }
+
+public:
+    explicit InspectFacetBuilder(std::string type_name)
+        : _payload(std::make_unique<detail::InspectFacetPayload>(std::move(type_name))) {
+        if (_payload->type_name.empty()) {
+            reject("type name must not be empty");
+        }
+    }
+
+    InspectFacetBuilder(InspectFacetBuilder&&) noexcept = default;
+    InspectFacetBuilder& operator=(InspectFacetBuilder&&) noexcept = default;
+    InspectFacetBuilder(const InspectFacetBuilder&) = delete;
+    InspectFacetBuilder& operator=(const InspectFacetBuilder&) = delete;
+
+    const std::string& type_name() const {
+        static const std::string empty;
+        return _payload ? _payload->type_name : empty;
+    }
+
+    bool valid() const { return _payload && _error.empty(); }
+    const std::string& error() const { return _error; }
+
+    bool set_backend(TypeBackend backend) {
+        if (!valid()) return false;
+        switch (backend) {
+            case TypeBackend::Cpp:
+            case TypeBackend::Python:
+            case TypeBackend::Rust:
+                _payload->backend = backend;
+                _payload->has_backend = true;
+                return true;
+        }
+        return reject("invalid backend for type '" + type_name() + "'");
+    }
+
+    bool set_metadata(const tc_value* metadata) {
+        if (!valid()) return false;
+        if (metadata && metadata->type != TC_VALUE_DICT) {
+            return reject("metadata for type '" + type_name() + "' must be a dictionary");
+        }
+        if (_payload->has_metadata) {
+            tc_value_free(&_payload->metadata);
+        }
+        _payload->metadata = metadata ? tc_value_copy(metadata) : tc_value_dict_new();
+        _payload->has_metadata = true;
+        return true;
+    }
+
+    bool set_metadata_key(const std::string& key, const tc_value* value) {
+        if (!valid()) return false;
+        if (key.empty()) {
+            return reject("metadata key for type '" + type_name() + "' must not be empty");
+        }
+        if (!_payload->has_metadata) {
+            _payload->metadata = tc_value_dict_new();
+            _payload->has_metadata = true;
+        }
+        tc_value_dict_set(
+            &_payload->metadata,
+            key.c_str(),
+            value ? tc_value_copy(value) : tc_value_nil()
+        );
+        return true;
+    }
+
+    bool add_field(InspectFieldInfo info) {
+        if (!valid() || !validate_field(info)) return false;
+        for (const InspectFieldInfo& existing : _payload->fields) {
+            if (existing.path == info.path) {
+                return reject(
+                    "duplicate field path '" + type_name() + "." + info.path + "'"
+                );
+            }
+        }
+        info.type_name = type_name();
+        _payload->fields.push_back(std::move(info));
+        return true;
+    }
+
+    template<typename C, typename T>
+    bool add(T C::*member, const InspectFieldSpec& spec) {
+        InspectFieldInfo info = make_inspect_field_info(spec);
+        const std::string kind = info.kind;
+        const std::string type = type_name();
+        const std::string path = info.path;
+        info.getter = [member, kind, type, path](void* obj) -> tc_value {
+            T value = static_cast<C*>(obj)->*member;
+            return KindRegistryCpp::instance().serialize_field(
+                kind, std::any(value), type, path
+            );
+        };
+        info.setter = [member, kind, type, path](
+            void* obj,
+            tc_value value,
+            void* context
+        ) -> bool {
+            std::any decoded = KindRegistryCpp::instance().deserialize(kind, &value, context);
+            if (!decoded.has_value()) return false;
+            try {
+                static_cast<C*>(obj)->*member = std::any_cast<T>(decoded);
+                return true;
+            } catch (const std::bad_any_cast&) {
+                tc_log(
+                    TC_LOG_ERROR,
+                    "[Inspect] Field '%s.%s' kind '%s' returned incompatible type",
+                    type.c_str(),
+                    path.c_str(),
+                    kind.c_str()
+                );
+                return false;
+            }
+        };
+        return add_field(std::move(info));
+    }
+
+    bool add_button(
+        std::string path,
+        std::string label,
+        std::function<void(void*, const InspectContext&)> action
+    ) {
+        InspectFieldInfo info;
+        info.type_name = type_name();
+        info.path = std::move(path);
+        info.label = std::move(label);
+        info.kind = "button";
+        info.is_serializable = false;
+        info.action = std::move(action);
+        return add_field(std::move(info));
+    }
+
+    bool attach_to(tc_runtime_type_descriptor* descriptor) {
+        if (!descriptor) {
+            return reject("cannot attach type '" + type_name() + "' to a null descriptor");
+        }
+        if (!valid()) return false;
+        if (!_payload->has_backend) {
+            _payload->backend = TypeBackend::Cpp;
+            _payload->has_backend = true;
+        }
+        detail::InspectFacetPayload* payload = _payload.release();
+        return tc_runtime_type_descriptor_add_facet(
+            descriptor,
+            TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+            payload,
+            detail::destroy_inspect_facet,
+            nullptr,
+            1
+        );
+    }
+
+private:
+    friend class InspectRegistry;
+    friend class InspectRegistryPythonExt;
+
+    explicit InspectFacetBuilder(const detail::InspectFacetPayload& payload)
+        : _payload(std::make_unique<detail::InspectFacetPayload>(payload)) {}
+
+    bool upsert_field(InspectFieldInfo info) {
+        if (!valid() || !validate_field(info)) return false;
+        info.type_name = type_name();
+        for (InspectFieldInfo& existing : _payload->fields) {
+            if (existing.path == info.path) {
+                existing = std::move(info);
+                return true;
+            }
+        }
+        _payload->fields.push_back(std::move(info));
+        return true;
+    }
+
+    std::unique_ptr<detail::InspectFacetPayload> release_payload() {
+        return std::move(_payload);
+    }
+};
+
+// ============================================================================
+// InspectRegistry - C++ only version
+// ============================================================================
+
 class TC_INSPECT_API InspectRegistry {
     friend class InspectRegistryPythonExt;
 
-    struct InspectFacetPayload {
-        std::string type_name;
-        std::vector<InspectFieldInfo> fields;
-        TypeBackend backend = TypeBackend::Cpp;
-        bool has_backend = false;
-        tc_value metadata;
-        bool has_metadata = false;
-
-        explicit InspectFacetPayload(std::string type_name_)
-            : type_name(std::move(type_name_))
-            , metadata(tc_value_nil()) {}
-
-        ~InspectFacetPayload() {
-            if (has_metadata) {
-                tc_value_free(&metadata);
-            }
-        }
-    };
+    using InspectFacetPayload = detail::InspectFacetPayload;
 
     std::string _current_registration_owner;
 
@@ -300,36 +542,7 @@ class TC_INSPECT_API InspectRegistry {
     }
 
     static void destroy_inspect_facet(void* payload) {
-        delete static_cast<InspectFacetPayload*>(payload);
-    }
-
-    InspectFacetPayload& ensure_inspect_facet(const std::string& type_name) {
-        if (InspectFacetPayload* existing = inspect_facet(type_name)) {
-            return *existing;
-        }
-
-        auto* payload = new InspectFacetPayload(type_name);
-        if (!tc_runtime_type_registry_set_facet(
-                type_name.c_str(),
-                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
-                payload,
-                destroy_inspect_facet,
-                1)) {
-            delete payload;
-            static InspectFacetPayload fallback("");
-            return fallback;
-        }
-        return *payload;
-    }
-
-    void upsert_field(InspectFacetPayload& payload, InspectFieldInfo&& info) {
-        for (InspectFieldInfo& existing : payload.fields) {
-            if (existing.path == info.path) {
-                existing = std::move(info);
-                return;
-            }
-        }
-        payload.fields.push_back(std::move(info));
+        detail::destroy_inspect_facet(payload);
     }
 
     void register_field(
@@ -339,36 +552,101 @@ class TC_INSPECT_API InspectRegistry {
         const char* operation
     ) {
         const bool existed_before = type_exists(type_name);
+        if (!can_register_type_data(type_name, existed_before, operation)) {
+            return;
+        }
+
+        const InspectFacetPayload* committed = inspect_facet(type_name);
+        if (_current_registration_owner.empty()) {
+            if (committed) {
+                for (const InspectFieldInfo& existing : committed->fields) {
+                    if (existing.path == info.path) {
+                        tc_log(
+                            TC_LOG_DEBUG,
+                            "[Inspect] Ignoring unowned %s for existing field '%s.%s'",
+                            operation,
+                            type_name.c_str(),
+                            info.path.c_str()
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+
+        InspectFacetBuilder builder = committed
+            ? InspectFacetBuilder(*committed)
+            : InspectFacetBuilder(type_name);
+        if (!builder.upsert_field(std::move(info))) {
+            return;
+        }
+        if (mark_cpp_backend) {
+            if (!builder.set_backend(TypeBackend::Cpp)) {
+                return;
+            }
+        }
+        (void)publish_staged_facet(std::move(builder), operation);
+    }
+
+    bool publish_staged_facet(
+        InspectFacetBuilder&& builder,
+        const char* operation
+    ) {
+        if (!builder.valid()) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[Inspect] cannot publish invalid inspect facet for type '%s': %s",
+                builder.type_name().c_str(),
+                builder.error().c_str()
+            );
+            return false;
+        }
+
+        const std::string type_name = builder.type_name();
+        const bool existed_before = type_exists(type_name);
         const bool adopt_unowned_shell =
             existed_before &&
             tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
             can_adopt_unowned_shell(type_name, operation);
         if (!can_register_type_data(type_name, existed_before, operation)) {
-            return;
+            return false;
         }
 
-        tc_runtime_type_registry_ensure_type(type_name.c_str());
-        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
-        if (_current_registration_owner.empty()) {
-            for (const InspectFieldInfo& existing : payload.fields) {
-                if (existing.path == info.path) {
-                    tc_log(
-                        TC_LOG_DEBUG,
-                        "[Inspect] Ignoring unowned %s for existing field '%s.%s'",
-                        operation,
-                        type_name.c_str(),
-                        info.path.c_str()
-                    );
-                    return;
-                }
+        std::unique_ptr<InspectFacetPayload> payload = builder.release_payload();
+        if (!payload) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[Inspect] inspect facet payload already consumed for type '%s'",
+                type_name.c_str()
+            );
+            return false;
+        }
+        if (!payload->has_backend) {
+            payload->backend = TypeBackend::Cpp;
+            payload->has_backend = true;
+        }
+        if (!tc_runtime_type_registry_ensure_type(type_name.c_str())) {
+            return false;
+        }
+        if (!tc_runtime_type_registry_set_facet(
+                type_name.c_str(),
+                TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS,
+                payload.get(),
+                destroy_inspect_facet,
+                1)) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[Inspect] failed to publish staged inspect facet for type '%s'",
+                type_name.c_str()
+            );
+            if (!existed_before) {
+                tc_runtime_type_registry_unregister_type(type_name.c_str());
             }
+            return false;
         }
-        upsert_field(payload, std::move(info));
-        if (mark_cpp_backend) {
-            payload.backend = TypeBackend::Cpp;
-            payload.has_backend = true;
-        }
+        payload.release();
         assign_current_owner(type_name, existed_before, adopt_unowned_shell);
+        return true;
     }
 
 public:
@@ -385,11 +663,12 @@ public:
         if (!can_register_type_data(type_name, existed_before, "backend registration")) {
             return;
         }
-        tc_runtime_type_registry_ensure_type(type_name.c_str());
-        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
-        payload.backend = backend;
-        payload.has_backend = true;
-        assign_current_owner(type_name, existed_before, false);
+        const InspectFacetPayload* committed = inspect_facet(type_name);
+        InspectFacetBuilder builder = committed
+            ? InspectFacetBuilder(*committed)
+            : InspectFacetBuilder(type_name);
+        if (!builder.set_backend(backend)) return;
+        (void)publish_staged_facet(std::move(builder), "backend registration");
     }
 
     TypeBackend get_type_backend(const std::string& type_name) const {
@@ -409,13 +688,17 @@ public:
             if (!can_register_type_data(type_name, existed_before, "parent registration")) {
                 return;
             }
-            tc_runtime_type_registry_set_parent(type_name.c_str(), parent_name.c_str());
-            InspectFacetPayload& payload = ensure_inspect_facet(type_name);
-            if (!payload.has_backend) {
-                payload.backend = TypeBackend::Cpp;
-                payload.has_backend = true;
+            if (!tc_runtime_type_registry_set_parent(type_name.c_str(), parent_name.c_str())) {
+                return;
             }
-            assign_current_owner(type_name, existed_before, false);
+            const InspectFacetPayload* committed = inspect_facet(type_name);
+            if (!committed || !committed->has_backend) {
+                InspectFacetBuilder builder = committed
+                    ? InspectFacetBuilder(*committed)
+                    : InspectFacetBuilder(type_name);
+                if (!builder.set_backend(TypeBackend::Cpp)) return;
+                (void)publish_staged_facet(std::move(builder), "parent registration");
+            }
         }
     }
 
@@ -464,18 +747,12 @@ public:
         if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
             return;
         }
-        tc_runtime_type_registry_ensure_type(type_name.c_str());
-        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
-        if (payload.has_metadata) {
-            tc_value_free(&payload.metadata);
-        }
-        payload.metadata = metadata ? tc_value_copy(metadata) : tc_value_dict_new();
-        payload.has_metadata = true;
-        if (!payload.has_backend) {
-            payload.backend = TypeBackend::Cpp;
-            payload.has_backend = true;
-        }
-        assign_current_owner(type_name, existed_before, false);
+        const InspectFacetPayload* committed = inspect_facet(type_name);
+        InspectFacetBuilder builder = committed
+            ? InspectFacetBuilder(*committed)
+            : InspectFacetBuilder(type_name);
+        if (!builder.set_metadata(metadata)) return;
+        (void)publish_staged_facet(std::move(builder), "metadata registration");
     }
 
     void set_type_metadata_key(const std::string& type_name, const std::string& key, const tc_value* value) {
@@ -483,21 +760,12 @@ public:
         if (!can_register_type_data(type_name, existed_before, "metadata registration")) {
             return;
         }
-        tc_runtime_type_registry_ensure_type(type_name.c_str());
-        InspectFacetPayload& payload = ensure_inspect_facet(type_name);
-        if (!payload.has_metadata || payload.metadata.type != TC_VALUE_DICT) {
-            if (payload.has_metadata) {
-                tc_value_free(&payload.metadata);
-            }
-            payload.metadata = tc_value_dict_new();
-            payload.has_metadata = true;
-        }
-        tc_value_dict_set(&payload.metadata, key.c_str(), value ? tc_value_copy(value) : tc_value_nil());
-        if (!payload.has_backend) {
-            payload.backend = TypeBackend::Cpp;
-            payload.has_backend = true;
-        }
-        assign_current_owner(type_name, existed_before, false);
+        const InspectFacetPayload* committed = inspect_facet(type_name);
+        InspectFacetBuilder builder = committed
+            ? InspectFacetBuilder(*committed)
+            : InspectFacetBuilder(type_name);
+        if (!builder.set_metadata_key(key, value)) return;
+        (void)publish_staged_facet(std::move(builder), "metadata registration");
     }
 
     tc_value type_metadata(const std::string& type_name) const {

@@ -2,10 +2,28 @@
 // Python-specific extensions for tc_inspect
 
 #include "inspect/tc_inspect_python.hpp"
+
+#include <optional>
 #include "inspect/tc_kind_python.hpp"
 #include <tcbase/tc_log.hpp>
 
 namespace tc {
+
+namespace {
+
+std::optional<nb::object> python_attr(nb::handle object, const char* name) {
+    PyObject* value = PyObject_GetAttrString(object.ptr(), name);
+    if (value) {
+        return nb::steal<nb::object>(value);
+    }
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Clear();
+        return std::nullopt;
+    }
+    throw nb::python_error();
+}
+
+} // namespace
 
 static bool python_inspect_has_type(const char* type_name, void* ctx) {
     (void)ctx;
@@ -141,20 +159,14 @@ void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::strin
     reg.register_field(type_name, std::move(info), false, "python button registration");
 }
 
-void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, const std::string& type_name,
-                                                       nb::dict fields_dict) {
-    const bool existed_before = reg.type_exists(type_name);
-    const bool adopt_unowned_shell =
-        existed_before &&
-        tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
-        reg.can_adopt_unowned_shell(type_name, "python field registration");
-    if (!reg.can_register_type_data(type_name, existed_before, "python field registration")) {
-        return;
+InspectFacetBuilder InspectRegistryPythonExt::build_python_fields(
+    const std::string& type_name,
+    nb::dict fields_dict
+) {
+    InspectFacetBuilder builder(type_name);
+    if (!builder.set_backend(TypeBackend::Python)) {
+        throw std::runtime_error(builder.error());
     }
-
-    tc_runtime_type_registry_ensure_type(type_name.c_str());
-    auto& payload = reg.ensure_inspect_facet(type_name);
-    payload.fields.clear();
 
     for (auto item : fields_dict) {
         std::string field_name = nb::cast<std::string>(item.first);
@@ -165,45 +177,45 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
 
         // Extract attributes
         info.path = field_name;
-        if (nb::hasattr(field_obj, "path") && !field_obj.attr("path").is_none()) {
-            info.path = nb::cast<std::string>(field_obj.attr("path"));
+        if (auto attr = python_attr(field_obj, "path"); attr && !attr->is_none()) {
+            info.path = nb::cast<std::string>(*attr);
         }
 
         info.label = field_name;
-        if (nb::hasattr(field_obj, "label") && !field_obj.attr("label").is_none()) {
-            info.label = nb::cast<std::string>(field_obj.attr("label"));
+        if (auto attr = python_attr(field_obj, "label"); attr && !attr->is_none()) {
+            info.label = nb::cast<std::string>(*attr);
         }
 
         info.kind = "float";
-        if (nb::hasattr(field_obj, "kind")) {
-            info.kind = nb::cast<std::string>(field_obj.attr("kind"));
+        if (auto attr = python_attr(field_obj, "kind")) {
+            info.kind = nb::cast<std::string>(*attr);
         }
 
-        if (nb::hasattr(field_obj, "min") && !field_obj.attr("min").is_none()) {
-            info.min = nb::cast<double>(field_obj.attr("min"));
+        if (auto attr = python_attr(field_obj, "min"); attr && !attr->is_none()) {
+            info.min = nb::cast<double>(*attr);
         }
-        if (nb::hasattr(field_obj, "max") && !field_obj.attr("max").is_none()) {
-            info.max = nb::cast<double>(field_obj.attr("max"));
+        if (auto attr = python_attr(field_obj, "max"); attr && !attr->is_none()) {
+            info.max = nb::cast<double>(*attr);
         }
-        if (nb::hasattr(field_obj, "step") && !field_obj.attr("step").is_none()) {
-            info.step = nb::cast<double>(field_obj.attr("step"));
+        if (auto attr = python_attr(field_obj, "step"); attr && !attr->is_none()) {
+            info.step = nb::cast<double>(*attr);
         }
 
         // is_serializable (default true, can be set via is_serializable=False or legacy non_serializable=True)
-        if (nb::hasattr(field_obj, "is_serializable")) {
-            info.is_serializable = nb::cast<bool>(field_obj.attr("is_serializable"));
-        } else if (nb::hasattr(field_obj, "non_serializable")) {
-            info.is_serializable = !nb::cast<bool>(field_obj.attr("non_serializable"));
+        if (auto attr = python_attr(field_obj, "is_serializable")) {
+            info.is_serializable = nb::cast<bool>(*attr);
+        } else if (auto legacy_attr = python_attr(field_obj, "non_serializable")) {
+            info.is_serializable = !nb::cast<bool>(*legacy_attr);
         }
 
         // is_inspectable (default true)
-        if (nb::hasattr(field_obj, "is_inspectable")) {
-            info.is_inspectable = nb::cast<bool>(field_obj.attr("is_inspectable"));
+        if (auto attr = python_attr(field_obj, "is_inspectable")) {
+            info.is_inspectable = nb::cast<bool>(*attr);
         }
 
         // Choices for enum
-        if (nb::hasattr(field_obj, "choices") && !field_obj.attr("choices").is_none()) {
-            for (auto c : field_obj.attr("choices")) {
+        if (auto attr = python_attr(field_obj, "choices"); attr && !attr->is_none()) {
+            for (auto c : *attr) {
                 nb::tuple t = nb::cast<nb::tuple>(c);
                 if (t.size() >= 2) {
                     EnumChoice choice;
@@ -224,8 +236,8 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
         }
 
         // Action for button — wrap Python callable into unified action
-        if (nb::hasattr(field_obj, "action") && !field_obj.attr("action").is_none()) {
-            nb::object py_action = field_obj.attr("action");
+        if (auto attr = python_attr(field_obj, "action"); attr && !attr->is_none()) {
+            nb::object py_action = *attr;
             info.action = [py_action](void* obj, const InspectContext&) {
                 if (!obj) return;
                 nb::object py_obj = nb::borrow<nb::object>(
@@ -237,11 +249,11 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
         // Custom getter/setter from Python InspectField
         nb::object py_getter = nb::none();
         nb::object py_setter = nb::none();
-        if (nb::hasattr(field_obj, "getter") && !field_obj.attr("getter").is_none()) {
-            py_getter = field_obj.attr("getter");
+        if (auto attr = python_attr(field_obj, "getter"); attr && !attr->is_none()) {
+            py_getter = *attr;
         }
-        if (nb::hasattr(field_obj, "setter") && !field_obj.attr("setter").is_none()) {
-            py_setter = field_obj.attr("setter");
+        if (auto attr = python_attr(field_obj, "setter"); attr && !attr->is_none()) {
+            py_setter = *attr;
         }
 
         std::string path_copy = info.path;
@@ -317,12 +329,28 @@ void InspectRegistryPythonExt::register_python_fields(InspectRegistry& reg, cons
             }
         };
 
-        payload.fields.push_back(std::move(info));
+        if (!builder.add_field(std::move(info))) {
+            throw std::runtime_error(builder.error());
+        }
     }
 
-    payload.backend = TypeBackend::Python;
-    payload.has_backend = true;
-    reg.assign_current_owner(type_name, existed_before, adopt_unowned_shell);
+    return builder;
+}
+
+void InspectRegistryPythonExt::register_python_fields(
+    InspectRegistry& reg,
+    const std::string& type_name,
+    nb::dict fields_dict
+) {
+    InspectFacetBuilder builder = build_python_fields(
+        type_name,
+        std::move(fields_dict)
+    );
+    if (!reg.publish_staged_facet(std::move(builder), "python field registration")) {
+        throw std::runtime_error(
+            "failed to publish staged Python inspect fields for type '" + type_name + "'"
+        );
+    }
 }
 
 nb::object InspectRegistryPythonExt::get(InspectRegistry& reg, void* obj,

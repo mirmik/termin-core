@@ -51,6 +51,23 @@ class InspectField:
         self.is_serializable = is_serializable
         self.is_inspectable = is_inspectable
 
+class BrokenInspectField:
+    path = "broken"
+    label = "Broken"
+    min = None
+    max = None
+    step = None
+    action = None
+    getter = None
+    setter = None
+    choices = None
+    is_serializable = True
+    is_inspectable = True
+
+    @property
+    def kind(self):
+        raise RuntimeError("broken inspect field extraction")
+
 class PyBaseComponent:
     def __init__(self):
         self.base_value = 10
@@ -73,6 +90,10 @@ derived_fields = {
     "nullable": InspectField(kind="nullable", label="Nullable"),
     "rejected": InspectField(kind="int", label="Rejected", setter=reject_value)
 }
+broken_fields = {
+    "good": InspectField(kind="int", label="Good"),
+    "broken": BrokenInspectField(),
+}
 obj = PyDerivedComponent()
 )PY";
 
@@ -89,6 +110,39 @@ obj = PyDerivedComponent()
         tc::InspectRegistry_register_python_fields(reg, "PyBaseComponent", std::move(base_fields));
         tc::InspectRegistry_register_python_fields(reg, "PyDerivedComponent", std::move(derived_fields));
         reg.set_type_parent("PyDerivedComponent", "PyBaseComponent");
+
+        nb::dict broken_fields = nb::cast<nb::dict>(globals["broken_fields"]);
+        bool rejected_new_fields = false;
+        try {
+            tc::InspectRegistry_register_python_fields(
+                reg,
+                "PyBrokenComponent",
+                nb::dict(broken_fields)
+            );
+        } catch (const nb::python_error&) {
+            rejected_new_fields = true;
+            PyErr_Clear();
+        }
+        if (!require_check(rejected_new_fields, "broken Python field extraction is rejected")) return 1;
+        if (!require_check(!tc_runtime_type_registry_has_type("PyBrokenComponent"),
+                           "broken Python field extraction creates no type shell")) return 1;
+
+        bool rejected_replacement = false;
+        try {
+            tc::InspectRegistry_register_python_fields(
+                reg,
+                "PyBaseComponent",
+                std::move(broken_fields)
+            );
+        } catch (const nb::python_error&) {
+            rejected_replacement = true;
+            PyErr_Clear();
+        }
+        if (!require_check(rejected_replacement, "broken Python replacement is rejected")) return 1;
+        if (!require_check(reg.all_fields_count("PyBaseComponent") == 1,
+                           "failed Python replacement preserves committed fields")) return 1;
+        if (!require_check(reg.find_field("PyBaseComponent", "base_value") != nullptr,
+                           "failed Python replacement preserves old callbacks")) return 1;
 
         if (!require_check(reg.get_type_backend("PyBaseComponent") == tc::TypeBackend::Python,
                            "base component backend is Python")) return 1;

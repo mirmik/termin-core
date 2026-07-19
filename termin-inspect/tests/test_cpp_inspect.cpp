@@ -752,6 +752,77 @@ TEST_CASE("Runtime type descriptor rejects cyclic parent and foreign tombstone o
     CHECK(!tc_runtime_type_registry_get_info(root_name, &info));
 }
 
+TEST_CASE("Inspect facet builder validates and publishes callbacks atomically") {
+    const char* type_name = "InspectFacetBuilderProbe";
+    const char* owner = "inspect_facet_builder_owner";
+    tc_runtime_type_registry_unregister_type(type_name);
+
+    std::weak_ptr<int> callback_lifetime;
+    {
+        auto token = std::make_shared<int>(17);
+        callback_lifetime = token;
+
+        tc::InspectFacetBuilder builder(type_name);
+        CHECK(builder.set_backend(tc::TypeBackend::Cpp));
+        tc_value metadata = tc_value_dict_new();
+        tc_value_dict_set(&metadata, "category", tc_value_string("Tests"));
+        CHECK(builder.set_metadata(&metadata));
+        tc_value_free(&metadata);
+
+        tc::InspectFieldInfo info;
+        info.type_name = type_name;
+        info.path = "value";
+        info.label = "Value";
+        info.kind = "int";
+        info.getter = [token](void*) { return tc_value_int(*token); };
+        info.setter = [](void*, tc_value, void*) { return true; };
+        CHECK(builder.add_field(std::move(info)));
+
+        auto* descriptor = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+        REQUIRE(descriptor != nullptr);
+        CHECK(builder.attach_to(descriptor));
+        CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
+    }
+
+    CHECK(!callback_lifetime.expired());
+    auto& inspect = tc::InspectRegistry::instance();
+    CHECK_EQ(inspect.all_fields_count(type_name), 1u);
+    tc_value metadata = inspect.type_metadata(type_name);
+    REQUIRE(metadata.type == TC_VALUE_DICT);
+    tc_value* category = tc_value_dict_get(&metadata, "category");
+    REQUIRE(category != nullptr);
+    CHECK_EQ(std::string(category->data.s), std::string("Tests"));
+    tc_value_free(&metadata);
+
+    tc_runtime_type_registry_unregister_type(type_name);
+    CHECK(callback_lifetime.expired());
+
+    const char* rejected_type = "InspectFacetBuilderRejected";
+    tc_runtime_type_registry_unregister_type(rejected_type);
+    tc::InspectFacetBuilder duplicate(rejected_type);
+    tc::InspectFieldInfo first;
+    first.path = "duplicate";
+    first.kind = "int";
+    first.getter = [](void*) { return tc_value_int(1); };
+    CHECK(duplicate.add_field(std::move(first)));
+    tc::InspectFieldInfo second;
+    second.path = "duplicate";
+    second.kind = "int";
+    second.getter = [](void*) { return tc_value_int(2); };
+    CHECK(!duplicate.add_field(std::move(second)));
+    auto* rejected = tc_runtime_type_descriptor_create(rejected_type, owner, nullptr);
+    REQUIRE(rejected != nullptr);
+    CHECK(!duplicate.attach_to(rejected));
+    tc_runtime_type_descriptor_destroy(rejected);
+    CHECK(!tc_runtime_type_registry_has_type(rejected_type));
+
+    tc::InspectFacetBuilder invalid_backend("InspectFacetBuilderInvalidBackend");
+    CHECK(!invalid_backend.set_backend(static_cast<tc::TypeBackend>(99)));
+    tc::InspectFacetBuilder invalid_metadata("InspectFacetBuilderInvalidMetadata");
+    tc_value scalar_metadata = tc_value_int(5);
+    CHECK(!invalid_metadata.set_metadata(&scalar_metadata));
+}
+
 TEST_CASE("Incremental runtime type parent mutation rejects cycles atomically") {
     const char* root_name = "RuntimeTypeParentCycleRoot";
     const char* middle_name = "RuntimeTypeParentCycleMiddle";

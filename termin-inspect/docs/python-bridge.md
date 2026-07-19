@@ -34,6 +34,14 @@ register_python_fields("MyComponent", [
 - `set(obj, type_name, path, value, context)` — запись через `setattr`.
 - `deserialize_all_py(obj, type_name, data, context)` — десериализация всех полей из `tc_value`.
 
+Регистрация полей транзакционна: bridge сначала извлекает и проверяет полное
+описание Python-класса во временном `InspectFacetBuilder`, после чего заменяет
+опубликованный inspect facet одной операцией. Ошибка при чтении или валидации
+любого поля не создаёт частично зарегистрированный тип и не повреждает ранее
+опубликованное описание. Для C++-регистраторов тот же staged API доступен через
+`tc::InspectFacetBuilder`; готовый builder следует присоединять к
+`tc_runtime_type_descriptor` и публиковать вместе с остальными facet типа.
+
 ### KindRegistryPython
 
 Регистрация Python handlers для пользовательских kinds:

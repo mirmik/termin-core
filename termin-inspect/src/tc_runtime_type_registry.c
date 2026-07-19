@@ -838,10 +838,6 @@ bool tc_runtime_type_registry_set_facet_with_lifecycle(
         return true;
     }
 
-    if (existing) {
-        tc_resource_map_remove(record->facets, facet_id);
-    }
-
     tc_runtime_type_facet_record* facet =
         (tc_runtime_type_facet_record*)calloc(1, sizeof(tc_runtime_type_facet_record));
     if (!facet) {
@@ -853,9 +849,9 @@ bool tc_runtime_type_registry_set_facet_with_lifecycle(
     facet->prepare_unload = prepare_unload;
     facet->abi_version = abi_version;
 
-    if (!tc_resource_map_add(record->facets, facet_id, facet)) {
+    if (!tc_resource_map_replace(record->facets, facet_id, facet)) {
         free(facet);
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to insert facet '%s.%s'", type_name, facet_id);
+        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to publish facet '%s.%s'", type_name, facet_id);
         return false;
     }
 

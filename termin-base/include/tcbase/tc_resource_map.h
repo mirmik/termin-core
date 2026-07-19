@@ -56,6 +56,16 @@ TCBASE_API bool tc_resource_map_add_owned_key(
     void* resource
 );
 
+// Replace an existing value without removing its key first. If the key does
+// not exist, behaves like add(). The previous value is destroyed only after
+// the replacement is installed. Replacing a value with the same pointer is a
+// no-op for the destructor.
+TCBASE_API bool tc_resource_map_replace(
+    tc_resource_map* map,
+    const char* uuid,
+    void* resource
+);
+
 // Get resource by UUID, returns NULL if not found
 TCBASE_API void* tc_resource_map_get(const tc_resource_map* map, const char* uuid);
 

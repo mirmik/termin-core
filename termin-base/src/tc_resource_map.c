@@ -234,6 +234,31 @@ bool tc_resource_map_add_owned_key(tc_resource_map* map, char* key, void* resour
     return false;
 }
 
+bool tc_resource_map_replace(tc_resource_map* map, const char* uuid, void* resource) {
+    if (!map || !uuid) return false;
+
+    uint64_t hash = hash_string(uuid);
+    size_t mask = map->capacity - 1;
+    size_t idx = hash & mask;
+    for (size_t i = 0; i < map->capacity; i++) {
+        size_t probe = (idx + i) & mask;
+        resource_entry* entry = &map->entries[probe];
+        if (entry->state == ENTRY_EMPTY) {
+            break;
+        }
+        if (entry->state == ENTRY_OCCUPIED && strcmp(entry->key, uuid) == 0) {
+            void* previous = entry->value;
+            entry->value = resource;
+            if (map->destructor && previous && previous != resource) {
+                map->destructor(previous);
+            }
+            return true;
+        }
+    }
+
+    return tc_resource_map_add(map, uuid, resource);
+}
+
 void* tc_resource_map_get(const tc_resource_map* map, const char* uuid) {
     if (!map || !uuid) return NULL;
 

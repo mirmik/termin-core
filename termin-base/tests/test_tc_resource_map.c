@@ -72,9 +72,35 @@ GUARD_C_TEST(test_resource_map_failed_reserve_preserves_contents) {
     return 0;
 }
 
+GUARD_C_TEST(test_resource_map_replace_publishes_before_destroy) {
+    g_destroy_count = 0;
+    tc_resource_map* map = tc_resource_map_new(destroy_int);
+    GUARD_C_REQUIRE(map != NULL);
+    GUARD_C_REQUIRE(tc_resource_map_add(map, "replace", make_int(5)));
+
+    GUARD_C_REQUIRE(tc_resource_map_replace(map, "replace", make_int(8)));
+    GUARD_C_CHECK(g_destroy_count == 1);
+    GUARD_C_CHECK(*(int*)tc_resource_map_get(map, "replace") == 8);
+    GUARD_C_CHECK(tc_resource_map_count(map) == 1);
+
+    void* current = tc_resource_map_get(map, "replace");
+    GUARD_C_REQUIRE(tc_resource_map_replace(map, "replace", current));
+    GUARD_C_CHECK(g_destroy_count == 1);
+    GUARD_C_CHECK(tc_resource_map_get(map, "replace") == current);
+
+    GUARD_C_REQUIRE(tc_resource_map_replace(map, "insert", make_int(13)));
+    GUARD_C_CHECK(*(int*)tc_resource_map_get(map, "insert") == 13);
+    GUARD_C_CHECK(tc_resource_map_count(map) == 2);
+
+    tc_resource_map_free(map);
+    GUARD_C_CHECK(g_destroy_count == 3);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     GUARD_C_BEGIN_ARGS(argc, argv);
     GUARD_C_RUN(test_resource_map_reserve_and_owned_key_insert);
     GUARD_C_RUN(test_resource_map_failed_reserve_preserves_contents);
+    GUARD_C_RUN(test_resource_map_replace_publishes_before_destroy);
     return GUARD_C_END();
 }

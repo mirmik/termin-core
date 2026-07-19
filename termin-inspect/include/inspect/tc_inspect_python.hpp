@@ -138,7 +138,13 @@ public:
     static void add_button(InspectRegistry& reg, const std::string& type_name,
                            const std::string& path, const std::string& label, nb::object action);
 
-    // Register Python component fields
+    // Extract and validate Python fields without publishing them.
+    static InspectFacetBuilder build_python_fields(
+        const std::string& type_name,
+        nb::dict fields_dict
+    );
+
+    // Register Python component fields through a fully staged payload.
     static void register_python_fields(InspectRegistry& reg, const std::string& type_name,
                                         nb::dict fields_dict);
 
@@ -169,6 +175,16 @@ inline void InspectRegistry_add_button(InspectRegistry& reg, const std::string& 
 inline void InspectRegistry_register_python_fields(InspectRegistry& reg, const std::string& type_name,
                                                    nb::dict fields_dict) {
     InspectRegistryPythonExt::register_python_fields(reg, type_name, std::move(fields_dict));
+}
+
+inline InspectFacetBuilder build_python_inspect_facet(
+    const std::string& type_name,
+    nb::dict fields_dict
+) {
+    return InspectRegistryPythonExt::build_python_fields(
+        type_name,
+        std::move(fields_dict)
+    );
 }
 
 inline nb::object InspectRegistry_get(InspectRegistry& reg, void* obj,
