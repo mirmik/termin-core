@@ -24,13 +24,15 @@ def test_inspect_singleton_topology_addresses():
 
 def test_python_component_without_own_fields_inherits_base_inspect_fields():
     from termin.inspect import InspectRegistry, TypeBackend
-    from termin.scene import PythonComponent
+    from termin.scene import PythonComponent, publish_python_component
 
     registry = InspectRegistry.instance()
     registry.unregister_type("NoOwnInspectFieldsProbeComponent")
 
     class NoOwnInspectFieldsProbeComponent(PythonComponent):
         pass
+
+    publish_python_component(NoOwnInspectFieldsProbeComponent)
 
     field_paths = {field.path for field in registry.all_fields("NoOwnInspectFieldsProbeComponent")}
 

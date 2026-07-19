@@ -74,16 +74,19 @@ class Boss(Enemy):
     inspect_fields = {"phase": ("int", "Phase")}
 ```
 
-При определении `Boss` после runtime bootstrap система:
+Определение `Boss` сохраняет только декларативную metadata. При явной
+публикации builtin catalog или commit project module система:
 
 1. Обходит `Boss.__mro__` → находит `Enemy` как ближайший предок с `inspect_fields`
 2. Строит component descriptor с parent `Enemy`
 3. Добавляет в него только собственные поля `Boss` (без `hp`)
 4. Атомарно публикует factory, metadata и inspect facet
 
-Если модуль импортирован до bootstrap, определение класса запоминается и
-публикуется функцией `restore_python_components()` после регистрации корневых
-типов. Сам Python-класс не создаёт отсутствующего родителя.
+Импорт и определение класса не меняют component/inspect registries. Builtin
+классы публикуются явным bootstrap после native roots, а классы project module
+— одной транзакцией после успешного импорта всех package roots. Родители
+публикуются раньше потомков; отказ оставляет оба registry без частичного
+descriptor.
 
 ## Разрешение полей
 
