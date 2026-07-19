@@ -1,6 +1,17 @@
 import sys
 
+import pytest
+
 from termin.inspect import _inspect_native as inspect_canonical
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _component_runtime():
+    import termin.bootstrap
+
+    termin.bootstrap.bootstrap_player()
+    yield
+    termin.bootstrap.shutdown_player()
 
 
 def test_inspect_singleton_topology_addresses():

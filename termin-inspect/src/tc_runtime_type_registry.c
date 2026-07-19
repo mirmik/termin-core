@@ -81,6 +81,8 @@ struct tc_runtime_type_descriptor {
     tc_resource_map* facets;
     tc_runtime_type_record* prepared_record;
     char* prepared_record_key;
+    bool allow_unowned_shell_adoption;
+    bool allow_same_owner_replacement;
     bool valid;
 };
 
@@ -314,6 +316,34 @@ bool tc_runtime_type_descriptor_add_facet(
     return true;
 }
 
+bool tc_runtime_type_descriptor_allow_unowned_shell_adoption(
+    tc_runtime_type_descriptor* descriptor
+) {
+    if (!descriptor || !descriptor->valid) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] cannot enable shell adoption on an invalid descriptor"
+        );
+        return false;
+    }
+    descriptor->allow_unowned_shell_adoption = true;
+    return true;
+}
+
+bool tc_runtime_type_descriptor_allow_same_owner_replacement(
+    tc_runtime_type_descriptor* descriptor
+) {
+    if (!descriptor || !descriptor->valid) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] cannot enable same-owner replacement on an invalid descriptor"
+        );
+        return false;
+    }
+    descriptor->allow_same_owner_replacement = true;
+    return true;
+}
+
 void tc_runtime_type_descriptor_destroy(tc_runtime_type_descriptor* descriptor) {
     if (!descriptor) {
         return;
@@ -336,6 +366,15 @@ bool tc_runtime_type_registry_commit_descriptor(
 
     bool committed = false;
     tc_runtime_type_record* existing = find_record(descriptor->name);
+    const bool can_adopt_unowned_shell =
+        existing && !existing->tombstoned &&
+        descriptor->allow_unowned_shell_adoption &&
+        !existing->owner && existing->instance_count == 0;
+    const bool can_replace_same_owner =
+        existing && !existing->tombstoned &&
+        descriptor->allow_same_owner_replacement &&
+        existing->owner && strcmp(existing->owner, descriptor->owner) == 0 &&
+        existing->instance_count == 0;
     if (!descriptor->valid || !descriptor_parent_is_valid(descriptor)) {
         tc_log(
             TC_LOG_ERROR,
@@ -343,7 +382,8 @@ bool tc_runtime_type_registry_commit_descriptor(
             descriptor->name,
             descriptor->owner
         );
-    } else if (existing && !existing->tombstoned) {
+    } else if (existing && !existing->tombstoned &&
+               !can_adopt_unowned_shell && !can_replace_same_owner) {
         tc_log(
             TC_LOG_ERROR,
             "[RuntimeTypeRegistry] active descriptor replacement rejected: type='%s' existing_owner='%s' incoming_owner='%s'",
@@ -351,6 +391,17 @@ bool tc_runtime_type_registry_commit_descriptor(
             existing->owner ? existing->owner : "<none>",
             descriptor->owner
         );
+    } else if (can_adopt_unowned_shell || can_replace_same_owner) {
+        tc_resource_map* replaced_facets = existing->facets;
+        existing->owner = descriptor->owner;
+        existing->parent = descriptor->parent;
+        existing->facets = descriptor->facets;
+        existing->generation++;
+        descriptor->facets = NULL;
+        if (replaced_facets) {
+            tc_resource_map_free(replaced_facets);
+        }
+        committed = true;
     } else if (existing &&
                (!existing->owner || strcmp(existing->owner, descriptor->owner) != 0)) {
         tc_log(

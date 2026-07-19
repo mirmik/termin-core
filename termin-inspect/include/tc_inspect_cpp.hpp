@@ -254,6 +254,22 @@ public:
     bool valid() const { return _payload && _error.empty(); }
     const std::string& error() const { return _error; }
 
+    const InspectFieldInfo* find_field(const std::string& path) const {
+        if (!_payload) return nullptr;
+        for (const InspectFieldInfo& field : _payload->fields) {
+            if (field.path == path) return &field;
+        }
+        return nullptr;
+    }
+
+    const InspectFieldInfo* find_field(
+        const std::string& requested_type,
+        const std::string& path
+    ) const {
+        if (requested_type != type_name()) return nullptr;
+        return find_field(path);
+    }
+
     bool set_backend(TypeBackend backend) {
         if (!valid()) return false;
         switch (backend) {
@@ -341,6 +357,159 @@ public:
                     path.c_str(),
                     kind.c_str()
                 );
+                return false;
+            }
+        };
+        return add_field(std::move(info));
+    }
+
+    template<typename C, typename T, typename... RangeArgs>
+    bool add(
+        const char* type_name,
+        T C::*member,
+        const char* path,
+        const char* label,
+        const char* kind,
+        RangeArgs&&... range_args
+    ) {
+        return add<C, T>(member, inspect_field_spec(
+            type_name, path, label, kind, std::forward<RangeArgs>(range_args)...));
+    }
+
+    template<typename C, typename T, typename GetterFn, typename SetterFn>
+    bool add_with_callbacks(
+        const InspectFieldSpec& spec,
+        GetterFn getter_fn,
+        SetterFn setter_fn
+    ) {
+        return add_with_callbacks<C, T>(
+            spec.type_name, spec.path, spec.label, spec.kind,
+            std::move(getter_fn), std::move(setter_fn), spec.min, spec.max, spec.step);
+    }
+
+    template<typename C, typename T, typename GetterFn, typename SetterFn, typename... RangeArgs>
+    bool add_with_callbacks(
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind,
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        RangeArgs&&... range_args
+    ) {
+        InspectFieldInfo info = make_inspect_field_info(inspect_field_spec(
+            type_name, path, label, kind, std::forward<RangeArgs>(range_args)...));
+        const std::string kind_copy = info.kind;
+        const std::string type_copy = this->type_name();
+        const std::string path_copy = info.path;
+        info.getter = [getter_fn = std::move(getter_fn), kind_copy, type_copy, path_copy](void* obj) {
+            T value = getter_fn(static_cast<C*>(obj));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(value), type_copy, path_copy);
+        };
+        info.setter = [setter_fn = std::move(setter_fn), kind_copy, type_copy, path_copy](
+            void* obj, tc_value value, void* context) -> bool {
+            std::any decoded = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+            if (!decoded.has_value()) return false;
+            try {
+                setter_fn(static_cast<C*>(obj), std::any_cast<T>(decoded));
+                return true;
+            } catch (const std::bad_any_cast&) {
+                tc_log(TC_LOG_ERROR, "[Inspect] staged field '%s.%s' kind '%s' returned incompatible type",
+                       type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
+                return false;
+            }
+        };
+        return add_field(std::move(info));
+    }
+
+    template<typename C, typename T, typename GetterFn, typename SetterFn, typename... FlagArgs>
+    bool add_with_accessors(
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind,
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        FlagArgs&&... flag_args
+    ) {
+        InspectFieldSpec spec = inspect_accessor_field_spec(
+            type_name, path, label, kind, std::forward<FlagArgs>(flag_args)...);
+        InspectFieldInfo info = make_inspect_field_info(spec);
+        const std::string kind_copy = info.kind;
+        const std::string type_copy = this->type_name();
+        const std::string path_copy = info.path;
+        info.getter = [getter_fn = std::move(getter_fn), kind_copy, type_copy, path_copy](void* obj) {
+            T value = getter_fn(static_cast<C*>(obj));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(value), type_copy, path_copy);
+        };
+        info.setter = [setter_fn = std::move(setter_fn), kind_copy](
+            void* obj, tc_value value, void* context) -> bool {
+            std::any decoded = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+            if (!decoded.has_value()) return false;
+            try {
+                setter_fn(static_cast<C*>(obj), std::any_cast<T>(decoded));
+                return true;
+            } catch (const std::bad_any_cast&) {
+                return false;
+            }
+        };
+        return add_field(std::move(info));
+    }
+
+    template<typename C, typename GetterFn, typename SetterFn>
+    bool add_serializable(
+        const char* path,
+        GetterFn getter_fn,
+        SetterFn setter_fn
+    ) {
+        InspectFieldInfo info;
+        info.path = path;
+        info.label = path;
+        info.is_inspectable = false;
+        info.getter = [getter_fn = std::move(getter_fn)](void* obj) {
+            return getter_fn(static_cast<C*>(obj));
+        };
+        info.setter = [setter_fn = std::move(setter_fn)](
+            void* obj, tc_value value, void*) -> bool {
+            setter_fn(static_cast<C*>(obj), &value);
+            return true;
+        };
+        return add_field(std::move(info));
+    }
+
+    template<typename C, typename T, typename GetterFn, typename SetterFn>
+    bool add_with_accessor_choices(
+        const char* type_name,
+        const char* path,
+        const char* label,
+        const char* kind,
+        GetterFn getter_fn,
+        SetterFn setter_fn,
+        std::initializer_list<std::pair<const char*, const char*>> choices
+    ) {
+        InspectFieldInfo info = make_inspect_field_info(
+            inspect_field_spec(type_name, path, label, kind));
+        for (const auto& [value, choice_label] : choices) {
+            info.choices.push_back(EnumChoice{value, choice_label});
+        }
+        const std::string kind_copy = info.kind;
+        const std::string type_copy = this->type_name();
+        const std::string path_copy = info.path;
+        info.getter = [getter_fn = std::move(getter_fn), kind_copy, type_copy, path_copy](void* obj) {
+            T value = getter_fn(static_cast<C*>(obj));
+            return KindRegistryCpp::instance().serialize_field(
+                kind_copy, std::any(value), type_copy, path_copy);
+        };
+        info.setter = [setter_fn = std::move(setter_fn), kind_copy](
+            void* obj, tc_value value, void* context) -> bool {
+            std::any decoded = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+            if (!decoded.has_value()) return false;
+            try {
+                setter_fn(static_cast<C*>(obj), std::any_cast<T>(decoded));
+                return true;
+            } catch (const std::bad_any_cast&) {
                 return false;
             }
         };
@@ -675,6 +844,18 @@ public:
         return tc_runtime_type_registry_has_facet(
             type_name.c_str(),
             TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
+    }
+
+    bool is_empty_unowned_type_shell(const std::string& type_name) const {
+        tc_runtime_type_record_info info{};
+        if (!tc_runtime_type_registry_get_info(type_name.c_str(), &info) ||
+            info.tombstoned || info.owner != nullptr || info.instance_count != 0) {
+            return false;
+        }
+        const InspectFacetPayload* payload = inspect_facet(type_name);
+        return info.facet_count == 0 ||
+            (info.facet_count == 1 && payload &&
+             payload->fields.empty() && !payload->has_metadata);
     }
 
     void set_type_parent(const std::string& type_name, const std::string& parent_name) {
@@ -1210,6 +1391,27 @@ void register_inspect_field(
             std::forward<RangeArgs>(range_args)...));
 }
 
+template<typename C, typename T, typename... RangeArgs>
+bool stage_inspect_field(
+    InspectFacetBuilder& builder,
+    T C::*member,
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind,
+    RangeArgs&&... range_args)
+{
+    return stage_inspect_field<C, T>(
+        builder,
+        member,
+        inspect_field_spec(
+            type_name,
+            path,
+            label,
+            kind,
+            std::forward<RangeArgs>(range_args)...));
+}
+
 template<typename C, typename T>
 void register_inspect_field_choices(
     T C::*member,
@@ -1347,6 +1549,19 @@ void register_inspect_button_method(
             }
         }
     );
+}
+
+template<typename C>
+bool stage_inspect_button_method(
+    InspectFacetBuilder& builder,
+    const char* path,
+    const char* label,
+    void (C::*method)()
+) {
+    return builder.add_button(path, label, [method](void* obj, const InspectContext&) {
+        auto* self = static_cast<C*>(obj);
+        if (self) (self->*method)();
+    });
 }
 
 template<typename C, typename T>
