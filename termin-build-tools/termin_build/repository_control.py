@@ -1210,15 +1210,69 @@ def _cmd_plan(
     return 0
 
 
+def _ctest_discovery_command(build_dir: Path, config: str | None) -> list[str]:
+    command = ["ctest", "--test-dir", str(build_dir)]
+    if config:
+        command.extend(("-C", config))
+    command.append("--show-only=json-v1")
+    return command
+
+
+def _load_configured_native_sources(build_dir: Path) -> list[dict[str, str]]:
+    compile_commands_path = build_dir / "compile_commands.json"
+    if compile_commands_path.exists():
+        try:
+            value = json.loads(compile_commands_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ManifestError(
+                f"invalid compile commands in {compile_commands_path}: {exc}"
+            ) from exc
+        if not isinstance(value, list):
+            raise ManifestError(f"compile commands root must be an array: {compile_commands_path}")
+        return value
+
+    reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
+    indexes = sorted(reply_dir.glob("index-*.json"))
+    if not indexes:
+        raise ManifestError(
+            "configured native source inventory is missing; enable "
+            "CMAKE_EXPORT_COMPILE_COMMANDS or request CMake file-api codemodel-v2 "
+            f"before configuring {build_dir}"
+        )
+    try:
+        index = json.loads(indexes[-1].read_text(encoding="utf-8"))
+        codemodel_ref = index["reply"]["codemodel-v2"]
+        codemodel = json.loads(
+            (reply_dir / codemodel_ref["jsonFile"]).read_text(encoding="utf-8")
+        )
+        source_root = Path(codemodel["paths"]["source"])
+        sources: set[str] = set()
+        for configuration in codemodel["configurations"]:
+            for target_ref in configuration.get("targets", []):
+                target = json.loads(
+                    (reply_dir / target_ref["jsonFile"]).read_text(encoding="utf-8")
+                )
+                for source_entry in target.get("sources", []):
+                    source_path = source_entry.get("path")
+                    if not isinstance(source_path, str):
+                        continue
+                    path = Path(source_path)
+                    sources.add(str(path if path.is_absolute() else source_root / path))
+    except (KeyError, OSError, TypeError, json.JSONDecodeError) as exc:
+        raise ManifestError(f"invalid CMake file-api codemodel in {reply_dir}: {exc}") from exc
+    return [{"file": source} for source in sorted(sources)]
+
+
 def _cmd_check_ctest(
     repo_root: Path,
     build_dir: Path,
     profile: str,
     capabilities: tuple[str, ...],
+    config: str | None = None,
 ) -> int:
     catalog = _load_valid_catalog(repo_root)
     result = subprocess.run(
-        ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+        _ctest_discovery_command(build_dir, config),
         check=False,
         capture_output=True,
         text=True,
@@ -1232,16 +1286,7 @@ def _cmd_check_ctest(
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
-    compile_commands_path = build_dir / "compile_commands.json"
-    try:
-        compile_commands = json.loads(compile_commands_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ManifestError(
-            f"compile commands are missing: {compile_commands_path}; configure with "
-            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
-        ) from exc
-    except json.JSONDecodeError as exc:
-        raise ManifestError(f"invalid compile commands in {compile_commands_path}: {exc}") from exc
+    compile_commands = _load_configured_native_sources(build_dir)
     errors = validate_ctest_inventory(catalog, payload)
     errors.extend(
         validate_native_compile_inventory(
@@ -1263,10 +1308,11 @@ def _cmd_ctest_plan(
     json_output: bool,
     regex_output: bool,
     plan_file: Path | None,
+    config: str | None = None,
 ) -> int:
     catalog = _load_valid_catalog(repo_root)
     result = subprocess.run(
-        ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+        _ctest_discovery_command(build_dir, config),
         check=False,
         capture_output=True,
         text=True,
@@ -1288,6 +1334,8 @@ def _cmd_ctest_plan(
     plan = build_ctest_execution_plan(
         catalog, payload, profile, platform, capabilities, suite_ids
     )
+    if config:
+        plan["configuration"] = config
     if regex_output:
         names = [entry["name"] for entry in plan["selected"]]
         print("^(" + "|".join(re.escape(name) for name in names) + ")$")
@@ -1344,6 +1392,7 @@ def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path)
         "profile": selection.get("profile"),
         "platform": selection.get("platform"),
         "capabilities": selection.get("capabilities", []),
+        "configuration": selection.get("configuration"),
         "selected": selection["selected"],
         "executed": executed,
         "skipped": [*selection.get("skipped", []), *runtime_skipped],
@@ -1711,6 +1760,9 @@ def main(argv: list[str] | None = None) -> int:
     ctest_parser.add_argument("--build-dir", type=Path, required=True)
     ctest_parser.add_argument("--profile", required=True)
     ctest_parser.add_argument("--capability", action="append", default=[])
+    ctest_parser.add_argument(
+        "--config", help="CTest multi-config configuration, for example Release."
+    )
 
     ctest_plan_parser = subparsers.add_parser(
         "ctest-plan", help="Select configured CTest registrations from the planner."
@@ -1723,6 +1775,9 @@ def main(argv: list[str] | None = None) -> int:
     ctest_plan_parser.add_argument("--json", action="store_true", dest="json_output")
     ctest_plan_parser.add_argument("--regex", action="store_true", dest="regex_output")
     ctest_plan_parser.add_argument("--plan-file", type=Path)
+    ctest_plan_parser.add_argument(
+        "--config", help="CTest multi-config configuration, for example Release."
+    )
 
     ctest_report_parser = subparsers.add_parser(
         "report-ctest", help="Write an execution manifest from CTest JUnit output."
@@ -1793,6 +1848,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.build_dir.resolve(),
                 args.profile,
                 tuple(args.capability),
+                args.config,
             )
         if args.command == "ctest-plan":
             return _cmd_ctest_plan(
@@ -1804,6 +1860,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.json_output,
                 args.regex_output,
                 args.plan_file.resolve() if args.plan_file else None,
+                args.config,
             )
         if args.command == "report-ctest":
             return _cmd_report_ctest(

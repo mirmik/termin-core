@@ -330,6 +330,50 @@ def test_ctest_inventory_requires_standard_labels_and_registered_module(
     ]
 
 
+def test_ctest_discovery_command_supports_multi_config_generators(tmp_path: Path) -> None:
+    assert repository_control._ctest_discovery_command(tmp_path, None) == [
+        "ctest",
+        "--test-dir",
+        str(tmp_path),
+        "--show-only=json-v1",
+    ]
+    assert repository_control._ctest_discovery_command(tmp_path, "Release") == [
+        "ctest",
+        "--test-dir",
+        str(tmp_path),
+        "-C",
+        "Release",
+        "--show-only=json-v1",
+    ]
+
+
+def test_configured_native_sources_fall_back_to_cmake_file_api(tmp_path: Path) -> None:
+    reply = tmp_path / ".cmake" / "api" / "v1" / "reply"
+    reply.mkdir(parents=True)
+    source_root = tmp_path / "source"
+    _write_json(
+        reply / "index-1.json",
+        {"reply": {"codemodel-v2": {"jsonFile": "codemodel.json"}}},
+    )
+    _write_json(
+        reply / "codemodel.json",
+        {
+            "paths": {"source": str(source_root)},
+            "configurations": [
+                {"name": "Release", "targets": [{"jsonFile": "target.json"}]}
+            ],
+        },
+    )
+    _write_json(
+        reply / "target.json",
+        {"sources": [{"path": "alpha/tests/test_native.cpp"}]},
+    )
+
+    assert repository_control._load_configured_native_sources(tmp_path) == [
+        {"file": str(source_root / "alpha/tests/test_native.cpp")}
+    ]
+
+
 def test_ctest_plan_reports_capability_exclusion_reason(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
     manifest = repo / repository_control.TEST_MANIFEST
@@ -728,6 +772,7 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
             "schema": 1,
             "profile": "pr",
             "platform": "linux",
+            "configuration": "Release",
             "capabilities": ["host"],
             "selected": [
                 {"name": "passes", "module": "alpha", "capabilities": ["host"]},
@@ -760,6 +805,7 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
         "runtime_skip",
     ]
     assert report["failed"] == []
+    assert report["configuration"] == "Release"
 
 
 def test_verify_plan_execution_requires_python_and_ctest_coverage(
