@@ -60,6 +60,16 @@ TC_API bool tc_runtime_type_descriptor_add_facet(
     tc_runtime_type_facet_prepare_unload_fn prepare_unload,
     uint32_t abi_version
 );
+// Permit this descriptor to replace an active ownerless shell. Callers must
+// opt in only after verifying that the existing type carries no owned data.
+TC_API bool tc_runtime_type_descriptor_allow_unowned_shell_adoption(
+    tc_runtime_type_descriptor* descriptor
+);
+// Permit allocation-free replacement of an active descriptor owned by the
+// same subsystem. Replacement is rejected while instances remain linked.
+TC_API bool tc_runtime_type_descriptor_allow_same_owner_replacement(
+    tc_runtime_type_descriptor* descriptor
+);
 TC_API void tc_runtime_type_descriptor_destroy(
     tc_runtime_type_descriptor* descriptor
 );
