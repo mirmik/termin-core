@@ -77,9 +77,6 @@ TC_API bool tc_runtime_type_registry_commit_descriptor(
     tc_runtime_type_descriptor* descriptor
 );
 
-TC_API void tc_runtime_type_registry_set_registration_owner(const char* owner);
-TC_API const char* tc_runtime_type_registry_get_registration_owner(void);
-
 TC_API bool tc_runtime_type_registry_has_type(const char* type_name);
 TC_API bool tc_runtime_type_registry_ensure_type(const char* type_name);
 TC_API void tc_runtime_type_registry_unregister_type(const char* type_name);

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from tcbase import log
 from termin.inspect._inspect_native import KindRegistry as _KindRegistry
 
 
 class KindRegistry:
     """Registry for kind serialization handlers."""
+
+    _python_owners: dict[str, str] = {}
 
     @staticmethod
     def instance() -> _KindRegistry:
@@ -15,32 +16,46 @@ class KindRegistry:
         return _KindRegistry.instance()
 
     @staticmethod
-    def register_python(name: str, serialize=None, deserialize=None):
+    def register_python(name: str, serialize=None, deserialize=None, *, owner: str | None = None):
         """Register Python handlers for a kind."""
+        serializer = serialize or (lambda value: None)
+        if owner is None:
+            try:
+                from termin_modules.module_context import owner_for_python_module
+            except ModuleNotFoundError as exc:
+                if exc.name not in ("termin_modules", "termin_modules.module_context"):
+                    from tcbase import log
+
+                    log.error("Failed to load module ownership context", exc_info=True)
+                owner = "termin-inspect-python"
+            except Exception:
+                from tcbase import log
+
+                log.error("Failed to load module ownership context", exc_info=True)
+                owner = "termin-inspect-python"
+            else:
+                owner = (
+                    owner_for_python_module(serializer.__module__)
+                    or "termin-inspect-python"
+                )
         _KindRegistry.instance().register_python(
             name,
-            serialize or (lambda value: None),
+            serializer,
             deserialize or (lambda value: None),
         )
-        try:
-            from termin_modules.module_context import record_python_kind
-        except ModuleNotFoundError as exc:
-            if exc.name not in ("termin_modules", "termin_modules.module_context"):
-                log.error("Failed to load module ownership context", exc_info=True)
-            return
-        except Exception:
-            log.error("Failed to load module ownership context", exc_info=True)
-            return
-
-        try:
-            record_python_kind(name)
-        except Exception:
-            log.error(f"Failed to record module ownership for Python kind {name}", exc_info=True)
+        KindRegistry._python_owners[name] = owner
 
     @staticmethod
     def unregister_python(name: str):
         """Unregister Python handlers for a kind."""
+        KindRegistry._python_owners.pop(name, None)
         return _KindRegistry.instance().unregister_python(name)
+
+    @staticmethod
+    def unregister_owner(owner: str) -> None:
+        for name, registered_owner in tuple(KindRegistry._python_owners.items()):
+            if registered_owner == owner:
+                KindRegistry.unregister_python(name)
 
     @staticmethod
     def register_type(type_, kind_name: str):

@@ -358,11 +358,6 @@ NB_MODULE(_inspect_native, m) {
             tc_value_free(&value);
         }, nb::arg("type_name"), nb::arg("metadata"),
            "Set free-form type metadata dict")
-        .def("set_registration_owner", &InspectRegistry::set_registration_owner,
-             nb::arg("owner"),
-             "Set current module/type owner for subsequent inspect registrations")
-        .def("registration_owner", &InspectRegistry::registration_owner,
-             "Get current module/type owner for inspect registrations")
         .def("owner_of", &InspectRegistry::owner_of,
              nb::arg("type_name"),
              "Get owner module id for a runtime type")

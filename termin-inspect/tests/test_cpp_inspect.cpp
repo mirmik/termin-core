@@ -323,23 +323,30 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     tc_runtime_type_registry_unregister_type("RuntimeTypeBaseProbe");
     tc_runtime_type_registry_unregister_type("RuntimeTypeDerivedProbe");
 
-    inspect.set_registration_owner("runtime_type_probe_module");
-    inspect.add<CppBaseComponent, int>(
-        "RuntimeTypeBaseProbe",
+    tc::InspectFacetBuilder base_inspect("RuntimeTypeBaseProbe");
+    CHECK((base_inspect.add<CppBaseComponent, int>(
         &CppBaseComponent::hp,
-        "hp",
-        "HP",
-        "int"
-    );
-    inspect.add<CppDerivedComponent, std::string>(
-        "RuntimeTypeDerivedProbe",
+        tc::InspectFieldSpec{"RuntimeTypeBaseProbe", "hp", "HP", "int"}
+    )));
+    auto* base_descriptor = tc_runtime_type_descriptor_create(
+        "RuntimeTypeBaseProbe", "runtime_type_probe_module", nullptr);
+    REQUIRE(base_descriptor != nullptr);
+    CHECK(base_inspect.attach_to(base_descriptor));
+    CHECK(tc_runtime_type_registry_commit_descriptor(base_descriptor));
+
+    tc::InspectFacetBuilder derived_inspect("RuntimeTypeDerivedProbe");
+    CHECK((derived_inspect.add<CppDerivedComponent, std::string>(
         &CppDerivedComponent::title,
-        "title",
-        "Title",
-        "string"
-    );
-    inspect.set_type_parent("RuntimeTypeDerivedProbe", "RuntimeTypeBaseProbe");
-    inspect.set_registration_owner("");
+        tc::InspectFieldSpec{
+            "RuntimeTypeDerivedProbe", "title", "Title", "string"}
+    )));
+    auto* derived_descriptor = tc_runtime_type_descriptor_create(
+        "RuntimeTypeDerivedProbe",
+        "runtime_type_probe_module",
+        "RuntimeTypeBaseProbe");
+    REQUIRE(derived_descriptor != nullptr);
+    CHECK(derived_inspect.attach_to(derived_descriptor));
+    CHECK(tc_runtime_type_registry_commit_descriptor(derived_descriptor));
 
     CHECK(tc_runtime_type_registry_has_type("RuntimeTypeBaseProbe"));
     CHECK(tc_runtime_type_registry_has_type("RuntimeTypeDerivedProbe"));
@@ -415,16 +422,17 @@ TEST_CASE("Owner cleanup removes facets but keeps live instance tombstones") {
     tc_runtime_type_instance_link_init(&probe.link);
     probe.value = 71;
 
-    tc_runtime_type_registry_set_registration_owner(owner);
-    CHECK(tc_runtime_type_registry_ensure_type(type_name));
-    tc_runtime_type_registry_set_registration_owner("");
-    CHECK(tc_runtime_type_registry_set_facet(
-        type_name,
+    auto* descriptor = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
         "termin.test.instance_probe",
         new int(5),
         destroy_runtime_instance_probe_facet,
+        nullptr,
         1
     ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK(tc_runtime_type_registry_link_instance(type_name, &probe.link, &probe));
 
     CHECK_EQ(tc_runtime_type_registry_unregister_owner(owner), 1u);
@@ -449,18 +457,17 @@ TEST_CASE("Runtime type facet prepare unload receives context and can refuse cle
     g_destroyed_runtime_instance_probe_facets = 0;
     g_prepared_runtime_instance_probe_facets = 0;
 
-    tc_runtime_type_registry_set_registration_owner(owner);
-    CHECK(tc_runtime_type_registry_ensure_type(type_name));
-    tc_runtime_type_registry_set_registration_owner("");
-
-    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
-        type_name,
+    auto* descriptor = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
         "termin.test.prepare_probe",
         new int(10),
         destroy_runtime_instance_probe_facet,
         prepare_runtime_instance_probe_facet,
         1
     ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     int context_marker = 32;
     CHECK_EQ(
@@ -473,17 +480,17 @@ TEST_CASE("Runtime type facet prepare unload receives context and can refuse cle
 
     const char* refusing_type_name = "RuntimeTypePrepareRefuseProbe";
     tc_runtime_type_registry_unregister_type(refusing_type_name);
-    tc_runtime_type_registry_set_registration_owner(owner);
-    CHECK(tc_runtime_type_registry_ensure_type(refusing_type_name));
-    tc_runtime_type_registry_set_registration_owner("");
-    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
-        refusing_type_name,
+    descriptor = tc_runtime_type_descriptor_create(refusing_type_name, owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
         "termin.test.prepare_refuse_probe",
         new int(1),
         destroy_runtime_instance_probe_facet,
         refuse_runtime_instance_probe_facet,
         1
     ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     CHECK_EQ(tc_runtime_type_registry_unregister_owner_with_context(owner, nullptr), 0u);
     CHECK(tc_runtime_type_registry_has_type(refusing_type_name));
@@ -503,26 +510,28 @@ TEST_CASE("Runtime type owner unload prepares every record before atomic commit"
     g_destroyed_runtime_instance_probe_facets = 0;
     g_prepared_runtime_instance_probe_facets = 0;
 
-    tc_runtime_type_registry_set_registration_owner(owner);
-    CHECK(tc_runtime_type_registry_ensure_type(accepted_type));
-    CHECK(tc_runtime_type_registry_ensure_type(refused_type));
-    tc_runtime_type_registry_set_registration_owner("");
-    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
-        accepted_type,
+    auto* descriptor = tc_runtime_type_descriptor_create(accepted_type, owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
         "termin.test.atomic_accept",
         new int(1),
         destroy_runtime_instance_probe_facet,
         accept_runtime_instance_probe_facet,
         1
     ));
-    CHECK(tc_runtime_type_registry_set_facet_with_lifecycle(
-        refused_type,
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
+    descriptor = tc_runtime_type_descriptor_create(refused_type, owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
         "termin.test.atomic_refuse",
         new int(2),
         destroy_runtime_instance_probe_facet,
         refuse_runtime_instance_probe_facet,
         1
     ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     CHECK(!tc_runtime_type_registry_prepare_owner_unload(owner, nullptr));
     CHECK(tc_runtime_type_registry_has_type(accepted_type));

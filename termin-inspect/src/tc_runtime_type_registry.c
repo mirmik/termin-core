@@ -27,7 +27,6 @@ typedef struct tc_runtime_type_record {
 
 typedef struct tc_runtime_type_registry_storage {
     tc_resource_map* records;
-    const char* current_owner;
 } tc_runtime_type_registry_storage;
 
 static tc_runtime_type_registry_storage g_runtime_type_registry = {0};
@@ -481,7 +480,7 @@ static tc_runtime_type_record* ensure_record(const char* type_name) {
     }
 
     record->name = tc_intern_string(type_name);
-    record->owner = g_runtime_type_registry.current_owner;
+    record->owner = NULL;
     record->parent = NULL;
     record->generation = 1;
     record->facets = tc_resource_map_new(destroy_facet_record);
@@ -575,15 +574,6 @@ static bool prepare_record_unload(tc_runtime_type_record* record, void* context)
     prepare_unload_ctx ctx = { record->name, context, true };
     tc_resource_map_foreach(record->facets, prepare_facet_unload_bridge, &ctx);
     return ctx.ok;
-}
-
-void tc_runtime_type_registry_set_registration_owner(const char* owner) {
-    g_runtime_type_registry.current_owner =
-        (owner && owner[0]) ? tc_intern_string(owner) : NULL;
-}
-
-const char* tc_runtime_type_registry_get_registration_owner(void) {
-    return g_runtime_type_registry.current_owner;
 }
 
 bool tc_runtime_type_registry_has_type(const char* type_name) {
@@ -1239,5 +1229,4 @@ void tc_runtime_type_registry_clear(void) {
         tc_resource_map_free(g_runtime_type_registry.records);
         g_runtime_type_registry.records = NULL;
     }
-    g_runtime_type_registry.current_owner = NULL;
 }

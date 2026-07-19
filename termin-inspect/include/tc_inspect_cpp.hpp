@@ -585,8 +585,6 @@ class TC_INSPECT_API InspectRegistry {
 
     using InspectFacetPayload = detail::InspectFacetPayload;
 
-    std::string _current_registration_owner;
-
     bool type_exists(const std::string& type_name) const {
         return tc_runtime_type_registry_has_type(type_name.c_str());
     }
@@ -621,88 +619,11 @@ class TC_INSPECT_API InspectRegistry {
     }
 
     bool can_register_type_data(
-        const std::string& type_name,
-        bool type_existed_before,
-        const char* operation
+        const std::string&,
+        bool,
+        const char*
     ) const {
-        if (_current_registration_owner.empty()) {
-            return true;
-        }
-
-        const char* owner_c = tc_runtime_type_registry_get_owner(type_name.c_str());
-        std::string owner = owner_c ? owner_c : "";
-        if (!owner.empty()) {
-            if (owner == _current_registration_owner) {
-                return true;
-            }
-            tc_log(
-                TC_LOG_WARN,
-                "[Inspect] Ignoring %s for type '%s' from owner '%s': type is owned by '%s'",
-                operation,
-                type_name.c_str(),
-                _current_registration_owner.c_str(),
-                owner.c_str()
-            );
-            return false;
-        }
-
-        if (type_existed_before) {
-            if (can_adopt_unowned_shell(type_name, operation)) {
-                tc_log(
-                    TC_LOG_WARN,
-                    "[Inspect] Adopting empty unowned type shell '%s' for %s from owner '%s'",
-                    type_name.c_str(),
-                    operation,
-                    _current_registration_owner.c_str()
-                );
-                return true;
-            }
-            tc_log(
-                TC_LOG_WARN,
-                "[Inspect] Ignoring %s for existing unowned type '%s' from owner '%s'",
-                operation,
-                type_name.c_str(),
-                _current_registration_owner.c_str()
-            );
-            return false;
-        }
-
         return true;
-    }
-
-    void assign_current_owner(
-        const std::string& type_name,
-        bool type_existed_before,
-        bool allow_adopt_unowned_existing
-    ) {
-        if (_current_registration_owner.empty()) {
-            return;
-        }
-
-        const char* owner_c = tc_runtime_type_registry_get_owner(type_name.c_str());
-        std::string owner = owner_c ? owner_c : "";
-        if (!owner.empty()) {
-            if (owner != _current_registration_owner) {
-                tc_log(
-                    TC_LOG_WARN,
-                    "[Inspect] Keeping owner '%s' for type '%s'; current registration owner is '%s'",
-                    owner.c_str(),
-                    type_name.c_str(),
-                    _current_registration_owner.c_str()
-                );
-            }
-            return;
-        }
-
-        if (type_existed_before && !allow_adopt_unowned_existing) {
-            return;
-        }
-
-        tc_runtime_type_registry_set_owner(
-            type_name.c_str(),
-            _current_registration_owner.c_str(),
-            true
-        );
     }
 
     static void destroy_inspect_facet(void* payload) {
@@ -721,19 +642,17 @@ class TC_INSPECT_API InspectRegistry {
         }
 
         const InspectFacetPayload* committed = inspect_facet(type_name);
-        if (_current_registration_owner.empty()) {
-            if (committed) {
-                for (const InspectFieldInfo& existing : committed->fields) {
-                    if (existing.path == info.path) {
-                        tc_log(
-                            TC_LOG_DEBUG,
-                            "[Inspect] Ignoring unowned %s for existing field '%s.%s'",
-                            operation,
-                            type_name.c_str(),
-                            info.path.c_str()
-                        );
-                        return;
-                    }
+        if (committed) {
+            for (const InspectFieldInfo& existing : committed->fields) {
+                if (existing.path == info.path) {
+                    tc_log(
+                        TC_LOG_DEBUG,
+                        "[Inspect] Ignoring duplicate %s for existing field '%s.%s'",
+                        operation,
+                        type_name.c_str(),
+                        info.path.c_str()
+                    );
+                    return;
                 }
             }
         }
@@ -768,10 +687,6 @@ class TC_INSPECT_API InspectRegistry {
 
         const std::string type_name = builder.type_name();
         const bool existed_before = type_exists(type_name);
-        const bool adopt_unowned_shell =
-            existed_before &&
-            tc_runtime_type_registry_get_owner(type_name.c_str()) == nullptr &&
-            can_adopt_unowned_shell(type_name, operation);
         if (!can_register_type_data(type_name, existed_before, operation)) {
             return false;
         }
@@ -809,7 +724,6 @@ class TC_INSPECT_API InspectRegistry {
             return false;
         }
         payload.release();
-        assign_current_owner(type_name, existed_before, adopt_unowned_shell);
         return true;
     }
 
@@ -895,15 +809,6 @@ public:
                 tc_runtime_type_registry_unregister_type(type_name.c_str());
             }
         }
-    }
-
-    void set_registration_owner(const std::string& owner) {
-        _current_registration_owner = owner;
-        tc_runtime_type_registry_set_registration_owner(owner.c_str());
-    }
-
-    std::string registration_owner() const {
-        return _current_registration_owner;
     }
 
     std::string owner_of(const std::string& type_name) const {
