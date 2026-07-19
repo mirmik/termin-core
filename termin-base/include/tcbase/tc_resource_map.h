@@ -44,6 +44,18 @@ TCBASE_API void tc_resource_map_clear(tc_resource_map* map);
 // Returns false if UUID already exists
 TCBASE_API bool tc_resource_map_add(tc_resource_map* map, const char* uuid, void* resource);
 
+// Reserve enough table capacity for `additional` insertions without allocation.
+TCBASE_API bool tc_resource_map_reserve(tc_resource_map* map, size_t additional);
+
+// Add a resource using a caller-allocated key. The map takes ownership of key
+// only on success. Call tc_resource_map_reserve() first when allocation-free
+// publication is required.
+TCBASE_API bool tc_resource_map_add_owned_key(
+    tc_resource_map* map,
+    char* key,
+    void* resource
+);
+
 // Get resource by UUID, returns NULL if not found
 TCBASE_API void* tc_resource_map_get(const tc_resource_map* map, const char* uuid);
 

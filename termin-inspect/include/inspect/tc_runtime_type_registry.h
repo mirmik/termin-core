@@ -25,6 +25,8 @@ typedef bool (*tc_runtime_type_instance_iter_fn)(
     void* user_data
 );
 
+typedef struct tc_runtime_type_descriptor tc_runtime_type_descriptor;
+
 typedef struct tc_runtime_type_instance_link {
     tc_dlist_node node;
     const char* type_name;
@@ -41,6 +43,29 @@ typedef struct tc_runtime_type_record_info {
     size_t instance_count;
     bool tombstoned;
 } tc_runtime_type_record_info;
+
+// Build one complete runtime type outside the live registry. The descriptor
+// owns every facet payload accepted by add_facet. commit() consumes the
+// descriptor on both success and failure.
+TC_API tc_runtime_type_descriptor* tc_runtime_type_descriptor_create(
+    const char* type_name,
+    const char* owner,
+    const char* parent_name
+);
+TC_API bool tc_runtime_type_descriptor_add_facet(
+    tc_runtime_type_descriptor* descriptor,
+    const char* facet_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy,
+    tc_runtime_type_facet_prepare_unload_fn prepare_unload,
+    uint32_t abi_version
+);
+TC_API void tc_runtime_type_descriptor_destroy(
+    tc_runtime_type_descriptor* descriptor
+);
+TC_API bool tc_runtime_type_registry_commit_descriptor(
+    tc_runtime_type_descriptor* descriptor
+);
 
 TC_API void tc_runtime_type_registry_set_registration_owner(const char* owner);
 TC_API const char* tc_runtime_type_registry_get_registration_owner(void);

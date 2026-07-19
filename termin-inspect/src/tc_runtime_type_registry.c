@@ -32,6 +32,18 @@ typedef struct tc_runtime_type_registry_storage {
 
 static tc_runtime_type_registry_storage g_runtime_type_registry = {0};
 
+static tc_runtime_type_record* find_record(const char* type_name);
+
+struct tc_runtime_type_descriptor {
+    const char* name;
+    const char* owner;
+    const char* parent;
+    tc_resource_map* facets;
+    tc_runtime_type_record* prepared_record;
+    char* prepared_record_key;
+    bool valid;
+};
+
 static void destroy_facet_record(void* payload) {
     tc_runtime_type_facet_record* facet = (tc_runtime_type_facet_record*)payload;
     if (!facet) {
@@ -67,10 +79,64 @@ static void destroy_type_record(void* payload) {
     free(record);
 }
 
+static char* duplicate_string(const char* value) {
+    if (!value) {
+        return NULL;
+    }
+    size_t size = strlen(value) + 1;
+    char* copy = (char*)malloc(size);
+    if (copy) {
+        memcpy(copy, value, size);
+    }
+    return copy;
+}
+
 static void ensure_registry_initialized(void) {
     if (!g_runtime_type_registry.records) {
         g_runtime_type_registry.records = tc_resource_map_new(destroy_type_record);
     }
+}
+
+static bool descriptor_parent_is_valid(const tc_runtime_type_descriptor* descriptor) {
+    if (!descriptor->parent) {
+        return true;
+    }
+    const char* candidate = descriptor->parent;
+    size_t steps = 0;
+    size_t max_steps = tc_runtime_type_registry_type_count() + 1;
+    while (candidate) {
+        if (steps++ >= max_steps) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[RuntimeTypeRegistry] descriptor rejected: existing parent cycle while committing type '%s' owner '%s'",
+                descriptor->name,
+                descriptor->owner
+            );
+            return false;
+        }
+        if (strcmp(candidate, descriptor->name) == 0) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[RuntimeTypeRegistry] descriptor rejected: parent cycle for type '%s' owner '%s'",
+                descriptor->name,
+                descriptor->owner
+            );
+            return false;
+        }
+        tc_runtime_type_record* parent = find_record(candidate);
+        if (!parent || parent->tombstoned) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[RuntimeTypeRegistry] descriptor rejected: missing parent '%s' for type '%s' owner '%s'",
+                candidate,
+                descriptor->name,
+                descriptor->owner
+            );
+            return false;
+        }
+        candidate = parent->parent;
+    }
+    return true;
 }
 
 static tc_runtime_type_record* find_record(const char* type_name) {
@@ -81,6 +147,223 @@ static tc_runtime_type_record* find_record(const char* type_name) {
         g_runtime_type_registry.records,
         type_name
     );
+}
+
+tc_runtime_type_descriptor* tc_runtime_type_descriptor_create(
+    const char* type_name,
+    const char* owner,
+    const char* parent_name
+) {
+    if (!type_name || !type_name[0] || !owner || !owner[0]) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] descriptor requires non-empty type and explicit owner"
+        );
+        return NULL;
+    }
+
+    tc_runtime_type_descriptor* descriptor =
+        (tc_runtime_type_descriptor*)calloc(1, sizeof(tc_runtime_type_descriptor));
+    if (!descriptor) {
+        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to allocate descriptor for '%s'", type_name);
+        return NULL;
+    }
+    descriptor->name = tc_intern_string(type_name);
+    descriptor->owner = tc_intern_string(owner);
+    descriptor->parent = (parent_name && parent_name[0])
+        ? tc_intern_string(parent_name)
+        : NULL;
+    descriptor->facets = tc_resource_map_new(destroy_facet_record);
+    descriptor->prepared_record =
+        (tc_runtime_type_record*)calloc(1, sizeof(tc_runtime_type_record));
+    descriptor->prepared_record_key = duplicate_string(type_name);
+    descriptor->valid = descriptor->name && descriptor->owner &&
+        (!(parent_name && parent_name[0]) || descriptor->parent) &&
+        descriptor->facets && descriptor->prepared_record && descriptor->prepared_record_key;
+
+    ensure_registry_initialized();
+    if (!g_runtime_type_registry.records ||
+        !tc_resource_map_reserve(g_runtime_type_registry.records, 1)) {
+        descriptor->valid = false;
+    }
+    if (!descriptor->valid) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to preallocate descriptor for type '%s' owner '%s'",
+            type_name,
+            owner
+        );
+        tc_runtime_type_descriptor_destroy(descriptor);
+        return NULL;
+    }
+    return descriptor;
+}
+
+bool tc_runtime_type_descriptor_add_facet(
+    tc_runtime_type_descriptor* descriptor,
+    const char* facet_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy,
+    tc_runtime_type_facet_prepare_unload_fn prepare_unload,
+    uint32_t abi_version
+) {
+    if (!descriptor || !descriptor->valid || !facet_id || !facet_id[0] || abi_version == 0) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] descriptor facet rejected: type='%s' owner='%s' facet='%s' abi=%u",
+            descriptor && descriptor->name ? descriptor->name : "<unknown>",
+            descriptor && descriptor->owner ? descriptor->owner : "<unknown>",
+            facet_id ? facet_id : "<unknown>",
+            abi_version
+        );
+        if (destroy && payload) {
+            destroy(payload);
+        }
+        if (descriptor) {
+            descriptor->valid = false;
+        }
+        return false;
+    }
+    if (tc_resource_map_contains(descriptor->facets, facet_id)) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] duplicate descriptor facet: type='%s' owner='%s' facet='%s'",
+            descriptor->name,
+            descriptor->owner,
+            facet_id
+        );
+        if (destroy && payload) {
+            destroy(payload);
+        }
+        descriptor->valid = false;
+        return false;
+    }
+
+    tc_runtime_type_facet_record* facet =
+        (tc_runtime_type_facet_record*)calloc(1, sizeof(tc_runtime_type_facet_record));
+    if (!facet) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to allocate descriptor facet '%s.%s' owner '%s'",
+            descriptor->name,
+            facet_id,
+            descriptor->owner
+        );
+        if (destroy && payload) {
+            destroy(payload);
+        }
+        descriptor->valid = false;
+        return false;
+    }
+    facet->payload = payload;
+    facet->destroy = destroy;
+    facet->prepare_unload = prepare_unload;
+    facet->abi_version = abi_version;
+    if (!tc_resource_map_add(descriptor->facets, facet_id, facet)) {
+        destroy_facet_record(facet);
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to stage descriptor facet '%s.%s' owner '%s'",
+            descriptor->name,
+            facet_id,
+            descriptor->owner
+        );
+        descriptor->valid = false;
+        return false;
+    }
+    return true;
+}
+
+void tc_runtime_type_descriptor_destroy(tc_runtime_type_descriptor* descriptor) {
+    if (!descriptor) {
+        return;
+    }
+    if (descriptor->facets) {
+        tc_resource_map_free(descriptor->facets);
+    }
+    free(descriptor->prepared_record);
+    free(descriptor->prepared_record_key);
+    free(descriptor);
+}
+
+bool tc_runtime_type_registry_commit_descriptor(
+    tc_runtime_type_descriptor* descriptor
+) {
+    if (!descriptor) {
+        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] cannot commit a null descriptor");
+        return false;
+    }
+
+    bool committed = false;
+    tc_runtime_type_record* existing = find_record(descriptor->name);
+    if (!descriptor->valid || !descriptor_parent_is_valid(descriptor)) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] descriptor commit rejected: type='%s' owner='%s'",
+            descriptor->name,
+            descriptor->owner
+        );
+    } else if (existing && !existing->tombstoned) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] active descriptor replacement rejected: type='%s' existing_owner='%s' incoming_owner='%s'",
+            descriptor->name,
+            existing->owner ? existing->owner : "<none>",
+            descriptor->owner
+        );
+    } else if (existing &&
+               (!existing->owner || strcmp(existing->owner, descriptor->owner) != 0)) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] tombstone owner conflict: type='%s' existing_owner='%s' incoming_owner='%s'",
+            descriptor->name,
+            existing->owner ? existing->owner : "<none>",
+            descriptor->owner
+        );
+    } else if (existing) {
+        tc_resource_map* replaced_facets = existing->facets;
+        existing->owner = descriptor->owner;
+        existing->parent = descriptor->parent;
+        existing->facets = descriptor->facets;
+        existing->tombstoned = false;
+        existing->generation++;
+        descriptor->facets = NULL;
+        if (replaced_facets) {
+            tc_resource_map_free(replaced_facets);
+        }
+        committed = true;
+    } else {
+        tc_runtime_type_record* record = descriptor->prepared_record;
+        record->name = descriptor->name;
+        record->owner = descriptor->owner;
+        record->parent = descriptor->parent;
+        record->generation = 1;
+        record->facets = descriptor->facets;
+        tc_dlist_init_head(&record->instances);
+        record->instance_count = 0;
+        record->tombstoned = false;
+        if (tc_resource_map_add_owned_key(
+                g_runtime_type_registry.records,
+                descriptor->prepared_record_key,
+                record
+            )) {
+            descriptor->prepared_record = NULL;
+            descriptor->prepared_record_key = NULL;
+            descriptor->facets = NULL;
+            committed = true;
+        } else {
+            record->facets = NULL;
+            tc_log(
+                TC_LOG_ERROR,
+                "[RuntimeTypeRegistry] allocation-free descriptor publication failed: type='%s' owner='%s'",
+                descriptor->name,
+                descriptor->owner
+            );
+        }
+    }
+
+    tc_runtime_type_descriptor_destroy(descriptor);
+    return committed;
 }
 
 static tc_runtime_type_record* ensure_record(const char* type_name) {

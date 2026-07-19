@@ -541,6 +541,217 @@ TEST_CASE("Runtime type owner unload prepares every record before atomic commit"
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
 }
 
+TEST_CASE("Runtime type descriptor rejects partial and duplicate facets atomically") {
+    const char* type_name = "RuntimeTypeDescriptorPartial";
+    tc_runtime_type_registry_unregister_type(type_name);
+    g_destroyed_runtime_instance_probe_facets = 0;
+
+    auto* descriptor = tc_runtime_type_descriptor_create(type_name, "descriptor_owner", nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
+        "termin.test.descriptor",
+        new int(1),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK(!tc_runtime_type_descriptor_add_facet(
+        descriptor,
+        "termin.test.descriptor",
+        new int(2),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
+    CHECK(!tc_runtime_type_registry_commit_descriptor(descriptor));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
+    CHECK(!tc_runtime_type_registry_has_type(type_name));
+    CHECK(tc_runtime_type_registry_get_owner(type_name) == nullptr);
+
+    const char* invalid_abi_type = "RuntimeTypeDescriptorInvalidAbi";
+    tc_runtime_type_registry_unregister_type(invalid_abi_type);
+    auto* invalid_abi = tc_runtime_type_descriptor_create(
+        invalid_abi_type,
+        "descriptor_owner",
+        nullptr
+    );
+    REQUIRE(invalid_abi != nullptr);
+    CHECK(!tc_runtime_type_descriptor_add_facet(
+        invalid_abi,
+        "termin.test.invalid_abi",
+        new int(8),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        0
+    ));
+    CHECK(!tc_runtime_type_registry_commit_descriptor(invalid_abi));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 3);
+    CHECK(!tc_runtime_type_registry_has_type(invalid_abi_type));
+}
+
+TEST_CASE("Runtime type descriptor validation leaves no missing-parent shell") {
+    const char* type_name = "RuntimeTypeDescriptorMissingParent";
+    tc_runtime_type_registry_unregister_type(type_name);
+    g_destroyed_runtime_instance_probe_facets = 0;
+
+    auto* descriptor = tc_runtime_type_descriptor_create(
+        type_name,
+        "descriptor_owner",
+        "RuntimeTypeDescriptorAbsentParent"
+    );
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        descriptor,
+        "termin.test.missing_parent",
+        new int(3),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK(!tc_runtime_type_registry_commit_descriptor(descriptor));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
+    tc_runtime_type_record_info info;
+    CHECK(!tc_runtime_type_registry_get_info(type_name, &info));
+    CHECK(!tc_runtime_type_registry_has_type(type_name));
+}
+
+TEST_CASE("Runtime type descriptor rejects active replacement and preserves old callbacks") {
+    const char* type_name = "RuntimeTypeDescriptorActive";
+    const char* owner = "descriptor_owner";
+    tc_runtime_type_registry_unregister_type(type_name);
+    g_destroyed_runtime_instance_probe_facets = 0;
+
+    auto* first = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+    REQUIRE(first != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        first,
+        "termin.test.active",
+        new int(4),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(first));
+    void* old_payload = tc_runtime_type_registry_get_facet(type_name, "termin.test.active");
+    REQUIRE(old_payload != nullptr);
+
+    auto* replacement = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+    REQUIRE(replacement != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        replacement,
+        "termin.test.active",
+        new int(5),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK(!tc_runtime_type_registry_commit_descriptor(replacement));
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
+    CHECK(tc_runtime_type_registry_get_facet(type_name, "termin.test.active") == old_payload);
+
+    tc_runtime_type_registry_unregister_type(type_name);
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
+}
+
+TEST_CASE("Runtime type descriptor replaces compatible tombstone and preserves instance index") {
+    const char* type_name = "RuntimeTypeDescriptorTombstone";
+    const char* owner = "descriptor_owner";
+    tc_runtime_type_registry_unregister_type(type_name);
+    g_destroyed_runtime_instance_probe_facets = 0;
+
+    auto* first = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+    REQUIRE(first != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        first,
+        "termin.test.old_callback",
+        new int(6),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(first));
+
+    RuntimeInstanceProbe old_instance;
+    tc_runtime_type_instance_link_init(&old_instance.link);
+    CHECK(tc_runtime_type_registry_link_instance(type_name, &old_instance.link, &old_instance));
+    tc_runtime_type_registry_unregister_type(type_name);
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
+    CHECK(tc_runtime_type_registry_get_facet(type_name, "termin.test.old_callback") == nullptr);
+    CHECK(!tc_runtime_type_registry_instance_is_current(&old_instance.link));
+
+    tc_runtime_type_record_info tombstone_info;
+    REQUIRE(tc_runtime_type_registry_get_info(type_name, &tombstone_info));
+    REQUIRE(tombstone_info.tombstoned);
+    uint64_t tombstone_generation = tombstone_info.generation;
+
+    auto* replacement = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
+    REQUIRE(replacement != nullptr);
+    CHECK(tc_runtime_type_descriptor_add_facet(
+        replacement,
+        "termin.test.new_callback",
+        new int(7),
+        destroy_runtime_instance_probe_facet,
+        nullptr,
+        1
+    ));
+    CHECK(tc_runtime_type_registry_commit_descriptor(replacement));
+
+    tc_runtime_type_record_info current_info;
+    REQUIRE(tc_runtime_type_registry_get_info(type_name, &current_info));
+    CHECK(!current_info.tombstoned);
+    CHECK_EQ(current_info.generation, tombstone_generation + 1);
+    CHECK_EQ(current_info.instance_count, 1u);
+    CHECK(!tc_runtime_type_registry_instance_is_current(&old_instance.link));
+    CHECK(tc_runtime_type_registry_get_facet(type_name, "termin.test.old_callback") == nullptr);
+    CHECK(tc_runtime_type_registry_get_facet(type_name, "termin.test.new_callback") != nullptr);
+
+    RuntimeInstanceProbe new_instance;
+    tc_runtime_type_instance_link_init(&new_instance.link);
+    CHECK(tc_runtime_type_registry_link_instance(type_name, &new_instance.link, &new_instance));
+    CHECK(tc_runtime_type_registry_instance_is_current(&new_instance.link));
+    tc_runtime_type_registry_unlink_instance(&old_instance.link);
+    tc_runtime_type_registry_unlink_instance(&new_instance.link);
+    tc_runtime_type_registry_unregister_type(type_name);
+    CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
+}
+
+TEST_CASE("Runtime type descriptor rejects cyclic parent and foreign tombstone owner") {
+    const char* root_name = "RuntimeTypeDescriptorCycleRoot";
+    const char* child_name = "RuntimeTypeDescriptorCycleChild";
+    const char* owner = "descriptor_cycle_owner";
+    tc_runtime_type_registry_unregister_type(child_name);
+    tc_runtime_type_registry_unregister_type(root_name);
+
+    auto* root = tc_runtime_type_descriptor_create(root_name, owner, nullptr);
+    REQUIRE(root != nullptr);
+    CHECK(tc_runtime_type_registry_commit_descriptor(root));
+    auto* child = tc_runtime_type_descriptor_create(child_name, owner, root_name);
+    REQUIRE(child != nullptr);
+    CHECK(tc_runtime_type_registry_commit_descriptor(child));
+
+    RuntimeInstanceProbe instance;
+    tc_runtime_type_instance_link_init(&instance.link);
+    CHECK(tc_runtime_type_registry_link_instance(root_name, &instance.link, &instance));
+    tc_runtime_type_registry_unregister_type(root_name);
+
+    auto* cyclic = tc_runtime_type_descriptor_create(root_name, owner, child_name);
+    REQUIRE(cyclic != nullptr);
+    CHECK(!tc_runtime_type_registry_commit_descriptor(cyclic));
+    auto* foreign = tc_runtime_type_descriptor_create(root_name, "foreign_owner", nullptr);
+    REQUIRE(foreign != nullptr);
+    CHECK(!tc_runtime_type_registry_commit_descriptor(foreign));
+
+    tc_runtime_type_record_info info;
+    REQUIRE(tc_runtime_type_registry_get_info(root_name, &info));
+    CHECK(info.tombstoned);
+    CHECK_EQ(std::string(info.owner), std::string(owner));
+    tc_runtime_type_registry_unregister_type(child_name);
+    tc_runtime_type_registry_unlink_instance(&instance.link);
+    CHECK(!tc_runtime_type_registry_get_info(root_name, &info));
+}
+
 TEST_CASE("C++ inspect choices support string enum fields") {
     tc::init_cpp_inspect_vtable();
     (void)tc::KindRegistryCpp::instance();

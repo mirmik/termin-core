@@ -49,7 +49,7 @@ static uint64_t hash_string(const char* str) {
 // Internal helpers
 // ============================================================================
 
-static void map_resize(tc_resource_map* map, size_t new_capacity);
+static bool map_resize(tc_resource_map* map, size_t new_capacity);
 
 // ============================================================================
 // Lifecycle
@@ -118,14 +118,14 @@ void tc_resource_map_clear(tc_resource_map* map) {
 // Resize
 // ============================================================================
 
-static void map_resize(tc_resource_map* map, size_t new_capacity) {
+static bool map_resize(tc_resource_map* map, size_t new_capacity) {
     resource_entry* old_entries = map->entries;
     size_t old_capacity = map->capacity;
 
     map->entries = (resource_entry*)calloc(new_capacity, sizeof(resource_entry));
     if (!map->entries) {
         map->entries = old_entries;
-        return;
+        return false;
     }
 
     map->capacity = new_capacity;
@@ -154,6 +154,7 @@ static void map_resize(tc_resource_map* map, size_t new_capacity) {
     }
 
     free(old_entries);
+    return true;
 }
 
 // ============================================================================
@@ -163,17 +164,49 @@ static void map_resize(tc_resource_map* map, size_t new_capacity) {
 bool tc_resource_map_add(tc_resource_map* map, const char* uuid, void* resource) {
     if (!map || !uuid) return false;
 
+    char* owned_key = tc_strdup(uuid);
+    if (!owned_key) {
+        return false;
+    }
+    if (!tc_resource_map_reserve(map, 1) ||
+        !tc_resource_map_add_owned_key(map, owned_key, resource)) {
+        free(owned_key);
+        return false;
+    }
+    return true;
+}
+
+bool tc_resource_map_reserve(tc_resource_map* map, size_t additional) {
+    if (!map) return false;
+    if (map->deleted > SIZE_MAX - map->count ||
+        additional > SIZE_MAX - map->count - map->deleted) {
+        return false;
+    }
+    size_t required_slots = map->count + map->deleted + additional;
+    size_t capacity = map->capacity;
+    size_t load_limit = (capacity / 10) * 7 + ((capacity % 10) * 7) / 10;
+    while (required_slots > load_limit) {
+        if (capacity > SIZE_MAX / 2) {
+            return false;
+        }
+        capacity *= 2;
+        load_limit = (capacity / 10) * 7 + ((capacity % 10) * 7) / 10;
+    }
+    if (capacity != map->capacity && !map_resize(map, capacity)) {
+        return false;
+    }
+    return true;
+}
+
+bool tc_resource_map_add_owned_key(tc_resource_map* map, char* key, void* resource) {
+    if (!map || !key) return false;
+
     // Check if already exists
-    if (tc_resource_map_contains(map, uuid)) {
+    if (tc_resource_map_contains(map, key)) {
         return false;
     }
 
-    // Resize if load factor > 0.7
-    if ((map->count + map->deleted) * 10 > map->capacity * 7) {
-        map_resize(map, map->capacity * 2);
-    }
-
-    uint64_t hash = hash_string(uuid);
+    uint64_t hash = hash_string(key);
     size_t mask = map->capacity - 1;
     size_t idx = hash & mask;
     size_t first_deleted = SIZE_MAX;
@@ -188,7 +221,7 @@ bool tc_resource_map_add(tc_resource_map* map, const char* uuid, void* resource)
                 e = &map->entries[probe];
                 map->deleted--;
             }
-            e->key = tc_strdup(uuid);
+            e->key = key;
             e->value = resource;
             e->state = ENTRY_OCCUPIED;
             map->count++;
