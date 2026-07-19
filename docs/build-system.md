@@ -357,6 +357,13 @@ mylib/
 
 ## Bundled Python
 
+> Архитектурное направление принято 2026-07-19: проверенное SDK install tree
+> является единственным editor/launcher runtime artifact. `termin-app` —
+> application product с внутренним Python payload, а не самостоятельный
+> library wheel. Текущий `termin-app` wheel и host-derived standalone packager
+> ещё существуют как незавершённая миграция; см.
+> [протокол совета](architecture-council/2026-07-19-termin-app-product-boundary.md).
+
 Launcher и editor — это C++ исполняемые файлы, которые встраивают Python-интерпретатор. При сборке с `BUNDLE_PYTHON=ON` в SDK копируется:
 - Python stdlib (`python/Lib/` на Windows, `lib/pythonX.Y/` на Linux)
 - Внешние pip-пакеты в `python/Lib/site-packages/` на Windows или
@@ -369,9 +376,16 @@ Launcher при запуске:
 3. Добавляет bundled `site-packages` в `sys.path`
 4. Запускает Python-код приложения
 
-Текущий Stage 3 SDK build использует активный host Python и не полностью
-изолирован от его `site-packages`. Анализ риска и рекомендации по исправлению:
-`docs/analysis/2026-06-08-sdk-python-host-environment-leakage.md`.
+Stage 3 SDK build устанавливает exact-locked runtime offline из подготовленного
+wheelhouse и проверяет его через `python-runtime-manifest.json`. Копирование из
+ambient host `site-packages` запрещено. При этом отдельный top-level
+`termin-app` standalone path пока всё ещё читает host `sys.prefix`; этот
+legacy path подлежит удалению согласно принятому решению.
+
+Нижележащие library packages продолжают собираться отдельными wheels. В
+частности, graphics/display/GUI subset должен устанавливаться из `sdk/wheels`
+без `termin-app`; внешний Diffusion Editor является consumer gate этого
+контракта.
 
 ---
 
