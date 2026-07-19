@@ -249,6 +249,96 @@ def test_repo_installs_umbrella_termin_cmake_package():
     assert "INTERFACE_LINK_LIBRARIES tcbase::termin_base" in package_config
 
 
+def test_openxr_package_declares_all_public_target_dependencies():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    package_config = (
+        repo_root / "termin-openxr/cmake/termin_openxrConfig.cmake.in"
+    ).read_text(encoding="utf-8")
+
+    expected_dependencies = {
+        "termin_base",
+        "termin_scene",
+        "termin_mesh",
+        "termin_components_mesh",
+        "termin_inspect",
+        "termin_components_render",
+        "termin_graphics",
+        "termin_render",
+        "termin_render_passes",
+        "termin_engine",
+        "termin_runtime",
+        "termin_collision",
+        "termin_input",
+    }
+    for dependency in expected_dependencies:
+        assert f"find_dependency({dependency} CONFIG REQUIRED)" in package_config
+
+
+def test_write_android_capabilities_records_placeholder_and_full_abis(tmp_path):
+    sdk_root = tmp_path / "sdk"
+    android_sdk_root = sdk_root / "android"
+    vulkan_library = tmp_path / "ndk/libvulkan.so"
+    vulkan_library.parent.mkdir(parents=True)
+    vulkan_library.write_bytes(b"vulkan")
+
+    placeholder_build = tmp_path / "build-placeholder"
+    placeholder_build.mkdir()
+    (placeholder_build / "CMakeCache.txt").write_text(
+        "TERMIN_OPENXR_HAS_HEADERS:INTERNAL=OFF\n"
+        "TERMIN_ENABLE_VULKAN:BOOL=ON\n"
+        f"ANDROID_VULKAN_LIB:FILEPATH={vulkan_library}\n",
+        encoding="utf-8",
+    )
+    assert sdk.write_android_capabilities(
+        sdk_root=sdk_root,
+        android_sdk_root=android_sdk_root,
+        abi="x86_64",
+        build_dir=placeholder_build,
+    ) == 0
+
+    full_prefix = android_sdk_root / "arm64-v8a"
+    loader = full_prefix / "lib/libopenxr_loader.so"
+    loader.parent.mkdir(parents=True)
+    loader.write_bytes(b"openxr")
+    full_build = tmp_path / "build-full"
+    full_build.mkdir()
+    (full_build / "CMakeCache.txt").write_text(
+        "TERMIN_OPENXR_HAS_HEADERS:INTERNAL=ON\n"
+        "TERMIN_ENABLE_VULKAN:BOOL=ON\n"
+        f"ANDROID_VULKAN_LIB:FILEPATH={vulkan_library}\n",
+        encoding="utf-8",
+    )
+    assert sdk.write_android_capabilities(
+        sdk_root=sdk_root,
+        android_sdk_root=android_sdk_root,
+        abi="arm64-v8a",
+        build_dir=full_build,
+    ) == 0
+
+    placeholder = json.loads(
+        (android_sdk_root / "x86_64/share/termin/android-capabilities.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads(
+        (sdk_root / "termin-sdk-capabilities.json").read_text(encoding="utf-8")
+    )
+    assert placeholder["openxr_headers"] is False
+    assert placeholder["openxr_loader"] is False
+    assert placeholder["vulkan"] is True
+    assert manifest["platforms"]["android"] == {
+        "abis": ["arm64-v8a", "x86_64"],
+        "python_runtime": False,
+        "vulkan": True,
+    }
+    assert manifest["platforms"]["quest_openxr"] == {
+        "abis": ["arm64-v8a"],
+        "openxr_headers": True,
+        "openxr_loader": True,
+        "vulkan": True,
+    }
+
+
 def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     sdk_prefix = repo_root / "sdk"

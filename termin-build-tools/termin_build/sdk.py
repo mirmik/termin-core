@@ -32,6 +32,7 @@ from .sdk_python_layout import (
     publish_cmake_python_install,
     resolve_sdk_python_layout,
 )
+from .sdk_capabilities import write_android_capabilities
 
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
@@ -1789,6 +1790,17 @@ def main(argv: list[str] | None = None) -> int:
         help="CMake install tree to search for installed native artifacts.",
     )
 
+    android_capabilities_parser = subparsers.add_parser(
+        "write-android-capabilities",
+        help="Record truthful per-ABI and aggregate Android SDK capabilities.",
+    )
+    android_capabilities_parser.add_argument("--sdk-root", type=Path, required=True)
+    android_capabilities_parser.add_argument(
+        "--android-sdk-root", type=Path, required=True
+    )
+    android_capabilities_parser.add_argument("--abi", required=True)
+    android_capabilities_parser.add_argument("--build-dir", type=Path, required=True)
+
     install_python_parser = subparsers.add_parser(
         "install-python",
         help="Populate the bundled SDK Python site-packages.",
@@ -1890,6 +1902,13 @@ def main(argv: list[str] | None = None) -> int:
             build_dir=args.build_dir,
             sdk_prefix=args.sdk_prefix,
             install_dir=args.install_dir,
+        )
+    if args.command == "write-android-capabilities":
+        return write_android_capabilities(
+            sdk_root=args.sdk_root.resolve(),
+            android_sdk_root=args.android_sdk_root.resolve(),
+            abi=args.abi,
+            build_dir=args.build_dir.resolve(),
         )
     if args.command == "install-python":
         build_dir = _build_dir(repo_root, args.build_type)
