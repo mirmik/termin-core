@@ -752,6 +752,50 @@ TEST_CASE("Runtime type descriptor rejects cyclic parent and foreign tombstone o
     CHECK(!tc_runtime_type_registry_get_info(root_name, &info));
 }
 
+TEST_CASE("Incremental runtime type parent mutation rejects cycles atomically") {
+    const char* root_name = "RuntimeTypeParentCycleRoot";
+    const char* middle_name = "RuntimeTypeParentCycleMiddle";
+    const char* leaf_name = "RuntimeTypeParentCycleLeaf";
+    const char* tail_name = "RuntimeTypeParentCycleTail";
+    tc_runtime_type_registry_unregister_type(tail_name);
+    tc_runtime_type_registry_unregister_type(leaf_name);
+    tc_runtime_type_registry_unregister_type(middle_name);
+    tc_runtime_type_registry_unregister_type(root_name);
+
+    CHECK(!tc_runtime_type_registry_set_parent(root_name, root_name));
+    CHECK(!tc_runtime_type_registry_has_type(root_name));
+
+    CHECK(tc_runtime_type_registry_set_parent(root_name, nullptr));
+    CHECK(tc_runtime_type_registry_set_parent(middle_name, root_name));
+    CHECK(tc_runtime_type_registry_set_parent(leaf_name, middle_name));
+    CHECK(tc_runtime_type_registry_set_parent(tail_name, leaf_name));
+
+    tc_runtime_type_record_info root_before;
+    REQUIRE(tc_runtime_type_registry_get_info(root_name, &root_before));
+    CHECK(!tc_runtime_type_registry_set_parent(root_name, leaf_name));
+
+    tc_runtime_type_record_info root_after;
+    REQUIRE(tc_runtime_type_registry_get_info(root_name, &root_after));
+    CHECK_EQ(root_after.generation, root_before.generation);
+    CHECK(root_after.parent == nullptr);
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent(middle_name)), std::string(root_name));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent(leaf_name)), std::string(middle_name));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent(tail_name)), std::string(leaf_name));
+
+    CHECK(tc_runtime_type_registry_set_parent(leaf_name, nullptr));
+    CHECK(tc_runtime_type_registry_get_parent(leaf_name) == nullptr);
+    CHECK(tc_runtime_type_registry_set_parent(root_name, tail_name));
+
+    auto& inspect = tc::InspectRegistry::instance();
+    CHECK_EQ(inspect.all_fields_count(root_name), 0u);
+    CHECK_EQ(inspect.all_fields_count(tail_name), 0u);
+
+    tc_runtime_type_registry_unregister_type(root_name);
+    tc_runtime_type_registry_unregister_type(tail_name);
+    tc_runtime_type_registry_unregister_type(leaf_name);
+    tc_runtime_type_registry_unregister_type(middle_name);
+}
+
 TEST_CASE("C++ inspect choices support string enum fields") {
     tc::init_cpp_inspect_vtable();
     (void)tc::KindRegistryCpp::instance();

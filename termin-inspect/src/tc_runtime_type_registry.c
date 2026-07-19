@@ -34,6 +34,46 @@ static tc_runtime_type_registry_storage g_runtime_type_registry = {0};
 
 static tc_runtime_type_record* find_record(const char* type_name);
 
+static bool parent_assignment_is_acyclic(
+    const char* type_name,
+    const char* parent_name
+) {
+    if (!parent_name || !parent_name[0]) {
+        return true;
+    }
+
+    const char* candidate = parent_name;
+    size_t steps = 0;
+    const size_t max_steps = tc_runtime_type_registry_type_count() + 1;
+    while (candidate) {
+        if (strcmp(candidate, type_name) == 0) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[RuntimeTypeRegistry] parent assignment rejected: cycle for type '%s' through parent '%s'",
+                type_name,
+                parent_name
+            );
+            return false;
+        }
+        if (steps++ >= max_steps) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[RuntimeTypeRegistry] parent assignment rejected: existing parent cycle while assigning type '%s' to parent '%s'",
+                type_name,
+                parent_name
+            );
+            return false;
+        }
+
+        tc_runtime_type_record* parent = find_record(candidate);
+        if (!parent || parent->tombstoned) {
+            return true;
+        }
+        candidate = parent->parent;
+    }
+    return true;
+}
+
 struct tc_runtime_type_descriptor {
     const char* name;
     const char* owner;
@@ -720,14 +760,17 @@ bool tc_runtime_type_registry_set_parent(const char* type_name, const char* pare
         return false;
     }
 
-    tc_runtime_type_record* record = ensure_record(type_name);
-    if (!record) {
+    if (!parent_assignment_is_acyclic(type_name, parent_name)) {
         return false;
     }
 
     const char* parent = (parent_name && parent_name[0])
         ? tc_intern_string(parent_name)
         : NULL;
+    tc_runtime_type_record* record = ensure_record(type_name);
+    if (!record) {
+        return false;
+    }
     if (record->parent == parent ||
         (record->parent && parent && strcmp(record->parent, parent) == 0)) {
         return true;
