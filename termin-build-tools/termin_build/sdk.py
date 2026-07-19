@@ -12,6 +12,15 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from .artifact_manifest import (
+    BUILD_MANIFEST_KIND,
+    BUILD_MANIFEST_NAME,
+    SCHEMA_VERSION as ARTIFACT_MANIFEST_SCHEMA,
+    SDK_MANIFEST_KIND,
+    SDK_MANIFEST_NAME,
+    current_python_abi,
+    sha256_file,
+)
 from .package_manifest import PackageEntry, load_manifest, repo_root_from
 from .sdk_python_layout import (
     _copy_tree_contents,
@@ -538,9 +547,36 @@ def write_artifacts(
     install_dir: Path | None = None,
 ) -> int:
     packages = load_manifest(repo_root)
-    artifacts = []
+    build_artifacts = []
+    sdk_artifacts = []
     missing_required = []
     artifact_install_dir = install_dir if install_dir is not None else sdk_prefix
+    sdk_root = sdk_prefix.resolve()
+
+    def bundled_runtime_dependencies(names: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+        bundled = []
+        external = []
+        pending = list(names)
+        visited = set()
+        while pending:
+            name = pending.pop(0)
+            if name in visited:
+                continue
+            visited.add(name)
+            candidates = (sdk_root / "lib" / name, sdk_root / "bin" / name)
+            dependency_path = next((path for path in candidates if path.is_file()), None)
+            if dependency_path is None:
+                external.append(name)
+                continue
+            bundled.append(
+                {
+                    "name": name,
+                    "path": dependency_path.relative_to(sdk_root).as_posix(),
+                    "sha256": sha256_file(dependency_path),
+                }
+            )
+            pending.extend(_native_runtime_dependencies(dependency_path))
+        return bundled, external
 
     for package in packages:
         for native_extension in package.native_extensions:
@@ -558,23 +594,52 @@ def write_artifacts(
                 native_extension.extension,
                 native_extension.target,
             )
-            artifacts.append(
+            if installed_path is None:
+                missing_required.append(
+                    f"{package.path}: installed {native_extension.extension} "
+                    f"(target {native_extension.target})"
+                )
+                continue
+            installed_path = installed_path.resolve()
+            try:
+                installed_relative = installed_path.relative_to(sdk_root)
+            except ValueError:
+                missing_required.append(
+                    f"{package.path}: installed artifact is outside SDK root: "
+                    f"{installed_path}"
+                )
+                continue
+            dependency_names = _native_runtime_dependencies(installed_path)
+            runtime_dependencies, external_dependencies = bundled_runtime_dependencies(
+                dependency_names
+            )
+            common = {
+                "kind": "python-extension",
+                "package_path": package.path,
+                "distribution": package.distribution,
+                "extension": native_extension.extension,
+                "target": native_extension.target,
+                "python_abi": current_python_abi(),
+                "optional": native_extension.optional,
+                "features": list(
+                    dict.fromkeys((*package.features, *native_extension.features))
+                ),
+                "external_runtime_dependencies": external_dependencies,
+            }
+            build_artifacts.append(
                 {
-                    "package_path": package.path,
-                    "distribution": package.distribution,
-                    "extension": native_extension.extension,
-                    "target": native_extension.target,
-                    "build_path": str(build_path.resolve()),
-                    "install_path": (
-                        str(installed_path.resolve())
-                        if installed_path is not None
-                        else None
-                    ),
-                    "runtime_dependencies": _native_runtime_dependencies(build_path),
-                    "optional": native_extension.optional,
-                    "features": list(
-                        dict.fromkeys((*package.features, *native_extension.features))
-                    ),
+                    **common,
+                    "path": str(build_path.resolve()),
+                    "sha256": sha256_file(build_path),
+                    "runtime_dependencies": [],
+                }
+            )
+            sdk_artifacts.append(
+                {
+                    **common,
+                    "path": installed_relative.as_posix(),
+                    "sha256": sha256_file(installed_path),
+                    "runtime_dependencies": runtime_dependencies,
                 }
             )
 
@@ -584,19 +649,30 @@ def write_artifacts(
             print(f"  - {missing}", file=sys.stderr)
         return 1
 
-    sdk_prefix.mkdir(parents=True, exist_ok=True)
-    artifact_manifest = {
-        "schema": 1,
-        "build_dir": str(build_dir.resolve()),
-        "sdk_prefix": str(sdk_prefix.resolve()),
-        "artifacts": artifacts,
+    build_manifest = {
+        "schema": ARTIFACT_MANIFEST_SCHEMA,
+        "manifest_kind": BUILD_MANIFEST_KIND,
+        "artifacts": build_artifacts,
     }
-    output = sdk_prefix / "termin-artifacts.json"
-    output.write_text(
-        json.dumps(artifact_manifest, indent=2, sort_keys=True) + "\n",
+    build_output = build_dir / BUILD_MANIFEST_NAME
+    build_output.parent.mkdir(parents=True, exist_ok=True)
+    build_output.write_text(
+        json.dumps(build_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    print(f"Wrote artifact manifest: {output}")
+    sdk_manifest = {
+        "schema": ARTIFACT_MANIFEST_SCHEMA,
+        "manifest_kind": SDK_MANIFEST_KIND,
+        "artifacts": sdk_artifacts,
+    }
+    sdk_prefix.mkdir(parents=True, exist_ok=True)
+    sdk_output = sdk_prefix / SDK_MANIFEST_NAME
+    sdk_output.write_text(
+        json.dumps(sdk_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote build artifact manifest: {build_output}")
+    print(f"Wrote SDK artifact manifest: {sdk_output}")
     return 0
 
 

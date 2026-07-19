@@ -14,6 +14,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND
 from .package_manifest import load_manifest, repo_root_from
 
 
@@ -63,6 +64,12 @@ def _sdk_fingerprint(sdk_root: Path) -> str:
     artifacts = sdk_root / "termin-artifacts.json"
     if not artifacts.is_file():
         raise OverlayError(f"SDK artifact manifest is missing: {artifacts}")
+    try:
+        manifest = ArtifactManifest.load(artifacts)
+        manifest.require_kind(SDK_MANIFEST_KIND)
+        manifest.validate_all()
+    except RuntimeError as error:
+        raise OverlayError(f"SDK artifact manifest is invalid: {error}") from error
     return _sha256(artifacts)
 
 

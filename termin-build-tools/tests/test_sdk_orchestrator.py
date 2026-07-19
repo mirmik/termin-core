@@ -1152,7 +1152,7 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
     repo_root = tmp_path / "repo"
     build_dir = tmp_path / "build"
     sdk_prefix = tmp_path / "sdk"
-    install_dir = tmp_path / "install"
+    install_dir = sdk_prefix
     build_bin = build_dir / "bin"
     install_pkg = install_dir / "lib" / "python" / "termin" / "sample"
     build_bin.mkdir(parents=True)
@@ -1162,6 +1162,9 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
     install_artifact = install_pkg / build_artifact.name
     build_artifact.write_text("native", encoding="utf-8")
     install_artifact.write_text("native", encoding="utf-8")
+    runtime_library = sdk_prefix / "lib" / "libtermin_sample.so"
+    runtime_library.parent.mkdir(parents=True, exist_ok=True)
+    runtime_library.write_text("runtime", encoding="utf-8")
 
     packages = [
         PackageEntry(
@@ -1194,11 +1197,24 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
 
     assert result == 0
     data = json.loads((sdk_prefix / "termin-artifacts.json").read_text())
+    assert data["schema"] == 2
+    assert data["manifest_kind"] == "termin-sdk-artifacts"
     artifact = data["artifacts"][0]
-    assert artifact["build_path"] == str(build_artifact.resolve())
-    assert artifact["install_path"] == str(install_artifact.resolve())
-    assert artifact["runtime_dependencies"] == ["libtermin_sample.so"]
+    assert artifact["path"] == install_artifact.relative_to(sdk_prefix).as_posix()
+    assert artifact["sha256"] == hashlib.sha256(b"native").hexdigest()
+    assert artifact["runtime_dependencies"] == [
+        {
+            "name": "libtermin_sample.so",
+            "path": "lib/libtermin_sample.so",
+            "sha256": hashlib.sha256(b"runtime").hexdigest(),
+        }
+    ]
     assert artifact["features"] == ["sample"]
+    build_data = json.loads(
+        (build_dir / "termin-build-artifacts.json").read_text()
+    )
+    assert build_data["manifest_kind"] == "termin-build-artifacts"
+    assert build_data["artifacts"][0]["path"] == str(build_artifact.resolve())
 
 
 def test_write_artifacts_reports_missing_required_binding(
@@ -1276,8 +1292,7 @@ def test_write_artifacts_supports_windows_pyd_layout(tmp_path, monkeypatch):
     assert result == 0
     data = json.loads((sdk_prefix / "termin-artifacts.json").read_text())
     artifact = data["artifacts"][0]
-    assert artifact["build_path"] == str(build_artifact.resolve())
-    assert artifact["install_path"] == str(install_artifact.resolve())
+    assert artifact["path"] == install_artifact.relative_to(sdk_prefix).as_posix()
     assert artifact["runtime_dependencies"] == []
 
 
@@ -1328,8 +1343,11 @@ def test_write_artifacts_prefers_windows_config_pyd_over_stale_bin_copy(
     assert result == 0
     data = json.loads((sdk_prefix / "termin-artifacts.json").read_text())
     artifact = data["artifacts"][0]
-    assert artifact["build_path"] == str(build_artifact.resolve())
-    assert artifact["install_path"] == str(install_artifact.resolve())
+    assert artifact["path"] == install_artifact.relative_to(sdk_prefix).as_posix()
+    build_data = json.loads(
+        (build_dir / "termin-build-artifacts.json").read_text()
+    )
+    assert build_data["artifacts"][0]["path"] == str(build_artifact.resolve())
 
 
 def test_verify_duplicate_libraries_reports_windows_duplicates(

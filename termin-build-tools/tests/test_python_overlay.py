@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from termin_build import python_overlay
+from termin_build.artifact_manifest import SCHEMA_VERSION, SDK_MANIFEST_KIND
 
 
 def test_overlay_finder_combines_source_and_installed_package_paths(tmp_path: Path) -> None:
@@ -43,7 +44,16 @@ def test_activate_overlay_rejects_stale_sdk_fingerprint(
 ) -> None:
     sdk_root = tmp_path / "sdk"
     sdk_root.mkdir()
-    (sdk_root / "termin-artifacts.json").write_text("{}\n", encoding="utf-8")
+    (sdk_root / "termin-artifacts.json").write_text(
+        json.dumps(
+            {
+                "schema": SCHEMA_VERSION,
+                "manifest_kind": SDK_MANIFEST_KIND,
+                "artifacts": [],
+            }
+        ),
+        encoding="utf-8",
+    )
     manifest = tmp_path / "overlay.json"
     manifest.write_text(
         json.dumps(

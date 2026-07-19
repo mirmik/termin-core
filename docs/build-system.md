@@ -130,6 +130,25 @@ sdk/
     # Python-пакеты на Windows; Windows stdlib живёт в sdk/python/Lib/
 ```
 
+### Артефактные manifests
+
+Native Python artifacts имеют два разных schema-v2 контракта:
+
+- `sdk/termin-artifacts.json` — поставляемый relocatable SDK manifest. Поле
+  `path` всегда относительно корня SDK; entry фиксирует kind, extension,
+  target, Python ABI, SHA-256 и bundled/external runtime dependencies. Manifest
+  не содержит checkout, `build_dir`, `sdk_prefix` или других абсолютных путей.
+- `build/<config>/termin-build-artifacts.json` — внутренний developer manifest
+  с точными абсолютными путями build tree. Он не поставляется как часть SDK.
+
+Setuptools consumer выбирает установленный контракт только через
+`TERMIN_SDK=/path/to/sdk`. Явный build-tree режим включается через
+`TERMIN_ARTIFACT_MANIFEST=/path/to/termin-build-artifacts.json`. После выбора
+manifest никакого поиска в checkout, соседнем SDK, `/opt` или `PATH` нет:
+отсутствующий artifact, выход path за корень SDK, неверные kind/target/ABI или
+hash завершают сборку с ошибкой. Поэтому перенос SDK в другой каталог безопасен,
+а stale build tree не может незаметно подменить поставляемый binary.
+
 ### Bundled Python и тестовый контур
 
 `sdk/bin/termin_python` — SDK-relative isolated launcher. Он игнорирует
