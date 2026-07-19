@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from termin_build import repository_control
+from termin_build import process_smoke, repository_control
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -100,6 +100,40 @@ def _repository(tmp_path: Path) -> Path:
         },
     )
     return tmp_path
+
+
+def _add_process_smoke_suite(
+    repo: Path,
+    *,
+    profile: str,
+    platform: str,
+    root: str,
+    capability: str,
+) -> Path:
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["profiles"].append({"id": profile, "description": "Process smoke"})
+    data["suite_defaults"]["process-smoke"] = {
+        "profiles": [profile],
+        "environment": "process-smoke",
+        "platforms": [platform],
+        "capabilities": [capability],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-process-smoke",
+            "module": "alpha",
+            "executor": "process-smoke",
+            "roots": [root],
+            "reason": "Exercises the process boundary.",
+        }
+    )
+    _write_json(manifest, data)
+    command = repo / root
+    command.parent.mkdir(parents=True, exist_ok=True)
+    command.write_text("exit 0\n", encoding="utf-8")
+    command.chmod(0o755)
+    return command
 
 
 def test_catalog_joins_python_packages_to_test_suites(tmp_path: Path) -> None:
@@ -734,11 +768,21 @@ def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> Non
     report_path = repo / "build" / "process-execution.json"
     calls = []
 
-    def fake_run(args, *, cwd, check):
-        calls.append((args, cwd, check))
-        return type("Result", (), {"returncode": 0})()
+    def fake_run(
+        args,
+        *,
+        cwd,
+        env,
+        check,
+        stdout,
+        stderr,
+        text,
+        timeout,
+    ):
+        calls.append((args, cwd, check, env, timeout))
+        return type("Result", (), {"returncode": 0, "stdout": "ok\n"})()
 
-    monkeypatch.setattr(repository_control.subprocess, "run", fake_run)
+    monkeypatch.setattr(process_smoke.subprocess, "run", fake_run)
 
     result = repository_control.main(
         [
@@ -748,18 +792,165 @@ def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> Non
             "editor-smoke",
             "--platform",
             "linux",
+            "--capability",
+            "editor",
             "--report-output",
             str(report_path),
         ]
     )
 
     assert result == 0
-    assert calls == [([str(command)], repo, False)]
+    assert calls[0][:3] == ([str(command)], repo, False)
+    assert calls[0][4] == 900.0
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["kind"] == "termin-test-execution"
     assert report["executor"] == "process-smoke"
     assert report["selected"] == [{"id": "alpha-editor-smoke"}]
     assert report["executed"] == [{"id": "alpha-editor-smoke"}]
+
+
+def test_windows_process_smoke_requires_a_supported_runner(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    _add_process_smoke_suite(
+        repo,
+        profile="windows-smoke",
+        platform="windows",
+        root="scripts/posix-smoke",
+        capability="d3d11",
+    )
+
+    errors = repository_control.validate_catalog(
+        repo, repository_control.load_catalog(repo)
+    )
+
+    assert errors == [
+        "alpha-process-smoke: Windows process-smoke root has no supported runner: "
+        "scripts/posix-smoke"
+    ]
+
+
+def test_windows_process_smoke_executes_from_canonical_plan(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    command = _add_process_smoke_suite(
+        repo,
+        profile="windows-smoke",
+        platform="windows",
+        root="scripts/smoke.ps1",
+        capability="d3d11",
+    )
+    catalog = repository_control.load_catalog(repo)
+    expected = repository_control.build_plan(catalog, "windows-smoke", "windows")
+    plan_path = repo / "build" / "windows-plan.json"
+    report_path = repo / "build" / "process-execution.json"
+    log_dir = repo / "build" / "process-logs"
+    _write_json(plan_path, expected)
+    calls = []
+
+    monkeypatch.setattr(process_smoke.shutil, "which", lambda name: "pwsh.exe")
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return type("Result", (), {"returncode": 0, "stdout": "windows ok\n"})()
+
+    monkeypatch.setattr(process_smoke.subprocess, "run", fake_run)
+
+    result = repository_control.main(
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "windows-smoke",
+            "--platform",
+            "windows",
+            "--executor",
+            "process-smoke",
+            "--capability",
+            "d3d11",
+            "--configuration",
+            "Debug",
+            "--process-timeout",
+            "12",
+            "--process-log-dir",
+            str(log_dir),
+            "--plan-file",
+            str(plan_path),
+            "--report-output",
+            str(report_path),
+        ]
+    )
+
+    assert result == 0
+    assert calls[0][0] == ["pwsh.exe", "-NoProfile", "-File", str(command)]
+    assert calls[0][1]["env"]["TERMIN_TEST_CONFIGURATION"] == "Debug"
+    assert calls[0][1]["timeout"] == 12.0
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["executed"] == [{"id": "alpha-process-smoke"}]
+    assert report["details"]["logs"] == {
+        "alpha-process-smoke": "build/process-logs/alpha-process-smoke.log"
+    }
+    assert repository_control._cmd_verify_suite_execution(
+        plan_path, report_path, "process-smoke"
+    ) == 0
+    capsys.readouterr()
+
+
+def test_process_smoke_missing_capability_is_an_explicit_skip(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    _add_process_smoke_suite(
+        repo,
+        profile="windows-smoke",
+        platform="windows",
+        root="scripts/smoke.ps1",
+        capability="d3d11",
+    )
+    catalog = repository_control.load_catalog(repo)
+
+    result = repository_control.run_process_smoke_plan(
+        repo, catalog, "windows-smoke", "windows"
+    )
+
+    assert result.exit_code == 0
+    assert result.executed == ()
+    assert result.skipped == {
+        "alpha-process-smoke": "missing capabilities: d3d11"
+    }
+
+
+def test_process_smoke_timeout_fails_and_retains_log(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _repository(tmp_path)
+    _add_process_smoke_suite(
+        repo,
+        profile="editor-smoke",
+        platform="linux",
+        root="scripts/smoke",
+        capability="editor",
+    )
+    catalog = repository_control.load_catalog(repo)
+
+    def timeout(*_args, **_kwargs):
+        raise process_smoke.subprocess.TimeoutExpired(
+            ["scripts/smoke"], 3.0, output="partial output\n"
+        )
+
+    monkeypatch.setattr(process_smoke.subprocess, "run", timeout)
+
+    result = repository_control.run_process_smoke_plan(
+        repo,
+        catalog,
+        "editor-smoke",
+        "linux",
+        capabilities=("editor",),
+        timeout_seconds=3.0,
+    )
+
+    assert result.exit_code == 1
+    assert "timed out after 3s" in result.failed["alpha-process-smoke"]
+    log_path = repo / result.logs["alpha-process-smoke"]
+    assert "partial output" in log_path.read_text(encoding="utf-8")
 
 
 def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> None:

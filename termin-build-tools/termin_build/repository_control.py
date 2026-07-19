@@ -26,6 +26,7 @@ from .execution_manifest import (
 )
 from .package_manifest import load_manifest as load_package_manifest
 from .package_manifest import repo_root_from
+from .process_smoke import ProcessSmokeRun, execute_process_smoke_suites
 from .source_size_policy import (
     SourceSizePolicyError,
     find_long_files,
@@ -806,6 +807,26 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                 continue
             if not (repo_root / root).exists():
                 errors.append(f"{suite.id}: test root does not exist: {root}")
+            if suite.executor == "process-smoke":
+                suffix = Path(root).suffix.lower()
+                if "windows" in suite.platforms and suffix not in {
+                    ".bat",
+                    ".cmd",
+                    ".exe",
+                    ".ps1",
+                    ".py",
+                }:
+                    errors.append(
+                        f"{suite.id}: Windows process-smoke root has no supported "
+                        f"runner: {root}"
+                    )
+                if suffix in {".bat", ".cmd", ".ps1"} and any(
+                    platform != "windows" for platform in suite.platforms
+                ):
+                    errors.append(
+                        f"{suite.id}: Windows process-smoke root is declared for "
+                        f"a non-Windows platform: {root}"
+                    )
 
     documentation = catalog.documentation
     public_roots = [site.root for site in documentation.sites]
@@ -1092,42 +1113,28 @@ def run_process_smoke_plan(
     catalog: RepositoryCatalog,
     profile_id: str,
     platform: str,
-) -> tuple[int, list[str]]:
+    capabilities: Iterable[str] = (),
+    configuration: str | None = None,
+    timeout_seconds: float = 900.0,
+    log_dir: Path | None = None,
+) -> ProcessSmokeRun:
+    if timeout_seconds <= 0:
+        raise ManifestError("process-smoke timeout must be greater than zero")
     plan = build_plan(catalog, profile_id, platform)
     suites = [
         suite for suite in plan["suites"] if suite["executor"] == "process-smoke"
     ]
-    failures = []
-    print(f"Process-smoke execution plan: {profile_id} / {platform}")
-    print(f"Process-smoke suites: {len(suites)}")
-    for suite in suites:
-        print("")
-        print("----------------------------------------")
-        print(f"  {suite['id']}")
-        print("----------------------------------------")
-        for root in suite["roots"]:
-            command = repo_root / root
-            command_line = [str(command)]
-            if platform == "windows" and command.suffix.lower() == ".ps1":
-                command_line = ["pwsh", "-NoProfile", "-File", str(command)]
-            elif not os.access(command, os.X_OK):
-                print(
-                    f"ERROR: process-smoke command is not executable: {command}",
-                    file=sys.stderr,
-                )
-                failures.append(suite["id"])
-                break
-            result = subprocess.run(command_line, cwd=repo_root, check=False)
-            if result.returncode != 0:
-                failures.append(suite["id"])
-                break
-    if failures:
-        print("", file=sys.stderr)
-        print("Process-smoke suite failures:", file=sys.stderr)
-        for suite_id in failures:
-            print(f"  - {suite_id}", file=sys.stderr)
-        return 1, failures
-    return 0, []
+    output_dir = log_dir or repo_root / "build" / "process-smoke" / profile_id
+    return execute_process_smoke_suites(
+        repo_root,
+        suites,
+        profile_id,
+        platform,
+        capabilities,
+        configuration,
+        timeout_seconds,
+        output_dir,
+    )
 
 
 def _load_valid_catalog(repo_root: Path) -> RepositoryCatalog:
@@ -1660,6 +1667,10 @@ def _cmd_run(
     executor_filter: tuple[str, ...],
     plan_file: Path | None,
     report_output: Path | None,
+    capabilities: tuple[str, ...],
+    configuration: str | None,
+    process_timeout: float,
+    process_log_dir: Path | None,
 ) -> int:
     resolved_platform = platform or _host_platform()
     catalog = _load_valid_catalog(repo_root)
@@ -1686,6 +1697,7 @@ def _cmd_run(
         )
     exit_code = 0
     failures = []
+    process_run: ProcessSmokeRun | None = None
     if "pytest" in executors:
         pytest_exit_code, pytest_failures = run_pytest_plan(
             repo_root,
@@ -1698,11 +1710,18 @@ def _cmd_run(
         exit_code |= pytest_exit_code
         failures.extend(pytest_failures)
     if "process-smoke" in executors:
-        process_exit_code, process_failures = run_process_smoke_plan(
-            repo_root, catalog, profile, resolved_platform
+        process_run = run_process_smoke_plan(
+            repo_root,
+            catalog,
+            profile,
+            resolved_platform,
+            capabilities,
+            configuration,
+            process_timeout,
+            process_log_dir,
         )
-        exit_code |= process_exit_code
-        failures.extend(process_failures)
+        exit_code |= process_run.exit_code
+        failures.extend(process_run.failed)
     if report_output is not None:
         report_executors = set(executor_filter) if executor_filter else executors
         if len(report_executors) != 1:
@@ -1710,20 +1729,38 @@ def _cmd_run(
                 "execution report requires exactly one executor; pass --executor"
             )
         executor = next(iter(report_executors))
-        selected = [suite["id"] for suite in plan["suites"]]
-        failure_ids = set(failures)
-        manifest = build_execution_manifest(
-            expected,
-            executor,
-            selected=selected,
-            executed=[suite_id for suite_id in selected if suite_id not in failure_ids],
-            skipped={},
-            failed={
-                suite_id: "executor returned a failing result"
-                for suite_id in selected
-                if suite_id in failure_ids
-            },
-        )
+        if executor == "process-smoke" and process_run is not None:
+            manifest = build_execution_manifest(
+                expected,
+                executor,
+                selected=process_run.selected,
+                executed=process_run.executed,
+                skipped=process_run.skipped,
+                failed=process_run.failed,
+                details={
+                    "capabilities": sorted(set(capabilities)),
+                    "configuration": configuration,
+                    "timeout_seconds": process_timeout,
+                    "logs": process_run.logs,
+                },
+            )
+        else:
+            selected = [suite["id"] for suite in plan["suites"]]
+            failure_ids = set(failures)
+            manifest = build_execution_manifest(
+                expected,
+                executor,
+                selected=selected,
+                executed=[
+                    suite_id for suite_id in selected if suite_id not in failure_ids
+                ],
+                skipped={},
+                failed={
+                    suite_id: "executor returned a failing result"
+                    for suite_id in selected
+                    if suite_id in failure_ids
+                },
+            )
         report_output.parent.mkdir(parents=True, exist_ok=True)
         report_output.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -1825,6 +1862,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     run_parser.add_argument("--plan-file", type=Path)
     run_parser.add_argument("--report-output", type=Path)
+    run_parser.add_argument("--capability", action="append", default=[])
+    run_parser.add_argument("--configuration")
+    run_parser.add_argument("--process-timeout", type=float, default=900.0)
+    run_parser.add_argument("--process-log-dir", type=Path)
 
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
@@ -1889,6 +1930,10 @@ def main(argv: list[str] | None = None) -> int:
                 tuple(args.executor),
                 args.plan_file.resolve() if args.plan_file else None,
                 args.report_output.resolve() if args.report_output else None,
+                tuple(args.capability),
+                args.configuration,
+                args.process_timeout,
+                args.process_log_dir.resolve() if args.process_log_dir else None,
             )
     except (ManifestError, TestExecutionContractError, OSError) as exc:
         for line in str(exc).splitlines():
