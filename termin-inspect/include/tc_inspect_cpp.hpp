@@ -1182,6 +1182,15 @@ void register_inspect_field(
     InspectRegistry::instance().add<C, T>(member, spec);
 }
 
+template<typename C, typename T>
+bool stage_inspect_field(
+    InspectFacetBuilder& builder,
+    T C::*member,
+    const InspectFieldSpec& spec
+) {
+    return builder.add<C, T>(member, spec);
+}
+
 template<typename C, typename T, typename... RangeArgs>
 void register_inspect_field(
     T C::*member,
@@ -1263,6 +1272,61 @@ void register_inspect_field_choices(
     };
 
     InspectRegistry::instance().add_field_with_choices(type_name, std::move(info));
+}
+
+template<typename C, typename T>
+bool stage_inspect_field_choices(
+    InspectFacetBuilder& builder,
+    T C::*member,
+    const char* type_name,
+    const char* path,
+    const char* label,
+    const char* kind_str,
+    std::initializer_list<std::pair<const char*, const char*>> choices_list
+) {
+    InspectFieldInfo info;
+    info.type_name = type_name;
+    info.path = path;
+    info.label = label;
+    info.kind = kind_str;
+    for (const auto& [value, choice_label] : choices_list) {
+        info.choices.push_back(EnumChoice{value, choice_label});
+    }
+    std::string kind_copy = kind_str;
+    std::string type_copy = type_name;
+    std::string path_copy = path;
+    info.getter = [member, kind_copy, type_copy, path_copy](void* obj) -> tc_value {
+        T val = static_cast<C*>(obj)->*member;
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+            if (kind_copy == "enum") return tc_value_string(val.c_str());
+        }
+        return KindRegistryCpp::instance().serialize_field(
+            kind_copy, std::any(val), type_copy, path_copy);
+    };
+    info.setter = [member, kind_copy, type_copy, path_copy](
+        void* obj, tc_value value, void* context) -> bool {
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+            if (kind_copy == "enum") {
+                static_cast<C*>(obj)->*member = value.type == TC_VALUE_STRING
+                    ? tc_value_to_string(&value)
+                    : std::to_string(tc_value_to_int(&value));
+                return true;
+            }
+        }
+        std::any val = KindRegistryCpp::instance().deserialize(kind_copy, &value, context);
+        if (!val.has_value()) return false;
+        try {
+            static_cast<C*>(obj)->*member = std::any_cast<T>(val);
+            return true;
+        } catch (const std::bad_any_cast&) {
+            tc_log(
+                TC_LOG_ERROR,
+                "[Inspect] staged field '%s.%s' kind '%s' returned incompatible type",
+                type_copy.c_str(), path_copy.c_str(), kind_copy.c_str());
+            return false;
+        }
+    };
+    return builder.add_field(std::move(info));
 }
 
 template<typename C>
@@ -1558,18 +1622,30 @@ struct InspectTypeMetadataRegistrar {
 // ============================================================================
 
 #define INSPECT_FIELD(cls, field, label, kind, ...) \
+    static void _register_inspect_##field(::tc::InspectFacetBuilder& builder) { \
+        (void)::tc::stage_inspect_field<cls, decltype(cls::field)>( \
+            builder, &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, ##__VA_ARGS__}); \
+    } \
     static void _register_inspect_##field() { \
         ::tc::register_inspect_field<cls, decltype(cls::field)>( \
             &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, ##__VA_ARGS__}); \
     }
 
 #define INSPECT_FIELD_RANGE(cls, field, label, kind, min_val, max_val) \
+    static void _register_inspect_##field(::tc::InspectFacetBuilder& builder) { \
+        (void)::tc::stage_inspect_field<cls, decltype(cls::field)>( \
+            builder, &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, min_val, max_val, 0.01}); \
+    } \
     static void _register_inspect_##field() { \
         ::tc::register_inspect_field<cls, decltype(cls::field)>( \
             &cls::field, ::tc::InspectFieldSpec{#cls, #field, label, kind, min_val, max_val, 0.01}); \
     }
 
 #define INSPECT_FIELD_NAMED(cls, field, path, label, kind, ...) \
+    static void _register_inspect_##field(::tc::InspectFacetBuilder& builder) { \
+        (void)::tc::stage_inspect_field<cls, decltype(cls::field)>( \
+            builder, &cls::field, ::tc::InspectFieldSpec{#cls, path, label, kind, ##__VA_ARGS__}); \
+    } \
     static void _register_inspect_##field() { \
         ::tc::register_inspect_field<cls, decltype(cls::field)>( \
             &cls::field, ::tc::InspectFieldSpec{#cls, path, label, kind, ##__VA_ARGS__}); \
@@ -1601,6 +1677,20 @@ struct InspectTypeMetadataRegistrar {
     }
 
 #define SERIALIZABLE_FIELD(cls, name, getter_expr, setter_expr) \
+    inline void register_serialize_##cls##_##name(::tc::InspectFacetBuilder& builder) { \
+        ::tc::InspectFieldInfo info; \
+        info.type_name = #cls; \
+        info.path = #name; \
+        info.label = #name; \
+        info.is_inspectable = false; \
+        info.getter = [](void* obj) -> tc_value { return static_cast<cls*>(obj)->getter_expr; }; \
+        info.setter = [](void* obj, tc_value value, void*) -> bool { \
+            const tc_value* val = &value; \
+            static_cast<cls*>(obj)->setter_expr; \
+            return true; \
+        }; \
+        (void)builder.add_field(std::move(info)); \
+    } \
     inline void register_serialize_##cls##_##name() { \
         ::tc::SerializableFieldRegistrar<cls>{#cls, #name, \
             [](cls* self) -> tc_value { return self->getter_expr; }, \
@@ -1608,6 +1698,10 @@ struct InspectTypeMetadataRegistrar {
     }
 
 #define INSPECT_FIELD_CHOICES(cls, field, label, kind, ...) \
+    static void _register_inspect_##field(::tc::InspectFacetBuilder& builder) { \
+        (void)::tc::stage_inspect_field_choices<cls, decltype(cls::field)>( \
+            builder, &cls::field, #cls, #field, label, kind, {__VA_ARGS__}); \
+    } \
     static void _register_inspect_##field() { \
         ::tc::register_inspect_field_choices<cls, decltype(cls::field)>( \
             &cls::field, #cls, #field, label, kind, {__VA_ARGS__}); \
@@ -1634,6 +1728,11 @@ struct InspectTypeMetadataRegistrar {
     }
 
 #define INSPECT_TYPE_METADATA(cls, name, value_expr) \
+    static void _register_inspect_metadata_##name(::tc::InspectFacetBuilder& builder) { \
+        tc_value value = (value_expr); \
+        (void)builder.set_metadata_key(#name, &value); \
+        tc_value_free(&value); \
+    } \
     static void _register_inspect_metadata_##name() { \
         ::tc::InspectTypeMetadataRegistrar{#cls, #name, (value_expr)}; \
     }
