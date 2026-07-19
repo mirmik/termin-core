@@ -209,11 +209,6 @@ class TC_INSPECT_API InspectFacetBuilder {
         if (info.path.empty()) {
             return reject("field path must not be empty for type '" + type_name() + "'");
         }
-        if (info.kind.empty()) {
-            return reject(
-                "field '" + type_name() + "." + info.path + "' has no kind"
-            );
-        }
         if (!info.type_name.empty() && info.type_name != type_name()) {
             return reject(
                 "field '" + info.path + "' belongs to type '" + info.type_name +
