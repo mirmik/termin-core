@@ -7,7 +7,11 @@ import sys
 import pytest
 
 from termin_build import python_overlay
-from termin_build.artifact_manifest import SCHEMA_VERSION, SDK_MANIFEST_KIND
+from termin_build.artifact_manifest import (
+    SCHEMA_VERSION,
+    SDK_MANIFEST_KIND,
+    compute_native_build_id,
+)
 
 
 def test_overlay_finder_combines_source_and_installed_package_paths(tmp_path: Path) -> None:
@@ -49,6 +53,7 @@ def test_activate_overlay_rejects_stale_sdk_fingerprint(
             {
                 "schema": SCHEMA_VERSION,
                 "manifest_kind": SDK_MANIFEST_KIND,
+                "native_build_id": compute_native_build_id([]),
                 "artifacts": [],
             }
         ),

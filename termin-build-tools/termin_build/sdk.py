@@ -18,6 +18,7 @@ from .artifact_manifest import (
     SCHEMA_VERSION as ARTIFACT_MANIFEST_SCHEMA,
     SDK_MANIFEST_KIND,
     SDK_MANIFEST_NAME,
+    compute_native_build_id,
     current_python_abi,
     sha256_file,
 )
@@ -35,8 +36,6 @@ from .sdk_python_layout import (
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
 SDK_BUILD_REQUIREMENTS_RELATIVE = Path("build-system/python-sdk-build-requirements.txt")
-RUNTIME_MANIFEST_NAME = "python-runtime-manifest.json"
-RUNTIME_MANIFEST_SCHEMA = 1
 
 
 EXPECTED_SUBMODULE_FILES = {
@@ -652,6 +651,7 @@ def write_artifacts(
     build_manifest = {
         "schema": ARTIFACT_MANIFEST_SCHEMA,
         "manifest_kind": BUILD_MANIFEST_KIND,
+        "native_build_id": compute_native_build_id(build_artifacts),
         "artifacts": build_artifacts,
     }
     build_output = build_dir / BUILD_MANIFEST_NAME
@@ -663,6 +663,7 @@ def write_artifacts(
     sdk_manifest = {
         "schema": ARTIFACT_MANIFEST_SCHEMA,
         "manifest_kind": SDK_MANIFEST_KIND,
+        "native_build_id": compute_native_build_id(sdk_artifacts),
         "artifacts": sdk_artifacts,
     }
     sdk_prefix.mkdir(parents=True, exist_ok=True)
@@ -1531,6 +1532,9 @@ def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
     result = verify_python_runtime_manifest(sdk_prefix)
     if result != 0:
         return result
+    result = verify_python_wheelhouse(sdk_prefix)
+    if result != 0:
+        return result
     return verify_sdk_python_launcher(sdk_prefix)
 
 
@@ -1541,7 +1545,11 @@ from .sdk_runtime_metadata import (
     _load_runtime_lock,
     write_python_runtime_manifest,
 )
-from .sdk_verification import verify_python_runtime_manifest, verify_sdk_python_launcher
+from .sdk_verification import (
+    verify_python_runtime_manifest,
+    verify_python_wheelhouse,
+    verify_sdk_python_launcher,
+)
 
 
 def _build_dir(repo_root: Path, build_type: str) -> Path:

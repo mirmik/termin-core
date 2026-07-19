@@ -12,13 +12,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND, SDK_MANIFEST_NAME
 from .package_manifest import load_manifest
 from .python_interpreter import resolve_python_executable
 
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
 RUNTIME_MANIFEST_NAME = "python-runtime-manifest.json"
-RUNTIME_MANIFEST_SCHEMA = 1
+RUNTIME_MANIFEST_SCHEMA = 2
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
     "Pillow": ("PIL", "pillow.libs", "Pillow.libs"),
 }
@@ -256,6 +257,9 @@ def write_python_runtime_manifest(
     sdk_prefix: Path,
     site_packages: Path,
 ) -> Path:
+    artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+    artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+    artifact_manifest.validate_all()
     runtime_lock = _load_runtime_lock(repo_root)
     local_names = {
         _normalized_distribution_name(package.distribution)
@@ -268,6 +272,7 @@ def write_python_runtime_manifest(
     python_info = _python_version_and_paths(_python_executable())
     manifest = {
         "schema": RUNTIME_MANIFEST_SCHEMA,
+        "native_build_id": artifact_manifest.native_build_id,
         "python_abi": str(python_info["version"]),
         "platform": sys.platform,
         "runtime_lock": installed_lock.relative_to(sdk_prefix).as_posix(),

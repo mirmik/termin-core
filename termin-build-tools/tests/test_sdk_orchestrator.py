@@ -8,7 +8,13 @@ import pytest
 from setuptools import Distribution
 from setuptools.config.pyprojecttoml import apply_configuration
 
-from termin_build import sdk, sdk_python_layout, sdk_runtime_metadata, sdk_verification
+from termin_build import (
+    artifact_manifest,
+    sdk,
+    sdk_python_layout,
+    sdk_runtime_metadata,
+    sdk_verification,
+)
 from termin_build.package_manifest import NativeExtension, PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
 
@@ -35,6 +41,21 @@ def _write_test_distribution(
         encoding="utf-8",
     )
     return module_path
+
+
+def _write_empty_artifact_manifest(sdk_prefix: Path) -> None:
+    artifacts: list[dict[str, object]] = []
+    (sdk_prefix / artifact_manifest.SDK_MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "schema": artifact_manifest.SCHEMA_VERSION,
+                "manifest_kind": artifact_manifest.SDK_MANIFEST_KIND,
+                "native_build_id": artifact_manifest.compute_native_build_id(artifacts),
+                "artifacts": artifacts,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_build_tools_package_config_excludes_generated_build_tree():
@@ -1037,6 +1058,7 @@ def test_runtime_manifest_records_declared_distributions_and_verifies_hashes(
     sdk_prefix = repo_root / "sdk"
     site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
     site_packages.mkdir(parents=True)
+    _write_empty_artifact_manifest(sdk_prefix)
     lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
     lock_path.parent.mkdir(parents=True)
     lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")
@@ -1078,6 +1100,7 @@ def test_runtime_manifest_rejects_undeclared_and_modified_distributions(
     sdk_prefix = repo_root / "sdk"
     site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
     site_packages.mkdir(parents=True)
+    _write_empty_artifact_manifest(sdk_prefix)
     lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
     lock_path.parent.mkdir(parents=True)
     lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")

@@ -24,35 +24,13 @@ backward compatibility with existing subproject setup.py files; the class no
 longer runs CMake.
 """
 
-import logging
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build import build as _build
 from pathlib import Path
 import os
 import shutil
-import sys
 
 from .artifact_manifest import load_selected_manifest
-
-_logger = logging.getLogger(__name__)
-def _find_sdk():
-    env = os.environ.get("TERMIN_SDK")
-    return Path(env) if env else None
-
-
-def _sdk_python_artifact_roots(sdk):
-    roots = []
-    if sys.platform == "win32":
-        roots.append(sdk / "python" / "Lib" / "site-packages")
-    else:
-        lib_dir = sdk / "lib"
-        if lib_dir.is_dir():
-            roots.extend(
-                sorted(lib_dir.glob("python*/site-packages"), reverse=True)
-            )
-    roots.append(sdk / "lib" / "python")
-    return roots
-
 
 def _truthy_env(name, default=True):
     value = os.environ.get(name)
@@ -81,43 +59,11 @@ class TerminCMakeBuildExt(build_ext):
 
     @classmethod
     def compute_local_version(cls, base_version):
-        # pip caches wheels by (name, version, source path). The source tree is
-        # stable, but the pre-built native artifacts are not. Include their
-        # mtimes in the local version so pip cannot serve a stale wheel after a
-        # CMake rebuild.
-        # Scan all native binding modules regardless of platform. On
-        # Linux the binding is `.so`, on Windows `.pyd`, on macOS also
-        # `.so` (or occasionally `.dylib` for transitive deps). If we
-        # only look for `.so` the Windows path silently returns 0 and
-        # pip ends up serving a cached wheel built against the
-        # previous SDK.
-        max_mtime_ns = 0
-        roots = []
-        bindings_dir = os.environ.get("TERMIN_BINDINGS_DIR")
-        if bindings_dir:
-            roots.append(Path(bindings_dir))
-        sdk = _find_sdk()
-        if sdk is not None:
-            roots.extend(_sdk_python_artifact_roots(sdk))
-        source_dir = Path(cls.source_dir or Path.cwd())
-        for parent in (source_dir, *source_dir.parents):
-            roots.append(parent / "build" / "Release" / "bin")
-            roots.append(parent / "build" / "Debug" / "bin")
-        for pattern in ("*.so", "*.pyd", "*.dylib"):
-            for root in roots:
-                if not root.is_dir():
-                    continue
-                for so in root.rglob(pattern):
-                    try:
-                        mt = so.stat().st_mtime_ns
-                    except OSError as e:
-                        _logger.debug("Cannot stat native artifact %s: %s", so, e)
-                        continue
-                    if mt > max_mtime_ns:
-                        max_mtime_ns = mt
-        if max_mtime_ns == 0:
+        manifest = load_selected_manifest(required=False)
+        if manifest is None:
             return base_version
-        return f"{base_version}+sdk{max_mtime_ns // 1_000_000_000}"
+        manifest.validate_all()
+        return f"{base_version}+sdk{manifest.native_build_id}"
 
     def _get_source_dir(self):
         return Path(self.source_dir) if self.source_dir else Path.cwd()

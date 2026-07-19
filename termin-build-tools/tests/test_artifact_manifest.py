@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import zipfile
 
 import pytest
 
 from termin_build import artifact_manifest
 from termin_build.artifact_manifest import ArtifactManifestError
 from termin_build.cmake_ext import TerminCMakeBuildExt
+from termin_build import sdk_verification
 
 
 EXTENSION = "termin.sample._sample_native"
@@ -33,6 +35,7 @@ def _write_manifest(
         "artifacts": [
             {
                 "kind": "python-extension",
+                "distribution": "termin-sample",
                 "extension": EXTENSION,
                 "target": TARGET,
                 "python_abi": artifact_manifest.current_python_abi(),
@@ -48,6 +51,9 @@ def _write_manifest(
             }
         ],
     }
+    data["native_build_id"] = artifact_manifest.compute_native_build_id(
+        data["artifacts"]
+    )
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
     return manifest_path
@@ -136,6 +142,7 @@ def test_sdk_selection_never_falls_back_to_competing_checkout_artifact(
             {
                 "schema": artifact_manifest.SCHEMA_VERSION,
                 "manifest_kind": artifact_manifest.SDK_MANIFEST_KIND,
+                "native_build_id": artifact_manifest.compute_native_build_id([]),
                 "artifacts": [],
             }
         ),
@@ -177,3 +184,87 @@ def test_manifest_rejects_wrong_kind_target_and_abi(tmp_path: Path) -> None:
         artifact_manifest.ArtifactManifest.load(manifest_path).resolve_extension(
             EXTENSION, expected_target="wrong-target"
         )
+
+
+def test_local_version_is_content_stable_and_changes_with_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdk_root = tmp_path / "sdk"
+    binary = sdk_root / "sample.so"
+    sdk_root.mkdir()
+    binary.write_bytes(b"first")
+    _write_manifest(sdk_root, binary)
+    monkeypatch.setenv("TERMIN_SDK", str(sdk_root))
+
+    first = TerminCMakeBuildExt.compute_local_version("0.1.0")
+    binary.touch()
+    assert TerminCMakeBuildExt.compute_local_version("0.1.0") == first
+
+    binary.write_bytes(b"second")
+    _write_manifest(sdk_root, binary)
+    second = TerminCMakeBuildExt.compute_local_version("0.1.0")
+    assert second != first
+    assert second.startswith("0.1.0+sdk")
+
+
+def _write_test_wheel(
+    path: Path,
+    *,
+    version: str,
+    payload_name: str,
+    payload: bytes,
+) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            f"termin_sample-{version}.dist-info/METADATA",
+            f"Name: termin-sample\nVersion: {version}\n",
+        )
+        archive.writestr(f"termin/sample/{payload_name}", payload)
+
+
+def test_wheelhouse_verification_rejects_stale_version_and_payload(
+    tmp_path: Path,
+) -> None:
+    sdk_root = tmp_path / "sdk"
+    binary = sdk_root / "lib" / "python" / "termin" / "sample" / "sample.so"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"native")
+    manifest_path = _write_manifest(sdk_root, binary)
+    manifest = artifact_manifest.ArtifactManifest.load(manifest_path)
+    version = f"0.1.0+sdk{manifest.native_build_id}"
+    (sdk_root / "python-runtime-manifest.json").write_text(
+        json.dumps(
+            {
+                "native_build_id": manifest.native_build_id,
+                "distributions": [{"name": "termin-sample", "version": version}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    wheel_dir = sdk_root / "wheels"
+    wheel_dir.mkdir()
+    wheel = wheel_dir / "termin_sample.whl"
+    _write_test_wheel(
+        wheel,
+        version=version,
+        payload_name=binary.name,
+        payload=b"native",
+    )
+    assert sdk_verification.verify_python_wheelhouse(sdk_root) == 0
+
+    _write_test_wheel(
+        wheel,
+        version="0.1.0+sdkstale",
+        payload_name=binary.name,
+        payload=b"native",
+    )
+    assert sdk_verification.verify_python_wheelhouse(sdk_root) == 1
+
+    _write_test_wheel(
+        wheel,
+        version=version,
+        payload_name=binary.name,
+        payload=b"tampered",
+    )
+    assert sdk_verification.verify_python_wheelhouse(sdk_root) == 1

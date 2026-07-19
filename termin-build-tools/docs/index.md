@@ -15,6 +15,8 @@
 - Strict schema-v2 artifact manifests: relocatable SDK entries are resolved
   relative to the manifest, while developer build artifacts require an
   explicitly selected build manifest.
+- One content-derived native build ID shared by installed runtime metadata and
+  public wheels, with final wheel version and payload provenance verification.
 
 ## Публичный API
 

@@ -16,6 +16,7 @@ SDK_MANIFEST_KIND = "termin-sdk-artifacts"
 BUILD_MANIFEST_KIND = "termin-build-artifacts"
 SDK_MANIFEST_NAME = "termin-artifacts.json"
 BUILD_MANIFEST_NAME = "termin-build-artifacts.json"
+BUILD_ID_LENGTH = 20
 
 
 class ArtifactManifestError(RuntimeError):
@@ -32,6 +33,33 @@ def sha256_file(path: Path) -> str:
 
 def current_python_abi() -> str:
     return str(sysconfig.get_config_var("SOABI") or "unknown")
+
+
+def compute_native_build_id(artifacts: list[dict[str, Any]]) -> str:
+    """Return a stable identity for native payloads and bundled dependencies."""
+    payloads: set[tuple[str, str]] = set()
+    for entry in artifacts:
+        extension = entry.get("extension")
+        digest = entry.get("sha256")
+        if isinstance(extension, str) and isinstance(digest, str):
+            payloads.add((f"extension:{extension}", digest))
+        dependencies = entry.get("runtime_dependencies", [])
+        if not isinstance(dependencies, list):
+            continue
+        for dependency in dependencies:
+            if not isinstance(dependency, dict):
+                continue
+            path = dependency.get("path")
+            dependency_digest = dependency.get("sha256")
+            if isinstance(path, str) and isinstance(dependency_digest, str):
+                payloads.add((f"runtime:{path}", dependency_digest))
+    digest = hashlib.sha256()
+    for identity, payload_hash in sorted(payloads):
+        digest.update(identity.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(payload_hash.encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()[:BUILD_ID_LENGTH]
 
 
 @dataclass(frozen=True)
@@ -70,6 +98,13 @@ class ArtifactManifest:
                 f"artifact manifest {self.path} must contain an artifacts list"
             )
         self._artifacts = artifacts
+        self.native_build_id = str(data.get("native_build_id", ""))
+        expected_build_id = compute_native_build_id(artifacts)
+        if self.native_build_id != expected_build_id:
+            raise ArtifactManifestError(
+                f"native_build_id mismatch in {self.path}: "
+                f"expected {expected_build_id}, got {self.native_build_id!r}"
+            )
 
     @classmethod
     def load(cls, path: Path) -> "ArtifactManifest":

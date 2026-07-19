@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
+import zipfile
 
+from .artifact_manifest import (
+    ArtifactManifest,
+    ArtifactManifestError,
+    SDK_MANIFEST_KIND,
+    SDK_MANIFEST_NAME,
+)
 from .sdk_runtime_metadata import (
     RUNTIME_MANIFEST_NAME,
     RUNTIME_MANIFEST_SCHEMA,
@@ -146,6 +154,16 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
     if manifest.get("schema") != RUNTIME_MANIFEST_SCHEMA:
         print("FAILED: unsupported Python runtime manifest schema", file=sys.stderr)
         return 1
+    try:
+        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+        artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+        artifact_manifest.validate_all()
+    except ArtifactManifestError as error:
+        print(f"FAILED: invalid SDK artifact manifest: {error}", file=sys.stderr)
+        return 1
+    if manifest.get("native_build_id") != artifact_manifest.native_build_id:
+        print("FAILED: Python runtime native_build_id mismatch", file=sys.stderr)
+        return 1
 
     lock_path = (sdk_prefix / str(manifest.get("runtime_lock", ""))).resolve()
     if not lock_path.is_relative_to(sdk_prefix.resolve()) or not lock_path.is_file():
@@ -174,6 +192,27 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
             print(f"FAILED: duplicate manifest distribution: {entry['name']}", file=sys.stderr)
             return 1
         declared[normalized] = entry
+
+    native_distributions = {
+        _normalized_distribution_name(str(entry.get("distribution", "")))
+        for entry in artifact_manifest.data["artifacts"]
+    }
+    expected_suffix = f"+sdk{artifact_manifest.native_build_id}"
+    for normalized in sorted(native_distributions):
+        entry = declared.get(normalized)
+        if entry is None:
+            print(
+                f"FAILED: native distribution missing from runtime manifest: {normalized}",
+                file=sys.stderr,
+            )
+            return 1
+        if not str(entry.get("version", "")).endswith(expected_suffix):
+            print(
+                f"FAILED: native distribution {entry['name']} has version "
+                f"{entry.get('version')!r}, expected suffix {expected_suffix}",
+                file=sys.stderr,
+            )
+            return 1
 
     actual_metadata = _distribution_metadata_paths(site_packages)
     actual_names: set[str] = set()
@@ -213,4 +252,105 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
         print(f"FAILED: {len(errors)} Python runtime manifest error(s)", file=sys.stderr)
         return 1
     print(f"  OK: {len(declared)} declared distributions and RECORD hashes verified")
+    return 0
+
+
+def _wheel_metadata(wheel: Path) -> tuple[str, str, zipfile.ZipFile]:
+    archive = zipfile.ZipFile(wheel)
+    metadata_names = [
+        name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+    ]
+    if len(metadata_names) != 1:
+        archive.close()
+        raise RuntimeError(f"wheel has {len(metadata_names)} METADATA files: {wheel.name}")
+    metadata = archive.read(metadata_names[0]).decode("utf-8", errors="replace")
+    fields = {}
+    for line in metadata.splitlines():
+        if line.startswith(("Name:", "Version:")):
+            key, value = line.split(":", 1)
+            fields[key.lower()] = value.strip()
+    if not fields.get("name") or not fields.get("version"):
+        archive.close()
+        raise RuntimeError(f"wheel metadata has no Name/Version: {wheel.name}")
+    return fields["name"], fields["version"], archive
+
+
+def verify_python_wheelhouse(sdk_prefix: Path) -> int:
+    wheel_dir = sdk_prefix / "wheels"
+    print("Verifying: SDK Python wheelhouse provenance")
+    if not wheel_dir.is_dir():
+        print("  SKIP: public SDK wheelhouse is not present")
+        return 0
+    try:
+        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+        artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+        artifact_manifest.validate_all()
+        runtime_manifest = json.loads(
+            (sdk_prefix / RUNTIME_MANIFEST_NAME).read_text(encoding="utf-8")
+        )
+    except (ArtifactManifestError, OSError, json.JSONDecodeError) as error:
+        print(f"FAILED: cannot verify SDK wheelhouse: {error}", file=sys.stderr)
+        return 1
+
+    runtime_versions = {
+        _normalized_distribution_name(str(entry.get("name", ""))): entry.get("version")
+        for entry in runtime_manifest.get("distributions", [])
+        if isinstance(entry, dict)
+    }
+    artifacts_by_distribution: dict[str, list[dict[str, object]]] = {}
+    for entry in artifact_manifest.data["artifacts"]:
+        normalized = _normalized_distribution_name(str(entry.get("distribution", "")))
+        artifacts_by_distribution.setdefault(normalized, []).append(entry)
+
+    wheels: dict[str, list[tuple[Path, str, zipfile.ZipFile]]] = {}
+    errors = []
+    for wheel in sorted(wheel_dir.glob("*.whl")):
+        try:
+            name, version, archive = _wheel_metadata(wheel)
+        except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+            errors.append(str(error))
+            continue
+        normalized = _normalized_distribution_name(name)
+        wheels.setdefault(normalized, []).append((wheel, version, archive))
+    try:
+        for distribution, artifacts in artifacts_by_distribution.items():
+            matching = wheels.get(distribution, [])
+            if len(matching) != 1:
+                errors.append(
+                    f"native distribution {distribution} has {len(matching)} public wheels"
+                )
+                continue
+            wheel, version, archive = matching[0]
+            expected_version = runtime_versions.get(distribution)
+            if version != expected_version:
+                errors.append(
+                    f"wheel version mismatch for {distribution}: "
+                    f"{version!r}, runtime {expected_version!r}"
+                )
+            members = archive.namelist()
+            for artifact in artifacts:
+                basename = Path(str(artifact["path"])).name
+                payloads = [name for name in members if Path(name).name == basename]
+                if len(payloads) != 1:
+                    errors.append(
+                        f"wheel {wheel.name} contains {len(payloads)} payloads named {basename}"
+                    )
+                    continue
+                actual_hash = hashlib.sha256(archive.read(payloads[0])).hexdigest()
+                if actual_hash != artifact.get("sha256"):
+                    errors.append(
+                        f"wheel native payload hash mismatch: {wheel.name}:{payloads[0]}"
+                    )
+    finally:
+        for matching in wheels.values():
+            for _, _, archive in matching:
+                archive.close()
+    if errors:
+        for error in errors[:50]:
+            print(f"  {error}", file=sys.stderr)
+        print(f"FAILED: {len(errors)} wheelhouse provenance error(s)", file=sys.stderr)
+        return 1
+    print(
+        f"  OK: {len(artifacts_by_distribution)} native wheel versions and payloads verified"
+    )
     return 0
