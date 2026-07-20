@@ -149,6 +149,7 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
 def test_linux_sdk_build_skips_csharp_unless_requested(tmp_path, monkeypatch, capsys):
     interpreter = tmp_path / "python"
     interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
 
     result = sdk.run_sdk_build(
@@ -170,6 +171,7 @@ def test_linux_sdk_build_skips_csharp_unless_requested(tmp_path, monkeypatch, ca
 def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
     interpreter = tmp_path / "python"
     interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
 
     result = sdk.run_sdk_build(
@@ -1060,6 +1062,9 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     bundled_py_dir = sdk_prefix.joinpath(*bundled_python_parts)
     site_packages = bundled_py_dir / "site-packages"
     (bundled_py_dir / "ensurepip").mkdir(parents=True)
+    installed_artifact = site_packages / "example" / "_example_native.pyd"
+    installed_artifact.parent.mkdir(parents=True)
+    installed_artifact.write_bytes(b"installed")
     (sdk_prefix / "lib").mkdir(exist_ok=True)
     (build_dir / "bin").mkdir(parents=True)
     if not is_windows:
@@ -1098,7 +1103,10 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     monkeypatch.setattr(
         sdk,
         "_build_local_package_wheels",
-        lambda **kwargs: calls.append(("build", kwargs)) or 0,
+        lambda **kwargs: calls.append(
+            ("build", kwargs, installed_artifact.is_file())
+        )
+        or 0,
     )
     monkeypatch.setattr(
         sdk,
@@ -1119,6 +1127,7 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
 
     assert result == 0
     assert [call[0] for call in calls] == ["external", "build", "install", "manifest"]
+    assert calls[1][2] is True
     assert calls[2][1]["site_packages"] == site_packages
     assert calls[2][1]["external_wheels"] == Path("external")
     assert calls[2][1]["local_wheels"] == Path("local")

@@ -710,9 +710,6 @@ def install_python_packages(
     bundled_site_packages = bundled_py_dir / "site-packages"
     print(f"Bundled Python stdlib:        {bundled_py_dir}")
     print(f"Bundled Python site-packages: {bundled_site_packages}")
-    if _is_windows() and bundled_site_packages.is_dir():
-        shutil.rmtree(bundled_site_packages)
-        bundled_site_packages.mkdir(parents=True, exist_ok=True)
 
     try:
         termin_sdk = _resolve_sdk_prefix(repo_root, sdk_prefix)
