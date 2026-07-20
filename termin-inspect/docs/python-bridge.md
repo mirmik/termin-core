@@ -17,30 +17,21 @@ Python bridge регистрирует себя как language backend в C dis
 
 ### InspectRegistryPythonExt
 
-Регистрация полей Python-классов:
-
-```python
-# На стороне Python (через nanobind-биндинги)
-register_python_fields("MyComponent", [
-    {"name": "speed", "display_name": "Speed", "kind": "float"},
-    {"name": "target", "display_name": "Target", "kind": "string"},
-])
-```
+Bridge извлекает декларативные `inspect_fields` Python-класса в отдельный
+`InspectFacetBuilder`. Публичного `InspectRegistry.register_python_fields()`
+нет: component publisher присоединяет staged facet к component runtime
+descriptor и публикует их одной транзакцией.
 
 Операции:
 
-- `register_python_fields(type_name, fields)` — регистрация полей.
+- `build_python_inspect_facet(type_name, fields)` — построение staged facet в C++ publisher.
 - `get(obj, type_name, path)` — чтение поля через `getattr`.
 - `set(obj, type_name, path, value, context)` — запись через `setattr`.
 - `deserialize_all_py(obj, type_name, data, context)` — десериализация всех полей из `tc_value`.
 
-Регистрация полей транзакционна: bridge сначала извлекает и проверяет полное
-описание Python-класса во временном `InspectFacetBuilder`, после чего заменяет
-опубликованный inspect facet одной операцией. Ошибка при чтении или валидации
-любого поля не создаёт частично зарегистрированный тип и не повреждает ранее
-опубликованное описание. Для C++-регистраторов тот же staged API доступен через
-`tc::InspectFacetBuilder`; готовый builder следует присоединять к
-`tc_runtime_type_descriptor` и публиковать вместе с остальными facet типа.
+Ошибка при чтении или валидации любого поля возникает до commit и не создаёт
+type shell. Python-код объявляет класс и metadata, но сам импорт не меняет live
+registry; builtin bootstrap или module transaction выполняет публикацию.
 
 ### KindRegistryPython
 
@@ -61,8 +52,8 @@ register_python_kind("my_type",
 
 Работает так же, как в C++:
 
-1. Зарегистрировать поля каждого типа.
-2. Указать наследование: `set_type_parent("ChildComponent", "BaseComponent")`.
+1. Построить и committed descriptor родителя.
+2. Построить descriptor потомка с именем родителя и только собственными полями.
 
 После этого `all_fields("ChildComponent")` включает поля родителя.
 

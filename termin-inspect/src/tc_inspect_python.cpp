@@ -107,12 +107,6 @@ static tc_value python_inspect_get_type_metadata(const char* type_name, void* ct
     return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
 }
 
-static void python_inspect_set_type_metadata(const char* type_name, const tc_value* metadata, void* ctx) {
-    (void)ctx;
-    if (!type_name) return;
-    InspectRegistry::instance().set_type_metadata(type_name, metadata);
-}
-
 static bool g_python_inspect_vtable_initialized = false;
 
 void init_python_inspect_vtable() {
@@ -129,34 +123,10 @@ void init_python_inspect_vtable() {
         python_inspect_set,
         python_inspect_action,
         python_inspect_get_type_metadata,
-        python_inspect_set_type_metadata,
         nullptr
     };
 
     tc_inspect_set_lang_vtable(TC_INSPECT_LANG_PYTHON, &python_vtable);
-}
-
-void InspectRegistryPythonExt::add_button(InspectRegistry& reg, const std::string& type_name,
-                                          const std::string& path, const std::string& label,
-                                          nb::object action) {
-    InspectFieldInfo info;
-    info.type_name = type_name;
-    info.path = path;
-    info.label = label;
-    info.kind = "button";
-    info.is_serializable = false;
-    info.is_inspectable = true;
-
-    // The lambda capture owns the nb::object reference while the field lives.
-    nb::object py_action = std::move(action);
-    info.action = [py_action](void* obj, const InspectContext&) {
-        if (!obj) return;
-        nb::object py_obj = nb::borrow<nb::object>(
-            nb::handle(static_cast<PyObject*>(obj)));
-        py_action(py_obj);
-    };
-
-    reg.register_field(type_name, std::move(info), false, "python button registration");
 }
 
 InspectFacetBuilder InspectRegistryPythonExt::build_python_fields(
@@ -335,22 +305,6 @@ InspectFacetBuilder InspectRegistryPythonExt::build_python_fields(
     }
 
     return builder;
-}
-
-void InspectRegistryPythonExt::register_python_fields(
-    InspectRegistry& reg,
-    const std::string& type_name,
-    nb::dict fields_dict
-) {
-    InspectFacetBuilder builder = build_python_fields(
-        type_name,
-        std::move(fields_dict)
-    );
-    if (!reg.publish_staged_facet(std::move(builder), "python field registration")) {
-        throw std::runtime_error(
-            "failed to publish staged Python inspect fields for type '" + type_name + "'"
-        );
-    }
 }
 
 nb::object InspectRegistryPythonExt::get(InspectRegistry& reg, void* obj,

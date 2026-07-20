@@ -86,7 +86,6 @@ GUARD_C_TEST(test_inspect_dispatcher) {
         mock_set,
         mock_action,
         NULL,
-        NULL,
         NULL
     };
 

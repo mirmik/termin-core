@@ -33,46 +33,6 @@ static tc_runtime_type_registry_storage g_runtime_type_registry = {0};
 
 static tc_runtime_type_record* find_record(const char* type_name);
 
-static bool parent_assignment_is_acyclic(
-    const char* type_name,
-    const char* parent_name
-) {
-    if (!parent_name || !parent_name[0]) {
-        return true;
-    }
-
-    const char* candidate = parent_name;
-    size_t steps = 0;
-    const size_t max_steps = tc_runtime_type_registry_type_count() + 1;
-    while (candidate) {
-        if (strcmp(candidate, type_name) == 0) {
-            tc_log(
-                TC_LOG_ERROR,
-                "[RuntimeTypeRegistry] parent assignment rejected: cycle for type '%s' through parent '%s'",
-                type_name,
-                parent_name
-            );
-            return false;
-        }
-        if (steps++ >= max_steps) {
-            tc_log(
-                TC_LOG_ERROR,
-                "[RuntimeTypeRegistry] parent assignment rejected: existing parent cycle while assigning type '%s' to parent '%s'",
-                type_name,
-                parent_name
-            );
-            return false;
-        }
-
-        tc_runtime_type_record* parent = find_record(candidate);
-        if (!parent || parent->tombstoned) {
-            return true;
-        }
-        candidate = parent->parent;
-    }
-    return true;
-}
-
 struct tc_runtime_type_descriptor {
     const char* name;
     const char* owner;
@@ -80,7 +40,6 @@ struct tc_runtime_type_descriptor {
     tc_resource_map* facets;
     tc_runtime_type_record* prepared_record;
     char* prepared_record_key;
-    bool allow_unowned_shell_adoption;
     bool allow_same_owner_replacement;
     bool valid;
 };
@@ -315,20 +274,6 @@ bool tc_runtime_type_descriptor_add_facet(
     return true;
 }
 
-bool tc_runtime_type_descriptor_allow_unowned_shell_adoption(
-    tc_runtime_type_descriptor* descriptor
-) {
-    if (!descriptor || !descriptor->valid) {
-        tc_log(
-            TC_LOG_ERROR,
-            "[RuntimeTypeRegistry] cannot enable shell adoption on an invalid descriptor"
-        );
-        return false;
-    }
-    descriptor->allow_unowned_shell_adoption = true;
-    return true;
-}
-
 bool tc_runtime_type_descriptor_allow_same_owner_replacement(
     tc_runtime_type_descriptor* descriptor
 ) {
@@ -365,10 +310,6 @@ bool tc_runtime_type_registry_commit_descriptor(
 
     bool committed = false;
     tc_runtime_type_record* existing = find_record(descriptor->name);
-    const bool can_adopt_unowned_shell =
-        existing && !existing->tombstoned &&
-        descriptor->allow_unowned_shell_adoption &&
-        !existing->owner && existing->instance_count == 0;
     const bool can_replace_same_owner =
         existing && !existing->tombstoned &&
         descriptor->allow_same_owner_replacement &&
@@ -382,7 +323,7 @@ bool tc_runtime_type_registry_commit_descriptor(
             descriptor->owner
         );
     } else if (existing && !existing->tombstoned &&
-               !can_adopt_unowned_shell && !can_replace_same_owner) {
+               !can_replace_same_owner) {
         tc_log(
             TC_LOG_ERROR,
             "[RuntimeTypeRegistry] active descriptor replacement rejected: type='%s' existing_owner='%s' incoming_owner='%s'",
@@ -390,7 +331,7 @@ bool tc_runtime_type_registry_commit_descriptor(
             existing->owner ? existing->owner : "<none>",
             descriptor->owner
         );
-    } else if (can_adopt_unowned_shell || can_replace_same_owner) {
+    } else if (can_replace_same_owner) {
         tc_resource_map* replaced_facets = existing->facets;
         existing->owner = descriptor->owner;
         existing->parent = descriptor->parent;
@@ -454,53 +395,6 @@ bool tc_runtime_type_registry_commit_descriptor(
 
     tc_runtime_type_descriptor_destroy(descriptor);
     return committed;
-}
-
-static tc_runtime_type_record* ensure_record(const char* type_name) {
-    if (!type_name || !type_name[0]) {
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] cannot create unnamed runtime type");
-        return NULL;
-    }
-
-    ensure_registry_initialized();
-
-    tc_runtime_type_record* record = find_record(type_name);
-    if (record) {
-        if (record->tombstoned) {
-            record->tombstoned = false;
-            record->generation++;
-        }
-        return record;
-    }
-
-    record = (tc_runtime_type_record*)calloc(1, sizeof(tc_runtime_type_record));
-    if (!record) {
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to allocate type '%s'", type_name);
-        return NULL;
-    }
-
-    record->name = tc_intern_string(type_name);
-    record->owner = NULL;
-    record->parent = NULL;
-    record->generation = 1;
-    record->facets = tc_resource_map_new(destroy_facet_record);
-    tc_dlist_init_head(&record->instances);
-    record->instance_count = 0;
-    record->tombstoned = false;
-    if (!record->facets) {
-        free(record);
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to allocate facets for '%s'", type_name);
-        return NULL;
-    }
-
-    if (!tc_resource_map_add(g_runtime_type_registry.records, record->name, record)) {
-        tc_resource_map_free(record->facets);
-        free(record);
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to insert type '%s'", type_name);
-        return NULL;
-    }
-
-    return record;
 }
 
 static void clear_record_facets(tc_runtime_type_record* record) {
@@ -579,10 +473,6 @@ static bool prepare_record_unload(tc_runtime_type_record* record, void* context)
 bool tc_runtime_type_registry_has_type(const char* type_name) {
     tc_runtime_type_record* record = find_record(type_name);
     return record && !record->tombstoned;
-}
-
-bool tc_runtime_type_registry_ensure_type(const char* type_name) {
-    return ensure_record(type_name) != NULL;
 }
 
 bool tc_runtime_type_registry_unregister_type_with_context(
@@ -749,155 +639,14 @@ size_t tc_runtime_type_registry_unregister_owner(const char* owner) {
     return tc_runtime_type_registry_unregister_owner_with_context(owner, NULL);
 }
 
-bool tc_runtime_type_registry_set_owner(
-    const char* type_name,
-    const char* owner,
-    bool allow_existing_unowned
-) {
-    if (!type_name || !type_name[0]) {
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] cannot set owner for unnamed runtime type");
-        return false;
-    }
-    if (!owner || !owner[0]) {
-        return true;
-    }
-
-    tc_runtime_type_record* record = ensure_record(type_name);
-    if (!record) {
-        return false;
-    }
-
-    const char* interned_owner = tc_intern_string(owner);
-    if (!record->owner) {
-        if (!allow_existing_unowned) {
-            return false;
-        }
-        record->owner = interned_owner;
-        record->generation++;
-        return true;
-    }
-    if (strcmp(record->owner, interned_owner) == 0) {
-        return true;
-    }
-
-    tc_log(
-        TC_LOG_WARN,
-        "[RuntimeTypeRegistry] owner conflict for type '%s': existing='%s' incoming='%s'",
-        type_name,
-        record->owner,
-        interned_owner
-    );
-    return false;
-}
-
 const char* tc_runtime_type_registry_get_owner(const char* type_name) {
     tc_runtime_type_record* record = find_record(type_name);
     return record ? record->owner : NULL;
 }
 
-bool tc_runtime_type_registry_set_parent(const char* type_name, const char* parent_name) {
-    if (!type_name || !type_name[0]) {
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] cannot set parent for unnamed runtime type");
-        return false;
-    }
-
-    if (!parent_assignment_is_acyclic(type_name, parent_name)) {
-        return false;
-    }
-
-    const char* parent = (parent_name && parent_name[0])
-        ? tc_intern_string(parent_name)
-        : NULL;
-    tc_runtime_type_record* record = ensure_record(type_name);
-    if (!record) {
-        return false;
-    }
-    if (record->parent == parent ||
-        (record->parent && parent && strcmp(record->parent, parent) == 0)) {
-        return true;
-    }
-
-    record->parent = parent;
-    record->generation++;
-    return true;
-}
-
 const char* tc_runtime_type_registry_get_parent(const char* type_name) {
     tc_runtime_type_record* record = find_record(type_name);
     return record ? record->parent : NULL;
-}
-
-bool tc_runtime_type_registry_set_facet(
-    const char* type_name,
-    const char* facet_id,
-    void* payload,
-    tc_runtime_type_facet_destroy_fn destroy,
-    uint32_t abi_version
-) {
-    return tc_runtime_type_registry_set_facet_with_lifecycle(
-        type_name,
-        facet_id,
-        payload,
-        destroy,
-        NULL,
-        abi_version
-    );
-}
-
-bool tc_runtime_type_registry_set_facet_with_lifecycle(
-    const char* type_name,
-    const char* facet_id,
-    void* payload,
-    tc_runtime_type_facet_destroy_fn destroy,
-    tc_runtime_type_facet_prepare_unload_fn prepare_unload,
-    uint32_t abi_version
-) {
-    if (!type_name || !type_name[0] || !facet_id || !facet_id[0]) {
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] cannot set unnamed facet or type");
-        return false;
-    }
-
-    tc_runtime_type_record* record = ensure_record(type_name);
-    if (!record) {
-        return false;
-    }
-    if (!record->facets) {
-        record->facets = tc_resource_map_new(destroy_facet_record);
-        if (!record->facets) {
-            tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to allocate facets for '%s'", type_name);
-            return false;
-        }
-    }
-
-    tc_runtime_type_facet_record* existing =
-        (tc_runtime_type_facet_record*)tc_resource_map_get(record->facets, facet_id);
-    if (existing && existing->payload == payload &&
-        existing->destroy == destroy &&
-        existing->prepare_unload == prepare_unload) {
-        existing->abi_version = abi_version;
-        record->generation++;
-        return true;
-    }
-
-    tc_runtime_type_facet_record* facet =
-        (tc_runtime_type_facet_record*)calloc(1, sizeof(tc_runtime_type_facet_record));
-    if (!facet) {
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to allocate facet '%s.%s'", type_name, facet_id);
-        return false;
-    }
-    facet->payload = payload;
-    facet->destroy = destroy;
-    facet->prepare_unload = prepare_unload;
-    facet->abi_version = abi_version;
-
-    if (!tc_resource_map_replace(record->facets, facet_id, facet)) {
-        free(facet);
-        tc_log(TC_LOG_ERROR, "[RuntimeTypeRegistry] failed to publish facet '%s.%s'", type_name, facet_id);
-        return false;
-    }
-
-    record->generation++;
-    return true;
 }
 
 void* tc_runtime_type_registry_get_facet(const char* type_name, const char* facet_id) {
@@ -908,28 +657,6 @@ void* tc_runtime_type_registry_get_facet(const char* type_name, const char* face
     tc_runtime_type_facet_record* facet =
         (tc_runtime_type_facet_record*)tc_resource_map_get(record->facets, facet_id);
     return facet ? facet->payload : NULL;
-}
-
-bool tc_runtime_type_registry_remove_facet(const char* type_name, const char* facet_id) {
-    tc_runtime_type_record* record = find_record(type_name);
-    if (!record || !record->facets || !facet_id) {
-        return false;
-    }
-
-    if (!tc_resource_map_remove(record->facets, facet_id)) {
-        return false;
-    }
-
-    if (tc_resource_map_count(record->facets) == 0 && record->instance_count == 0) {
-        tc_resource_map_remove(g_runtime_type_registry.records, type_name);
-        return true;
-    }
-
-    if (tc_resource_map_count(record->facets) == 0) {
-        record->tombstoned = true;
-    }
-    record->generation++;
-    return true;
 }
 
 bool tc_runtime_type_registry_has_facet(const char* type_name, const char* facet_id) {
@@ -1041,16 +768,10 @@ bool tc_runtime_type_registry_link_instance(
     }
 
     tc_runtime_type_record* record = find_record(type_name);
-    if (!record) {
-        record = ensure_record(type_name);
-    }
-    if (!record) {
-        return false;
-    }
-    if (record->tombstoned) {
+    if (!record || record->tombstoned) {
         tc_log(
             TC_LOG_ERROR,
-            "[RuntimeTypeRegistry] cannot link instance to tombstoned runtime type '%s'",
+            "[RuntimeTypeRegistry] cannot link instance to uncommitted runtime type '%s'",
             type_name
         );
         return false;

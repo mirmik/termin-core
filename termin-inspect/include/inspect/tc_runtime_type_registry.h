@@ -60,11 +60,6 @@ TC_API bool tc_runtime_type_descriptor_add_facet(
     tc_runtime_type_facet_prepare_unload_fn prepare_unload,
     uint32_t abi_version
 );
-// Permit this descriptor to replace an active ownerless shell. Callers must
-// opt in only after verifying that the existing type carries no owned data.
-TC_API bool tc_runtime_type_descriptor_allow_unowned_shell_adoption(
-    tc_runtime_type_descriptor* descriptor
-);
 // Permit allocation-free replacement of an active descriptor owned by the
 // same subsystem. Replacement is rejected while instances remain linked.
 TC_API bool tc_runtime_type_descriptor_allow_same_owner_replacement(
@@ -78,7 +73,6 @@ TC_API bool tc_runtime_type_registry_commit_descriptor(
 );
 
 TC_API bool tc_runtime_type_registry_has_type(const char* type_name);
-TC_API bool tc_runtime_type_registry_ensure_type(const char* type_name);
 TC_API void tc_runtime_type_registry_unregister_type(const char* type_name);
 TC_API bool tc_runtime_type_registry_unregister_type_with_context(
     const char* type_name,
@@ -98,39 +92,11 @@ TC_API bool tc_runtime_type_registry_commit_owner_unload(
     size_t* removed_count
 );
 
-TC_API bool tc_runtime_type_registry_set_owner(
-    const char* type_name,
-    const char* owner,
-    bool allow_existing_unowned
-);
 TC_API const char* tc_runtime_type_registry_get_owner(const char* type_name);
 
-TC_API bool tc_runtime_type_registry_set_parent(
-    const char* type_name,
-    const char* parent_name
-);
 TC_API const char* tc_runtime_type_registry_get_parent(const char* type_name);
 
-TC_API bool tc_runtime_type_registry_set_facet(
-    const char* type_name,
-    const char* facet_id,
-    void* payload,
-    tc_runtime_type_facet_destroy_fn destroy,
-    uint32_t abi_version
-);
-TC_API bool tc_runtime_type_registry_set_facet_with_lifecycle(
-    const char* type_name,
-    const char* facet_id,
-    void* payload,
-    tc_runtime_type_facet_destroy_fn destroy,
-    tc_runtime_type_facet_prepare_unload_fn prepare_unload,
-    uint32_t abi_version
-);
 TC_API void* tc_runtime_type_registry_get_facet(
-    const char* type_name,
-    const char* facet_id
-);
-TC_API bool tc_runtime_type_registry_remove_facet(
     const char* type_name,
     const char* facet_id
 );

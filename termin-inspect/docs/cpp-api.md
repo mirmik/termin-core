@@ -1,44 +1,44 @@
 # C++ API
 
-## InspectRegistry
+## InspectFacetBuilder и InspectRegistry
 
-Singleton-реестр полей для C++ типов. Обеспечивает get/set, наследование и сериализацию.
+`InspectFacetBuilder` собирает полное описание inspect facet вне live registry.
+`InspectRegistry` после commit предоставляет только query/get/set и сериализацию.
 
-### Регистрация полей
+```cpp
+tc::InspectFacetBuilder inspect("Player");
+inspect.add<Player, int>(
+    "Player", &Player::hp, "hp", "HP", "int");
+inspect.add<Player, std::string>(
+    "Player", &Player::name, "name", "Name", "string");
+
+auto* descriptor = tc_runtime_type_descriptor_create(
+    "Player", "gameplay", "BaseActor");
+if (!inspect.attach_to(descriptor) ||
+    !tc_runtime_type_registry_commit_descriptor(descriptor)) {
+    throw std::runtime_error("Player descriptor commit failed");
+}
+```
+
+В component/pass коде raw descriptor не нужен: `ComponentTypeDescriptorBuilder`
+и `FramePassTypeDescriptorBuilder` уже содержат `inspect()` и публикуют factory,
+parent, metadata и inspect facet одним commit. Родитель публикуется раньше
+потомка. После commit дописывать поля, parent или metadata нельзя.
+
+### Query / Get / Set
 
 ```cpp
 auto& reg = tc::InspectRegistry::instance();
-
-// Простое поле — указатель на member
-reg.add<Player, int>("Player", &Player::hp, "hp", "HP", "int");
-reg.add<Player, std::string>("Player", &Player::name, "name", "Name", "string");
-```
-
-### Наследование
-
-```cpp
-struct Base { int hp = 100; };
-struct Derived : Base { std::string name = "unit"; };
-
-reg.add<Base, int>("Base", &Base::hp, "hp", "HP", "int");
-reg.add<Derived, std::string>("Derived", &Derived::name, "name", "Name", "string");
-reg.set_type_parent("Derived", "Base");
-
-// all_fields("Derived") вернёт поля Derived + Base
-```
-
-### Get / Set
-
-```cpp
-tc_value* val = reg.get(&obj, "Player", "hp");
-reg.set(&obj, "Player", "hp", new_value, context);
+auto fields = reg.all_fields("Player");
+tc_value value = reg.get_tc_value(&player, "Player", "hp");
+reg.set_tc_value(&player, "Player", "hp", new_value, context);
 ```
 
 ### Serialize / Deserialize
 
 ```cpp
-tc_value* data = reg.serialize(&obj, "Player");
-reg.deserialize(&obj, "Player", data, context);
+tc_value data = reg.serialize_all(&player, "Player");
+reg.deserialize_all(&player, "Player", &data, context);
 ```
 
 ## KindRegistryCpp
@@ -81,8 +81,8 @@ auto list = kinds.kinds();
 | `INSPECT_BUTTON` | Action-кнопка (без данных, только callback) |
 | `SERIALIZABLE_FIELD` | Поле, участвующее в serialize/deserialize |
 
-Эти макросы больше не создают inline static registrar. В объявлении класса они
-определяют только явную registration-функцию; класс вызывает её из собственного
-idempotent `register_type()`, а deterministic bootstrap вызывает
-`Type::register_type()`. Для project module та же граница оформляется через
-`TC_MODULE_INSPECT_*` внутри `register_type()`, вызванного из ABI `init`.
+Макросы создают только overload, принимающий `InspectFacetBuilder&`. Тип вызывает
+его при сборке своего component/pass descriptor; no-argument overloads,
+inline-static registrars и `TC_MODULE_INSPECT_*` удалены. Повторный commit не
+считается идемпотентным успехом: replacement должен быть явно разрешён и иметь
+того же owner.

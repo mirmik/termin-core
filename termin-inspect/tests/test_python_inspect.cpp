@@ -18,6 +18,30 @@ bool require_check(bool condition, const char* message) {
     return true;
 }
 
+void publish_python_inspect_type(
+    const char* type_name,
+    const char* parent,
+    nb::dict fields,
+    bool replace = false
+) {
+    tc::InspectFacetBuilder inspect = tc::build_python_inspect_facet(
+        type_name, std::move(fields));
+    auto* descriptor = tc_runtime_type_descriptor_create(
+        type_name, "termin-inspect-python-test", parent);
+    if (!descriptor) throw std::runtime_error("could not create runtime descriptor");
+    if (replace && !tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor)) {
+        tc_runtime_type_descriptor_destroy(descriptor);
+        throw std::runtime_error("could not enable descriptor replacement");
+    }
+    if (!inspect.attach_to(descriptor)) {
+        tc_runtime_type_descriptor_destroy(descriptor);
+        throw std::runtime_error(inspect.error());
+    }
+    if (!tc_runtime_type_registry_commit_descriptor(descriptor)) {
+        throw std::runtime_error("could not commit Python inspect descriptor");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -30,8 +54,8 @@ int main() {
     tc::init_python_inspect_vtable();
     {
         auto& reg = tc::InspectRegistry::instance();
-        reg.unregister_type("PyBaseComponent");
-        reg.unregister_type("PyDerivedComponent");
+        tc_runtime_type_registry_unregister_type("PyBaseComponent");
+        tc_runtime_type_registry_unregister_type("PyDerivedComponent");
 
         const char* script = R"PY(
 class InspectField:
@@ -107,16 +131,17 @@ obj = PyDerivedComponent()
         nb::dict derived_fields = nb::cast<nb::dict>(globals["derived_fields"]);
         nb::object obj = nb::borrow<nb::object>(globals["obj"]);
 
-        tc::InspectRegistry_register_python_fields(reg, "PyBaseComponent", std::move(base_fields));
-        tc::InspectRegistry_register_python_fields(reg, "PyDerivedComponent", std::move(derived_fields));
-        reg.set_type_parent("PyDerivedComponent", "PyBaseComponent");
+        publish_python_inspect_type(
+            "PyBaseComponent", nullptr, std::move(base_fields));
+        publish_python_inspect_type(
+            "PyDerivedComponent", "PyBaseComponent", std::move(derived_fields));
 
         nb::dict broken_fields = nb::cast<nb::dict>(globals["broken_fields"]);
         bool rejected_new_fields = false;
         try {
-            tc::InspectRegistry_register_python_fields(
-                reg,
+            publish_python_inspect_type(
                 "PyBrokenComponent",
+                nullptr,
                 nb::dict(broken_fields)
             );
         } catch (const nb::python_error&) {
@@ -129,10 +154,11 @@ obj = PyDerivedComponent()
 
         bool rejected_replacement = false;
         try {
-            tc::InspectRegistry_register_python_fields(
-                reg,
+            publish_python_inspect_type(
                 "PyBaseComponent",
-                std::move(broken_fields)
+                nullptr,
+                std::move(broken_fields),
+                true
             );
         } catch (const nb::python_error&) {
             rejected_replacement = true;
@@ -216,19 +242,16 @@ action_fields = {
         Py_ssize_t action_refcount = Py_REFCNT(inspect_action.ptr());
 
         nb::dict action_fields = nb::cast<nb::dict>(globals["action_fields"]);
-        tc::InspectRegistry_register_python_fields(reg, "PyActionComponent", std::move(action_fields));
+        publish_python_inspect_type(
+            "PyActionComponent", nullptr, std::move(action_fields));
         if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount + 1,
                            "registered action field owns one callable reference")) return 1;
-        reg.unregister_type("PyActionComponent");
+        tc_runtime_type_registry_unregister_type("PyActionComponent");
         if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount,
                            "unregister_type releases action field callable reference")) return 1;
 
-        tc::InspectRegistry_add_button(reg, "PyButtonComponent", "run", "Run", inspect_action);
-        if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount + 1,
-                           "add_button owns one callable reference")) return 1;
-        reg.unregister_type("PyButtonComponent");
-        if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount,
-                           "unregister_type releases add_button callable reference")) return 1;
+        tc_runtime_type_registry_unregister_type("PyDerivedComponent");
+        tc_runtime_type_registry_unregister_type("PyBaseComponent");
     }
 
     tc::KindRegistry::instance().clear_python();
