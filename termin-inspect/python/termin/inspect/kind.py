@@ -58,6 +58,14 @@ class KindRegistry:
                 KindRegistry.unregister_python(name)
 
     @staticmethod
+    def list_owned(owner: str) -> list[str]:
+        return sorted(
+            name
+            for name, registered_owner in KindRegistry._python_owners.items()
+            if registered_owner == owner
+        )
+
+    @staticmethod
     def register_type(type_, kind_name: str):
         """Register Python type to kind-name mapping."""
         return _KindRegistry.instance().register_type(type_, kind_name)
