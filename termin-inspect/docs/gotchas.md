@@ -7,9 +7,11 @@ Dispatch не «угадывает» типы: `type_name` должен **точ
 
 ## Наследование
 
-`set_type_parent` задаёт inheritance только на уровне registry metadata.
-Это **не** C++ inheritance — registry не знает про vtable и dynamic_cast.
-Наследование влияет только на `all_fields()` и порядок serialize/deserialize.
+Parent задаётся при создании `tc_runtime_type_descriptor` и не может быть
+дописан после commit. Это **не** C++ inheritance — registry не знает про vtable
+и `dynamic_cast`. Связь влияет на `is_a`, `all_fields()` и порядок
+serialize/deserialize. Родительский descriptor должен быть committed раньше
+дочернего.
 
 ## Контекст десериализации
 
@@ -36,4 +38,5 @@ Core ничего не знает о содержимом контекста: э
 
 Core init (`tc_inspect_kind_core_init`) должен быть вызван **до** регистрации language backends.
 Language backends — **до** регистрации domain kinds и adapters.
-Нарушение порядка приводит к silent no-op при dispatch.
+Нарушение порядка логируется; descriptor commit с отсутствующим parent
+отклоняется без частичной публикации.

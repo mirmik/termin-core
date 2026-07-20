@@ -53,14 +53,10 @@ void MeshRenderer::register_type() {
 fields публикуются одним дескриптором. Родительский дескриптор должен быть
 закоммичен раньше; leaf-регистрация не запускает регистрацию родителя.
 
-Ручная регистрация:
-
-```cpp
-auto& reg = InspectRegistry::instance();
-reg.add<Base, int>("Base", &Base::hp, "hp", "HP", "int");
-reg.add<Derived, std::string>("Derived", &Derived::title, "title", "Title", "string");
-reg.set_type_parent("Derived", "Base");
-```
+Для inspect-only типа используется тот же контракт: поля staging-ятся в
+`InspectFacetBuilder`, builder присоединяется к runtime descriptor, а parent
+передаётся в `tc_runtime_type_descriptor_create`. Отдельной операции изменения
+parent после commit нет.
 
 ### Python
 
@@ -178,20 +174,26 @@ struct CppDerivedComponent : public CppBaseComponent {
     std::string title = "rookie";
 };
 
-auto& reg = InspectRegistry::instance();
-
-// Регистрация полей — каждый тип только свои
-reg.add<CppBaseComponent, int>(
+tc::InspectFacetBuilder base("CppBaseComponent");
+base.add<CppBaseComponent, int>(
     "CppBaseComponent", &CppBaseComponent::hp, "hp", "HP", "int");
-reg.add<CppBaseComponent, float>(
+base.add<CppBaseComponent, float>(
     "CppBaseComponent", &CppBaseComponent::speed, "speed", "Speed", "float");
-reg.add<CppDerivedComponent, std::string>(
-    "CppDerivedComponent", &CppDerivedComponent::title, "title", "Title", "string");
+auto* base_descriptor = tc_runtime_type_descriptor_create(
+    "CppBaseComponent", "example", nullptr);
+base.attach_to(base_descriptor);
+tc_runtime_type_registry_commit_descriptor(base_descriptor);
 
-// Связь наследования
-reg.set_type_parent("CppDerivedComponent", "CppBaseComponent");
+tc::InspectFacetBuilder derived("CppDerivedComponent");
+derived.add<CppDerivedComponent, std::string>(
+    "CppDerivedComponent", &CppDerivedComponent::title, "title", "Title", "string");
+auto* derived_descriptor = tc_runtime_type_descriptor_create(
+    "CppDerivedComponent", "example", "CppBaseComponent");
+derived.attach_to(derived_descriptor);
+tc_runtime_type_registry_commit_descriptor(derived_descriptor);
 
 // Результат
+auto& reg = InspectRegistry::instance();
 reg.all_fields_count("CppDerivedComponent");        // 3 (hp, speed, title)
 reg.find_field("CppDerivedComponent", "hp");         // найдено — от родителя
 reg.find_field("CppDerivedComponent", "title");      // найдено — собственное

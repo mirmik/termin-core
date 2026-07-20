@@ -44,8 +44,8 @@ cmake -S . -B build \
 ## Что проверяют тесты
 
 - **C dispatcher** — базовые контракты: регистрация типов, dispatch, fail-soft поведение.
-- **C++ InspectRegistry** — add/get/set полей, наследование через `set_type_parent`.
-- **Python integration** — регистрация Python-классов, serialize/deserialize с наследованием.
+- **C++ InspectRegistry** — query/get/set committed полей и наследование из runtime descriptor.
+- **Python integration** — staged facet Python-класса, serialize/deserialize с наследованием.
 
 ## Минимальный пример (C++)
 
@@ -57,15 +57,22 @@ struct Player {
     std::string name = "hero";
 };
 
-// Регистрация полей
-auto& reg = tc::InspectRegistry::instance();
-reg.add<Player, int>("Player", &Player::hp, "hp", "HP", "int");
-reg.add<Player, std::string>("Player", &Player::name, "name", "Name", "string");
+tc::InspectFacetBuilder inspect("Player");
+inspect.add<Player, int>("Player", &Player::hp, "hp", "HP", "int");
+inspect.add<Player, std::string>(
+    "Player", &Player::name, "name", "Name", "string");
+auto* descriptor = tc_runtime_type_descriptor_create(
+    "Player", "my-module", nullptr);
+inspect.attach_to(descriptor);
+if (!tc_runtime_type_registry_commit_descriptor(descriptor)) {
+    throw std::runtime_error("Player descriptor commit failed");
+}
 
 // Использование
+auto& reg = tc::InspectRegistry::instance();
 Player p;
-tc_value* val = reg.get(&p, "Player", "hp");    // -> 100
-reg.set(&p, "Player", "name", str_value, ctx);  // p.name = "hero" -> новое значение
+tc_value val = reg.get_tc_value(&p, "Player", "hp");
+reg.set_tc_value(&p, "Player", "name", str_value, ctx);
 ```
 
 ## Что дальше

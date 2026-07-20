@@ -1,5 +1,3 @@
-import sys
-
 import pytest
 
 from termin.inspect import _inspect_native as inspect_canonical
@@ -27,8 +25,6 @@ def test_python_component_without_own_fields_inherits_base_inspect_fields():
     from termin.scene import PythonComponent, publish_python_component
 
     registry = InspectRegistry.instance()
-    registry.unregister_type("NoOwnInspectFieldsProbeComponent")
-
     class NoOwnInspectFieldsProbeComponent(PythonComponent):
         pass
 
@@ -43,28 +39,15 @@ def test_python_component_without_own_fields_inherits_base_inspect_fields():
     assert "enabled" in field_paths
 
 
-def test_unregister_type_releases_python_action_field_reference():
-    from termin.inspect import InspectField, InspectRegistry
+def test_inspect_registry_does_not_publish_incremental_mutators():
+    from termin.inspect import InspectRegistry
 
     registry = InspectRegistry.instance()
-    registry.unregister_type("ActionRefcountProbe")
-
-    def inspect_action(_obj):
-        return None
-
-    baseline_refcount = sys.getrefcount(inspect_action)
-    registry.register_python_fields(
-        "ActionRefcountProbe",
-        {
-            "run": InspectField(
-                label="Run",
-                kind="button",
-                action=inspect_action,
-                is_serializable=False,
-            )
-        },
-    )
-    assert sys.getrefcount(inspect_action) == baseline_refcount + 1
-
-    registry.unregister_type("ActionRefcountProbe")
-    assert sys.getrefcount(inspect_action) == baseline_refcount
+    for name in (
+        "register_python_fields",
+        "set_type_parent",
+        "set_type_metadata",
+        "add_button",
+        "unregister_type",
+    ):
+        assert not hasattr(registry, name)

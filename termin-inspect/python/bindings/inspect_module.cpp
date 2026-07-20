@@ -326,22 +326,12 @@ NB_MODULE(_inspect_native, m) {
              "Get all fields including inherited fields")
         .def("types", &InspectRegistry::types,
              "Get all registered type names")
-        .def("register_python_fields", [](InspectRegistry& self, const std::string& type_name, nb::dict fields_dict) {
-            tc::InspectRegistry_register_python_fields(self, type_name, std::move(fields_dict));
-        }, nb::arg("type_name"), nb::arg("fields_dict"),
-           "Register fields from Python inspect_fields dict")
         .def("get_type_backend", &InspectRegistry::get_type_backend,
              nb::arg("type_name"),
              "Get the backend (Cpp/Python/Rust) for a type")
         .def("has_type", &InspectRegistry::has_type,
              nb::arg("type_name"),
              "Check if type is registered")
-        .def("set_type_parent", &InspectRegistry::set_type_parent,
-             nb::arg("type_name"), nb::arg("parent_name"),
-             "Set parent type for field inheritance")
-        .def("unregister_type", &InspectRegistry::unregister_type,
-             nb::arg("type_name"),
-             "Unregister fields, metadata and parent/backend information for a type")
         .def("get_type_parent", &InspectRegistry::get_type_parent,
              nb::arg("type_name"),
              "Get parent type name")
@@ -352,12 +342,6 @@ NB_MODULE(_inspect_native, m) {
             return result;
         }, nb::arg("type_name"),
            "Get free-form type metadata dict")
-        .def("set_type_metadata", [](InspectRegistry& self, const std::string& type_name, nb::object metadata) {
-            tc_value value = tc::nb_to_tc_value(std::move(metadata));
-            self.set_type_metadata(type_name, &value);
-            tc_value_free(&value);
-        }, nb::arg("type_name"), nb::arg("metadata"),
-           "Set free-form type metadata dict")
         .def("owner_of", &InspectRegistry::owner_of,
              nb::arg("type_name"),
              "Get owner module id for a runtime type")
@@ -398,11 +382,7 @@ NB_MODULE(_inspect_native, m) {
         }, nb::arg("obj"), nb::arg("data"),
            "Deserialize all fields from dict to object")
 
-        .def("add_button", [](InspectRegistry& self, const std::string& type_name,
-                              const std::string& path, const std::string& label, nb::object action) {
-            tc::InspectRegistry_add_button(self, type_name, path, label, std::move(action));
-        }, nb::arg("type_name"), nb::arg("path"), nb::arg("label"), nb::arg("action"),
-           "Add a button field to a type");
+        ;
 
     // Register atexit handler to clear Python objects before interpreter shutdown.
     // Static singletons (KindRegistryPython, g_ptr_extractors) have destructors

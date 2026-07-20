@@ -52,6 +52,7 @@ struct RuntimeInstanceProbe {
 
 static int g_destroyed_runtime_instance_probe_facets = 0;
 static int g_prepared_runtime_instance_probe_facets = 0;
+static bool g_refuse_runtime_instance_probe_unload = true;
 
 void destroy_runtime_instance_probe_facet(void* payload) {
     delete static_cast<int*>(payload);
@@ -89,7 +90,7 @@ bool refuse_runtime_instance_probe_facet(
     void*
 ) {
     g_prepared_runtime_instance_probe_facets++;
-    return false;
+    return !g_refuse_runtime_instance_probe_unload;
 }
 
 bool accept_runtime_instance_probe_facet(const char*, void*, void*) {
@@ -99,6 +100,21 @@ bool accept_runtime_instance_probe_facet(const char*, void*, void*) {
 
 void expect_near(float a, float b, float eps = 1e-6f) {
     CHECK(std::fabs(a - b) <= eps);
+}
+
+bool commit_inspect_descriptor(
+    const char* type_name,
+    const char* parent,
+    tc::InspectFacetBuilder&& inspect
+) {
+    auto* descriptor = tc_runtime_type_descriptor_create(
+        type_name, "termin-inspect-test", parent);
+    if (!descriptor) return false;
+    if (!inspect.attach_to(descriptor)) {
+        tc_runtime_type_descriptor_destroy(descriptor);
+        return false;
+    }
+    return tc_runtime_type_registry_commit_descriptor(descriptor);
 }
 
 } // namespace
@@ -120,8 +136,9 @@ TEST_CASE("C++ uint32 kind roundtrips the full unsigned int range") {
     tc::register_builtin_cpp_kinds();
 
     auto& reg = tc::InspectRegistry::instance();
-    reg.unregister_type("CppUnsignedComponent");
-    reg.add<CppUnsignedComponent, unsigned int>(
+    tc_runtime_type_registry_unregister_type("CppUnsignedComponent");
+    tc::InspectFacetBuilder inspect("CppUnsignedComponent");
+    REQUIRE((inspect.add<CppUnsignedComponent, unsigned int>(
         "CppUnsignedComponent",
         &CppUnsignedComponent::stable_id,
         "stable_id",
@@ -130,7 +147,9 @@ TEST_CASE("C++ uint32 kind roundtrips the full unsigned int range") {
         0.0,
         static_cast<double>(std::numeric_limits<unsigned int>::max()),
         1.0
-    );
+    )));
+    REQUIRE(commit_inspect_descriptor(
+        "CppUnsignedComponent", nullptr, std::move(inspect)));
 
     CppUnsignedComponent object;
     object.stable_id = 4000000000u;
@@ -152,14 +171,17 @@ TEST_CASE("C++ field serialization mismatch logs the registered type and path") 
     tc::register_builtin_cpp_kinds();
 
     auto& reg = tc::InspectRegistry::instance();
-    reg.unregister_type("CppUnsignedMismatch");
-    reg.add<CppUnsignedComponent, unsigned int>(
+    tc_runtime_type_registry_unregister_type("CppUnsignedMismatch");
+    tc::InspectFacetBuilder inspect("CppUnsignedMismatch");
+    REQUIRE((inspect.add<CppUnsignedComponent, unsigned int>(
         "CppUnsignedMismatch",
         &CppUnsignedComponent::stable_id,
         "stable_id",
         "Stable Id",
         "int"
-    );
+    )));
+    REQUIRE(commit_inspect_descriptor(
+        "CppUnsignedMismatch", nullptr, std::move(inspect)));
 
     g_inspect_logs.clear();
     tc_log_set_callback(capture_inspect_log);
@@ -197,17 +219,18 @@ TEST_CASE("checked C++ setters report conversion, access, and callback failures"
         });
 
     auto& reg = tc::InspectRegistry::instance();
-    reg.unregister_type("CheckedSetterComponent");
-    reg.add<CheckedSetterComponent, int>(
+    tc_runtime_type_registry_unregister_type("CheckedSetterComponent");
+    tc::InspectFacetBuilder inspect("CheckedSetterComponent");
+    REQUIRE((inspect.add<CheckedSetterComponent, int>(
         "CheckedSetterComponent", &CheckedSetterComponent::value,
-        "value", "Value", "int");
-    reg.add<CheckedSetterComponent, std::optional<int>>(
+        "value", "Value", "int")));
+    REQUIRE((inspect.add<CheckedSetterComponent, std::optional<int>>(
         "CheckedSetterComponent", &CheckedSetterComponent::nullable,
-        "nullable", "Nullable", "optional_int");
-    reg.add_with_callbacks<CheckedSetterComponent, int>(
+        "nullable", "Nullable", "optional_int")));
+    REQUIRE((inspect.add_with_callbacks<CheckedSetterComponent, int>(
         "CheckedSetterComponent", "throwing", "Throwing", "int",
         [](CheckedSetterComponent* object) { return object->value; },
-        [](CheckedSetterComponent*, int) { throw std::runtime_error("setter refused value"); });
+        [](CheckedSetterComponent*, int) { throw std::runtime_error("setter refused value"); })));
 
     tc::InspectFieldInfo read_only;
     read_only.type_name = "CheckedSetterComponent";
@@ -216,7 +239,9 @@ TEST_CASE("checked C++ setters report conversion, access, and callback failures"
     read_only.getter = [](void* object) {
         return tc_value_int(static_cast<CheckedSetterComponent*>(object)->value);
     };
-    reg.add_serializable_field("CheckedSetterComponent", std::move(read_only));
+    REQUIRE(inspect.add_field(std::move(read_only)));
+    REQUIRE(commit_inspect_descriptor(
+        "CheckedSetterComponent", nullptr, std::move(inspect)));
 
     CheckedSetterComponent object;
     CHECK(tc_inspect_set_checked(
@@ -257,13 +282,21 @@ TEST_CASE("C++ inspect registry roundtrips inherited fields") {
     tc::register_builtin_cpp_kinds();
 
     auto& reg = tc::InspectRegistry::instance();
-    reg.unregister_type("CppBaseComponent");
-    reg.unregister_type("CppDerivedComponent");
+    tc_runtime_type_registry_unregister_type("CppBaseComponent");
+    tc_runtime_type_registry_unregister_type("CppDerivedComponent");
 
-    reg.add<CppBaseComponent, int>("CppBaseComponent", &CppBaseComponent::hp, "hp", "HP", "int");
-    reg.add<CppBaseComponent, float>("CppBaseComponent", &CppBaseComponent::speed, "speed", "Speed", "float");
-    reg.add<CppDerivedComponent, std::string>("CppDerivedComponent", &CppDerivedComponent::title, "title", "Title", "string");
-    reg.set_type_parent("CppDerivedComponent", "CppBaseComponent");
+    tc::InspectFacetBuilder base("CppBaseComponent");
+    REQUIRE((base.add<CppBaseComponent, int>(
+        "CppBaseComponent", &CppBaseComponent::hp, "hp", "HP", "int")));
+    REQUIRE((base.add<CppBaseComponent, float>(
+        "CppBaseComponent", &CppBaseComponent::speed, "speed", "Speed", "float")));
+    REQUIRE(commit_inspect_descriptor(
+        "CppBaseComponent", nullptr, std::move(base)));
+    tc::InspectFacetBuilder derived("CppDerivedComponent");
+    REQUIRE((derived.add<CppDerivedComponent, std::string>(
+        "CppDerivedComponent", &CppDerivedComponent::title, "title", "Title", "string")));
+    REQUIRE(commit_inspect_descriptor(
+        "CppDerivedComponent", "CppBaseComponent", std::move(derived)));
 
     CppDerivedComponent obj;
 
@@ -318,8 +351,6 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
 
     auto& inspect = tc::InspectRegistry::instance();
 
-    inspect.unregister_type("RuntimeTypeBaseProbe");
-    inspect.unregister_type("RuntimeTypeDerivedProbe");
     tc_runtime_type_registry_unregister_type("RuntimeTypeBaseProbe");
     tc_runtime_type_registry_unregister_type("RuntimeTypeDerivedProbe");
 
@@ -375,7 +406,10 @@ TEST_CASE("Runtime type records keep tombstones while live instances are linked"
     first.value = 11;
     second.value = 29;
 
-    CHECK(tc_runtime_type_registry_ensure_type(type_name));
+    auto* descriptor = tc_runtime_type_descriptor_create(
+        type_name, "runtime_type_instance_test", nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK(tc_runtime_type_registry_link_instance(type_name, &first.link, &first));
     CHECK(tc_runtime_type_registry_link_instance(type_name, &second.link, &second));
     CHECK_EQ(tc_runtime_type_registry_instance_count(type_name), 2u);
@@ -494,11 +528,9 @@ TEST_CASE("Runtime type facet prepare unload receives context and can refuse cle
 
     CHECK_EQ(tc_runtime_type_registry_unregister_owner_with_context(owner, nullptr), 0u);
     CHECK(tc_runtime_type_registry_has_type(refusing_type_name));
-    CHECK(tc_runtime_type_registry_remove_facet(
-        refusing_type_name,
-        "termin.test.prepare_refuse_probe"
-    ));
+    g_refuse_runtime_instance_probe_unload = false;
     tc_runtime_type_registry_unregister_type(refusing_type_name);
+    g_refuse_runtime_instance_probe_unload = true;
 }
 
 TEST_CASE("Runtime type owner unload prepares every record before atomic commit") {
@@ -540,14 +572,15 @@ TEST_CASE("Runtime type owner unload prepares every record before atomic commit"
     CHECK(tc_runtime_type_registry_has_facet(refused_type, "termin.test.atomic_refuse"));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 0);
 
-    CHECK(tc_runtime_type_registry_remove_facet(refused_type, "termin.test.atomic_refuse"));
+    g_refuse_runtime_instance_probe_unload = false;
     CHECK(tc_runtime_type_registry_prepare_owner_unload(owner, nullptr));
     size_t removed = 0;
     CHECK(tc_runtime_type_registry_commit_owner_unload(owner, &removed));
-    CHECK_EQ(removed, 1u);
+    CHECK_EQ(removed, 2u);
     CHECK(!tc_runtime_type_registry_has_type(accepted_type));
     CHECK(!tc_runtime_type_registry_has_type(refused_type));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
+    g_refuse_runtime_instance_probe_unload = true;
 }
 
 TEST_CASE("Runtime type descriptor rejects partial and duplicate facets atomically") {
@@ -832,27 +865,29 @@ TEST_CASE("Inspect facet builder validates and publishes callbacks atomically") 
     CHECK(!invalid_metadata.set_metadata(&scalar_metadata));
 }
 
-TEST_CASE("Incremental runtime type parent mutation rejects cycles atomically") {
+TEST_CASE("Runtime type descriptors reject parent cycles atomically") {
+    const char* owner = "runtime_type_parent_cycle_owner";
     const char* root_name = "RuntimeTypeParentCycleRoot";
     const char* middle_name = "RuntimeTypeParentCycleMiddle";
     const char* leaf_name = "RuntimeTypeParentCycleLeaf";
-    const char* tail_name = "RuntimeTypeParentCycleTail";
-    tc_runtime_type_registry_unregister_type(tail_name);
-    tc_runtime_type_registry_unregister_type(leaf_name);
-    tc_runtime_type_registry_unregister_type(middle_name);
-    tc_runtime_type_registry_unregister_type(root_name);
+    tc_runtime_type_registry_unregister_owner(owner);
 
-    CHECK(!tc_runtime_type_registry_set_parent(root_name, root_name));
-    CHECK(!tc_runtime_type_registry_has_type(root_name));
-
-    CHECK(tc_runtime_type_registry_set_parent(root_name, nullptr));
-    CHECK(tc_runtime_type_registry_set_parent(middle_name, root_name));
-    CHECK(tc_runtime_type_registry_set_parent(leaf_name, middle_name));
-    CHECK(tc_runtime_type_registry_set_parent(tail_name, leaf_name));
+    auto* descriptor = tc_runtime_type_descriptor_create(root_name, owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
+    descriptor = tc_runtime_type_descriptor_create(middle_name, owner, root_name);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
+    descriptor = tc_runtime_type_descriptor_create(leaf_name, owner, middle_name);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     tc_runtime_type_record_info root_before;
     REQUIRE(tc_runtime_type_registry_get_info(root_name, &root_before));
-    CHECK(!tc_runtime_type_registry_set_parent(root_name, leaf_name));
+    descriptor = tc_runtime_type_descriptor_create(root_name, owner, leaf_name);
+    REQUIRE(descriptor != nullptr);
+    CHECK(tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor));
+    CHECK(!tc_runtime_type_registry_commit_descriptor(descriptor));
 
     tc_runtime_type_record_info root_after;
     REQUIRE(tc_runtime_type_registry_get_info(root_name, &root_after));
@@ -860,20 +895,7 @@ TEST_CASE("Incremental runtime type parent mutation rejects cycles atomically") 
     CHECK(root_after.parent == nullptr);
     CHECK_EQ(std::string(tc_runtime_type_registry_get_parent(middle_name)), std::string(root_name));
     CHECK_EQ(std::string(tc_runtime_type_registry_get_parent(leaf_name)), std::string(middle_name));
-    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent(tail_name)), std::string(leaf_name));
-
-    CHECK(tc_runtime_type_registry_set_parent(leaf_name, nullptr));
-    CHECK(tc_runtime_type_registry_get_parent(leaf_name) == nullptr);
-    CHECK(tc_runtime_type_registry_set_parent(root_name, tail_name));
-
-    auto& inspect = tc::InspectRegistry::instance();
-    CHECK_EQ(inspect.all_fields_count(root_name), 0u);
-    CHECK_EQ(inspect.all_fields_count(tail_name), 0u);
-
-    tc_runtime_type_registry_unregister_type(root_name);
-    tc_runtime_type_registry_unregister_type(tail_name);
-    tc_runtime_type_registry_unregister_type(leaf_name);
-    tc_runtime_type_registry_unregister_type(middle_name);
+    CHECK_EQ(tc_runtime_type_registry_unregister_owner(owner), 3u);
 }
 
 TEST_CASE("C++ inspect choices support string enum fields") {
@@ -882,30 +904,35 @@ TEST_CASE("C++ inspect choices support string enum fields") {
     tc::register_builtin_cpp_kinds();
 
     auto& reg = tc::InspectRegistry::instance();
-    reg.unregister_type("CppChoiceComponent");
+    tc_runtime_type_registry_unregister_type("CppChoiceComponent");
 
-    tc::InspectFieldChoicesRegistrar<CppChoiceComponent, int> numeric_reg{
+    tc::InspectFacetBuilder inspect("CppChoiceComponent");
+    REQUIRE((tc::stage_inspect_field_choices<CppChoiceComponent, int>(
+        inspect,
         &CppChoiceComponent::numeric_mode,
         "CppChoiceComponent",
         "numeric_mode",
         "Numeric Mode",
         "enum",
-        {{"0", "Zero"}, {"1", "One"}},
-    };
-    tc::InspectFieldChoicesRegistrar<CppChoiceComponent, std::string> string_reg{
+        {{"0", "Zero"}, {"1", "One"}}
+    )));
+    REQUIRE((tc::stage_inspect_field_choices<CppChoiceComponent, std::string>(
+        inspect,
         &CppChoiceComponent::string_mode,
         "CppChoiceComponent",
         "string_mode",
         "String Mode",
         "enum",
-        {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}},
-    };
-    tc::InspectAccessorFieldChoicesRegistrar<CppChoiceComponent, int> accessor_reg{
-        tc::InspectFieldSpec{"CppChoiceComponent", "accessor_mode", "Accessor Mode", "enum"},
+        {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}}
+    )));
+    REQUIRE((inspect.add_with_accessor_choices<CppChoiceComponent, int>(
+        "CppChoiceComponent", "accessor_mode", "Accessor Mode", "enum",
         [](CppChoiceComponent* self) -> int { return self->accessor_mode; },
         [](CppChoiceComponent* self, int value) { self->accessor_mode = value; },
-        {{"0", "Zero"}, {"2", "Two"}},
-    };
+        {{"0", "Zero"}, {"2", "Two"}}
+    )));
+    REQUIRE(commit_inspect_descriptor(
+        "CppChoiceComponent", nullptr, std::move(inspect)));
 
     CppChoiceComponent obj;
 

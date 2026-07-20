@@ -30,14 +30,15 @@
 
 ### 2. C++ runtime (`tc_inspect_cpp.hpp`, `tc_kind_cpp.hpp`)
 
-- `InspectRegistry` — singleton для регистрации полей, наследования, get/set/serialize/deserialize.
+- `InspectRegistry` — read-only проекция committed inspect facets: queries, get/set и serialize/deserialize.
+- `InspectFacetBuilder` — staging полей и metadata до единственного atomic descriptor commit.
 - `KindRegistryCpp` — сериализация C++ типов (`std::any <-> tc_value`), builtin kinds.
 
 Регистрирует себя как language backend в C dispatcher.
 
 ### 3. Python bridge (`tc_inspect_python.hpp`, `tc_kind_python.hpp`)
 
-- `InspectRegistryPythonExt` — регистрация полей Python-классов, Python get/set.
+- `InspectRegistryPythonExt` — построение staged facet Python-классов и Python get/set.
 - `KindRegistryPython` — Python handlers для serialize/deserialize.
 - `KindRegistry` — facade, объединяющий C++ и Python registry.
 
@@ -51,7 +52,10 @@
 2. `tc::init_cpp_inspect_vtable()` — регистрация C++ language backend.
 3. `tc::init_python_lang_vtable()` — регистрация Python language backend (если включён).
 
-Consumer-слой затем регистрирует свои adapter init (component adapters, domain kinds и т.д.).
+Consumer-слой затем регистрирует domain kinds и строит полные runtime type
+descriptors. Parent, owner и все facets становятся видимыми только после
+успешного `tc_runtime_type_registry_commit_descriptor()`; инкрементальных
+type/field mutators в публичном API нет.
 
 ## Принцип контекста
 

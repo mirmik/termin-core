@@ -9,9 +9,9 @@
 
 - **Inspect dispatcher** — get/set/serialize/deserialize полей по `type_name` и `path`.
 - **Kind system** — language-aware сериализация типов (`bool`, `int`, `vec3`, `quat`, пользовательские).
-- **Наследование типов** — `set_type_parent` для traversal полей по иерархии.
-- **C++ runtime** — `InspectRegistry`, `KindRegistryCpp`, макросы регистрации (`INSPECT_FIELD`, `SERIALIZABLE_FIELD`).
-- **Python bridge** — регистрация полей Python-классов через nanobind, прозрачная интеграция с C dispatch.
+- **Наследование типов** — parent является частью атомарно публикуемого runtime type descriptor.
+- **C++ runtime** — read-only `InspectRegistry`, `InspectFacetBuilder`, `KindRegistryCpp` и descriptor-only макросы полей.
+- **Python bridge** — staged inspect facet Python-класса, публикуемый вместе с runtime type descriptor.
 
 ## Сборка
 
