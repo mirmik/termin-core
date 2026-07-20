@@ -100,7 +100,8 @@ GUARD_C_TEST(test_tc_resource_header_warns_on_truncated_uuid) {
     tc_log_set_callback(capture_log_callback);
     tc_log_set_level(TC_LOG_DEBUG);
 
-    const char* long_uuid = "1234567890123456789012345678901234567890-extra";
+    const char* long_uuid =
+        "1234567890123456789012345678901234567890123456789012345678901234-extra";
     tc_resource_header_init(&header, long_uuid);
 
     GUARD_C_CHECK_EQ_SIZE(TC_UUID_SIZE - 1, strlen(header.uuid));

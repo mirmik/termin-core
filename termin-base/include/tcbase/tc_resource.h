@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include "tc_log.h"
+#include "tc_uuid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,8 +24,6 @@ typedef bool (*tc_resource_load_fn)(void* resource, void* user_data);
 // Resource header - common fields for all resources
 // ============================================================================
 // Place this as the FIRST field in resource structs for consistent layout.
-
-#define TC_UUID_SIZE 40
 
 typedef struct tc_resource_header {
     char uuid[TC_UUID_SIZE];        // unique identifier

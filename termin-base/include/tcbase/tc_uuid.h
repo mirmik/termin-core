@@ -6,6 +6,9 @@
 
 #include <tcbase/tcbase_api.h>
 
+/* Canonical identifiers include readable engine and catalog names. */
+#define TC_UUID_SIZE 64
+
 #ifdef __cplusplus
 extern "C" {
 #endif
