@@ -25,6 +25,10 @@ Python-пакет: `tcbase`.
 - `termin/camera/orbit_camera.hpp` / `termin.geombase.OrbitCamera` - чистая математика orbit camera без ECS, UI и render backend.
 - `tc_profiler` / `tcbase.profiler` - base-level profiler без зависимости от `termin-app`.
 - input enums (`Action`, `MouseButton`, `Mods`, `Key`) для общего event vocabulary.
+  `tcbase::MouseButton` / `tcbase.MouseButton` является единственным
+  каноническим типом кнопки мыши: `NONE=-1`, `LEFT=0`, `RIGHT=1`,
+  `MIDDLE=2`, `OTHER=3`. Platform и C ABI adapters сохраняют эти числовые
+  значения, но не объявляют собственные engine-level enum-типы.
 
 ## Публичный API
 

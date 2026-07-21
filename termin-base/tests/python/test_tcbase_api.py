@@ -6,7 +6,11 @@ import tcbase
 def test_input_enums_match_event_integer_values():
     assert tcbase.Action.PRESS.value == 1
     assert tcbase.Action.RELEASE.value == 0
+    assert tcbase.MouseButton.NONE.value == -1
     assert tcbase.MouseButton.LEFT.value == 0
+    assert tcbase.MouseButton.RIGHT.value == 1
+    assert tcbase.MouseButton.MIDDLE.value == 2
+    assert tcbase.MouseButton.OTHER.value == 3
     assert tcbase.Mods.SHIFT.value != 0
     assert tcbase.Key.A.value == 65
     assert int(tcbase.Action.PRESS) == 1

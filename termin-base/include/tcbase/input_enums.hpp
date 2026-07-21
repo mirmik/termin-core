@@ -4,12 +4,19 @@
 
 namespace tcbase {
 
-// Mouse button enum.
+// Mouse button values shared by window, input, UI, and editor layers.
+// Keep the numeric values stable: they cross C ABI and serialized event boundaries.
 enum class MouseButton : int {
+    NONE = -1,
     LEFT = 0,
     RIGHT = 1,
-    MIDDLE = 2
+    MIDDLE = 2,
+    OTHER = 3,
 };
+
+constexpr int mouse_button_value(MouseButton button) {
+    return static_cast<int>(button);
+}
 
 // Action enum.
 enum class Action : int {

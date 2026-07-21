@@ -174,9 +174,11 @@ NB_MODULE(_tcbase_native, m) {
     m.doc() = "Base types shared between termin libraries";
 
     nb::enum_<tcbase::MouseButton>(m, "MouseButton", nb::is_arithmetic(), "Mouse button constants")
+        .value("NONE", tcbase::MouseButton::NONE)
         .value("LEFT", tcbase::MouseButton::LEFT)
         .value("RIGHT", tcbase::MouseButton::RIGHT)
         .value("MIDDLE", tcbase::MouseButton::MIDDLE)
+        .value("OTHER", tcbase::MouseButton::OTHER)
         .export_values();
 
     nb::enum_<tcbase::Action>(m, "Action", nb::is_arithmetic(), "Action constants")
