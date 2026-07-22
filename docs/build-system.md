@@ -447,6 +447,11 @@ override-ами для smoke/manual runs.
 Поле `vsync` выбирает construction-time presentation mode окна: `true`
 соответствует `VSync`, `false` — `Immediate`. Для старых project/app manifests
 без этого поля сохраняется VSync-on поведение.
+На D3D11 оба режима используют flip-model swapchain. `Immediate` разрешён
+только при `DXGI_FEATURE_PRESENT_ALLOW_TEARING`: swapchain и каждый resize
+сохраняют `DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING`, а present использует
+`Present(0, DXGI_PRESENT_ALLOW_TEARING)`. Если capability отсутствует, player
+завершается с явной ошибкой вместо неявного перехода обратно на VSync.
 
 Для desktop profile `runtime.backends` одновременно задаёт набор поставляемых
 shader artifact families и порядок выбора backend на целевой машине. Runtime
