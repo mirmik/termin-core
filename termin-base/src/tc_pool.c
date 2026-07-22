@@ -187,6 +187,22 @@ void* tc_pool_get(const tc_pool* pool, tc_handle h) {
     return (char*)pool->data + h.index * pool->item_size;
 }
 
+void* tc_pool_get_checked(const tc_pool* pool, tc_handle h, const char* resource_type) {
+    void* item = tc_pool_get(pool, h);
+    if (item) return item;
+
+    if (pool && h.index < pool->capacity && pool->generations[h.index] != h.generation) {
+        tc_log_error(
+            "stale resource handle dereference: type=%s index=%u generation=%u current_generation=%u",
+            resource_type && resource_type[0] ? resource_type : "unknown",
+            h.index,
+            h.generation,
+            pool->generations[h.index]
+        );
+    }
+    return NULL;
+}
+
 // ============================================================================
 // Iteration
 // ============================================================================

@@ -61,6 +61,15 @@ TCBASE_API bool tc_pool_is_valid(const tc_pool* pool, tc_handle h);
 // Get pointer to item by handle (returns NULL if invalid)
 TCBASE_API void* tc_pool_get(const tc_pool* pool, tc_handle h);
 
+// Resolve a handle at a public dereference boundary. Unlike tc_pool_get(),
+// this reports an invalid/stale handle with the resource type and handle
+// coordinates. Deliberate probes must keep using tc_pool_is_valid().
+TCBASE_API void* tc_pool_get_checked(
+    const tc_pool* pool,
+    tc_handle h,
+    const char* resource_type
+);
+
 // Get pointer to item by index (no validation - use carefully!)
 static inline void* tc_pool_get_unchecked(const tc_pool* pool, uint32_t index) {
     return (char*)pool->data + index * pool->item_size;
