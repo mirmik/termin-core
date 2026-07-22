@@ -420,6 +420,25 @@ ABI и числовой `ndk_api`, но не имеют конфигурируе
 являются частью фиксированного product target. Пути к SDK, компиляторам, Gradle
 и build scripts в профиль не входят; их передает локальный `ToolchainContext`.
 
+Android и Quest/OpenXR остаются разными продуктами со своими Gradle-проектами,
+manifest-ами и entry point-ами, но используют общий APK pipeline. Конфигурации
+`dev` и `debug` запускают Gradle variant `debug`, а `release` — variant
+`release`. Готовый artifact определяется по Gradle `output-metadata.json`,
+включая проверку `applicationId`; фиксированное имя `app-debug.apk` не является
+частью контракта.
+
+Release APK всегда должен быть подписан. Для обоих продуктов используются
+одинаковые обязательные переменные окружения:
+
+- `TERMIN_ANDROID_SIGNING_KEYSTORE` — путь к keystore;
+- `TERMIN_ANDROID_SIGNING_KEY_ALIAS`;
+- `TERMIN_ANDROID_SIGNING_STORE_PASSWORD`;
+- `TERMIN_ANDROID_SIGNING_KEY_PASSWORD`.
+
+При отсутствии любого параметра release build завершается до запуска Gradle с
+явной диагностикой. Debug signing при этом остается штатным поведением Android
+Gradle Plugin.
+
 Парсер v2 представляет сцены, модули, Python requirements и resource includes
 типизированными полями. Явные scene roots участвуют в build: exporter пакует
 каждую выбранную сцену и объединяет найденные в них resource/shader
