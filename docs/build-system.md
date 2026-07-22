@@ -421,12 +421,15 @@ ABI и числовой `ndk_api`, но не имеют конфигурируе
 и build scripts в профиль не входят; их передает локальный `ToolchainContext`.
 
 Парсер v2 представляет сцены, модули, Python requirements и resource includes
-типизированными полями. Явные scene roots уже участвуют в build: exporter
-пакует каждую выбранную сцену и объединяет найденные в них resource/shader
-dependencies. Пока module closure и explicit dynamic resource roots не
-реализованы, build явно завершается diagnostic `profile.feature_pending`, а не
-игнорирует эти поля. Это сохраняет честность профиля во время поэтапного
-внедрения архитектуры.
+типизированными полями. Явные scene roots участвуют в build: exporter пакует
+каждую выбранную сцену и объединяет найденные в них resource/shader
+dependencies. Desktop build также строит единый индекс `.module`/`.pymodule`,
+разрешает dependency-first closure из `content.modules` и пакует только его
+Python packages, готовые native artifacts и requirements в `package/modules`.
+`package/modules/modules.json` и `runtime.modules` в `app.json` фиксируют exact
+roots и closure. Для Android/Quest выбранные project modules, а для всех
+target-ов explicit dynamic resource roots пока завершаются diagnostic
+`profile.feature_pending`, а не молча игнорируются.
 
 Project-level defaults для окна standalone player хранятся в
 `project_settings/project.json` в поле `player_window`:
@@ -519,7 +522,8 @@ package. `entry_scene` обязан присутствовать в таблиц
 Desktop target packaging больше не должен копировать SDK `site-packages`
 целиком по умолчанию. В `minimal_strict` bundle получает Python stdlib из SDK
 без `site-packages`, затем создаёт чистый `site-packages` и добавляет только
-явный Termin player runtime seed плюс requirements из `.pymodule`/профиля.
+явный Termin player runtime seed плюс requirements из выбранного module closure
+и профиля.
 Состав записывается в `python-runtime.json`. Если временно нужен старый broad
 copy для диагностики, профиль должен явно указать:
 
