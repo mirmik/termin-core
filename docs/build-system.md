@@ -434,7 +434,8 @@ Project-level defaults для окна standalone player хранятся в
   "player_window": {
     "width": 1280,
     "height": 720,
-    "fullscreen": true
+    "fullscreen": true,
+    "vsync": true
   }
 }
 ```
@@ -443,6 +444,9 @@ Desktop bundle `app.json` записывает эти значения в `runti
 Python `termin.player` и C++ `termin_player` используют их как дефолт, а
 CLI-флаги `--width`, `--height`, `--fullscreen` и `--windowed` остаются явными
 override-ами для smoke/manual runs.
+Поле `vsync` выбирает construction-time presentation mode окна: `true`
+соответствует `VSync`, `false` — `Immediate`. Для старых project/app manifests
+без этого поля сохраняется VSync-on поведение.
 
 Для desktop profile `runtime.backends` одновременно задаёт набор поставляемых
 shader artifact families и порядок выбора backend на целевой машине. Runtime
