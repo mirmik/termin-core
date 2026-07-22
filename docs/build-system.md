@@ -420,10 +420,12 @@ ABI и числовой `ndk_api`, но не имеют конфигурируе
 являются частью фиксированного product target. Пути к SDK, компиляторам, Gradle
 и build scripts в профиль не входят; их передает локальный `ToolchainContext`.
 
-Парсер v2 уже представляет сцены, модули, Python requirements и resource
-includes типизированными полями. Пока соответствующие content-closure этапы не
+Парсер v2 представляет сцены, модули, Python requirements и resource includes
+типизированными полями. Явные scene roots уже участвуют в build: exporter
+пакует каждую выбранную сцену и объединяет найденные в них resource/shader
+dependencies. Пока module closure и explicit dynamic resource roots не
 реализованы, build явно завершается diagnostic `profile.feature_pending`, а не
-игнорирует выбранные roots. Это сохраняет честность профиля во время поэтапного
+игнорирует эти поля. Это сохраняет честность профиля во время поэтапного
 внедрения архитектуры.
 
 Project-level defaults для окна standalone player хранятся в
@@ -486,6 +488,33 @@ Runtime package validation является gate перед target packaging. Е
 запускается: desktop bundle/APK не должны создаваться из заведомо битого
 runtime package. CLI backend печатает diagnostics и возвращает non-zero exit
 code при `error` diagnostics.
+
+Runtime package manifest schema v2 задаёт multi-scene contract явно:
+
+```json
+{
+  "version": 2,
+  "entry_scene": "Scenes/Main.scene",
+  "scenes": [
+    {
+      "identity": "Scenes/Main.scene",
+      "path": "scenes/Scenes/Main.scene.json"
+    },
+    {
+      "identity": "Scenes/Menu.scene",
+      "path": "scenes/Scenes/Menu.scene.json"
+    }
+  ],
+  "resources": []
+}
+```
+
+`identity` — нормализованный project-relative путь исходной `.scene`; он
+остаётся стабильным после переноса bundle. `path` указывает только внутрь
+package. `entry_scene` обязан присутствовать в таблице. Валидатор проверяет
+каждую сцену и полный объединённый resource closure, а native runtime загружает
+и регистрирует всю таблицу; player запускает entry scene и оставляет остальные
+сцены неактивными до явного перехода через `SceneManager`.
 
 Desktop target packaging больше не должен копировать SDK `site-packages`
 целиком по умолчанию. В `minimal_strict` bundle получает Python stdlib из SDK
