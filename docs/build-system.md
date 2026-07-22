@@ -420,6 +420,22 @@ ABI и числовой `ndk_api`, но не имеют конфигурируе
 являются частью фиксированного product target. Пути к SDK, компиляторам, Gradle
 и build scripts в профиль не входят; их передает локальный `ToolchainContext`.
 
+`ToolchainContext` собирается одной provider chain. Приоритет отдельных полей:
+SDK installation defaults, затем environment, editor-local settings и, наконец,
+явные параметры конкретного запуска. После слияния roots незаданные tools
+выводятся из итоговых `sdk_root`/`termin_root`/`android_sdk_root` и `PATH`.
+Поэтому смена SDK не оставляет compiler path от прежней установки. Контекст
+включает `termin_shaderc`, FXC, Android/Quest scripts, Gradle и ADB, но никогда
+не сохраняется в `build_profiles.json`.
+
+Канонический `inspect_profile_capabilities()` возвращает тот же stable-code
+report для CLI и editor consumers. `capability.*.missing` означает отсутствие
+настройки/обнаружения, `capability.*.invalid` — заданный путь неправильного
+типа или не существует; отдельные коды описывают SDK target, Android ABI,
+Quest/OpenXR и host-platform mismatch. Build останавливается до target pipeline,
+если report не buildable, а команды `profile`, `resolve` и `build --dry-run`
+по-прежнему позволяют инспектировать корректный foreign-platform profile.
+
 Android и Quest/OpenXR остаются разными продуктами со своими Gradle-проектами,
 manifest-ами и entry point-ами, но используют общий APK pipeline. Конфигурации
 `dev` и `debug` запускают Gradle variant `debug`, а `release` — variant
