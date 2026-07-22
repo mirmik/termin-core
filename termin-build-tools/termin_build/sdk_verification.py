@@ -1,4 +1,4 @@
-"""Final SDK runtime verification."""
+"""Final SDK layout, artifact, and bundled runtime verification."""
 
 from __future__ import annotations
 
@@ -30,6 +30,146 @@ from .sdk_runtime_metadata import (
 
 def _is_windows() -> bool:
     return os.name == "nt"
+
+
+def _normalize_path(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def _is_duplicate_exception(sdk_prefix: Path, path: Path) -> bool:
+    path_text = _normalize_path(str(path))
+    sdk_text = _normalize_path(str(sdk_prefix))
+    android_prefix = _normalize_path(str(sdk_prefix / "android")) + "/"
+    csharp_lib_prefix = _normalize_path(str(sdk_prefix / "csharp" / "lib")) + "/"
+    lower_path = path_text.lower()
+    csharp_lib_relative = (
+        path_text[len(csharp_lib_prefix) :]
+        if path_text.startswith(csharp_lib_prefix)
+        else ""
+    )
+    csharp_lib_parts = [part for part in csharp_lib_relative.split("/") if part]
+    is_csharp_managed_lib = (
+        _is_windows()
+        and len(csharp_lib_parts) in (1, 2)
+        and csharp_lib_parts[-1].lower().endswith(".dll")
+    )
+    return (
+        path_text.startswith(android_prefix)
+        # Managed C# assemblies are intentionally installed both as legacy flat
+        # copies and as target-framework-specific lib/<TFM> assemblies.
+        or is_csharp_managed_lib
+        or "/csharp/runtimes/" in path_text
+        # PyGLFW ships backend-specific copies with the same basename.
+        # They are selected by the Python package from distinct x11/wayland
+        # directories and are not linked by Termin's native libraries.
+        or (
+            not _is_windows()
+            and (
+                lower_path.endswith("/site-packages/glfw/x11/libglfw.so")
+                or lower_path.endswith("/site-packages/glfw/wayland/libglfw.so")
+            )
+        )
+        or (
+            _is_windows()
+            and lower_path.startswith(
+                _normalize_path(str(sdk_prefix / "python")).lower() + "/"
+            )
+            and Path(lower_path).name.startswith("python")
+            and Path(lower_path).suffix == ".dll"
+        )
+        or not path_text.startswith(sdk_text)
+    )
+
+
+def verify_no_duplicate_libraries(sdk_prefix: Path) -> int:
+    print("Verifying: no duplicate libraries")
+    seen: dict[str, Path] = {}
+    duplicates = []
+    patterns = ("*.dll", "*.pyd") if _is_windows() else ("*.so",)
+    for pattern in patterns:
+        for library_path in sdk_prefix.rglob(pattern):
+            if library_path.is_symlink() or not library_path.is_file():
+                continue
+            if _is_duplicate_exception(sdk_prefix, library_path):
+                continue
+            previous = seen.get(library_path.name)
+            if previous is not None:
+                duplicates.append((library_path.name, previous, library_path))
+            else:
+                seen[library_path.name] = library_path
+    if duplicates:
+        for name, first, second in duplicates:
+            print(f"  DUPLICATE: {name}")
+            print(f"    - {first}")
+            print(f"    - {second}")
+        print(
+            f"FAILED: {len(duplicates)} duplicate library/libraries found",
+            file=sys.stderr,
+        )
+        return 1
+    print("  OK: no duplicate libraries")
+    return 0
+
+
+def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
+    print("Verifying: SDK artifacts are up to date")
+    build_bin = build_dir / "bin"
+    if not build_bin.is_dir():
+        print(f"  WARNING: build bin directory not found: {build_bin}")
+        return 0
+
+    stale = []
+    same_second = 0
+    patterns = ("*.dll", "*.pyd") if _is_windows() else ("*.so",)
+    build_artifacts = []
+    for pattern in patterns:
+        build_artifacts.extend(build_bin.glob(pattern))
+    for build_artifact in build_artifacts:
+        build_mtime = build_artifact.stat().st_mtime
+        for sdk_artifact in sdk_prefix.rglob(build_artifact.name):
+            sdk_text = _normalize_path(str(sdk_artifact))
+            android_prefix = _normalize_path(str(sdk_prefix / "android")) + "/"
+            if sdk_text.startswith(android_prefix):
+                continue
+            if "/csharp/runtimes/" in sdk_text:
+                continue
+            sdk_mtime = sdk_artifact.stat().st_mtime
+            if int(sdk_mtime) < int(build_mtime):
+                stale.append((sdk_artifact, build_artifact))
+            elif int(sdk_mtime) == int(build_mtime) and sdk_mtime < build_mtime:
+                same_second += 1
+    if stale:
+        for sdk_artifact, build_artifact in stale:
+            print(f"  STALE: {sdk_artifact}")
+            print(f"    older than: {build_artifact}")
+        print(
+            f"FAILED: {len(stale)} stale SDK artifact(s) found",
+            file=sys.stderr,
+        )
+        return 1
+    print("  OK: SDK artifacts are not older than matching build artifacts")
+    if same_second:
+        print(
+            f"  NOTE: {same_second} matching artifact(s) differed only within "
+            "timestamp sub-second precision"
+        )
+    return 0
+
+
+def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
+    result = verify_no_duplicate_libraries(sdk_prefix)
+    if result != 0:
+        return result
+    result = verify_sdk_artifacts(sdk_prefix, build_dir)
+    if result != 0:
+        return result
+    result = verify_python_runtime_manifest(sdk_prefix)
+    if result != 0:
+        return result
+    result = verify_python_wheelhouse(sdk_prefix)
+    if result != 0:
+        return result
+    return verify_sdk_python_launcher(sdk_prefix)
 
 
 def _python_version_and_paths(py_exec: str) -> dict[str, object]:

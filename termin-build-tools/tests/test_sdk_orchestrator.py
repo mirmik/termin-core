@@ -1489,7 +1489,7 @@ def test_verify_duplicate_libraries_reports_windows_duplicates(
         / "termin_bootstrap.dll"
     ).write_text("dll", encoding="utf-8")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
 
     result = sdk.verify_no_duplicate_libraries(sdk_prefix)
 
@@ -1520,7 +1520,7 @@ def test_verify_duplicate_libraries_ignores_scoped_sdk_duplicates(
         / "termin_bootstrap.dll"
     ).write_text("dll", encoding="utf-8")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
 
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
@@ -1550,7 +1550,7 @@ def test_verify_duplicate_libraries_allows_csharp_tfm_managed_assemblies(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
 
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
@@ -1567,6 +1567,7 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     (host_python / "python312.dll").write_text("dll", encoding="utf-8")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
 
     sdk._copy_windows_python_runtime_executables(
         sdk_prefix,
@@ -1599,6 +1600,6 @@ def test_verify_duplicate_libraries_allows_pyglfw_backend_libraries(
     (x11_dir / "libglfw.so").write_text("x11", encoding="utf-8")
     (wayland_dir / "libglfw.so").write_text("wayland", encoding="utf-8")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: False)
 
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
