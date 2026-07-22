@@ -606,9 +606,14 @@ sdk/bin/termin_python -m termin_build.repository_control \
 Команда возвращает ненулевой exit code при неполном или неуспешном покрытии и
 печатает `termin-test-verification` report с `selected`, `executed`, `skipped`,
 `failed`, `missing`, `inapplicable` и неожиданными результатами. Адаптеры и
-canonical runner integration развиваются отдельно: Windows CTest использует
-этот контракт в #539, process-smoke в #454, а локальное вычисление expected в
-CI — в #540.
+canonical runners строят selection непосредственно из manifest текущего
+checkout. Они не принимают внешний `--plan-file` и не поддерживают неявный
+subset/sharding: отдельный job не может подменить локально применимый набор
+suites устаревшим artifact. CI сохраняет и передаёт между jobs только execution
+manifests; verification job заново вычисляет expected manifest из своего
+checkout и сравнивает с fingerprints executor results. CTest adapter агрегирует
+registration-level JUnit outcomes в suite-level `termin-test-execution`, сохраняя
+исходные registrations и причины skip/failure в `details`.
 
 Focused-вызов `run-tests-python.* <pytest-target ...>` остаётся прямым pytest
 запуском и не меняет repository inventory.

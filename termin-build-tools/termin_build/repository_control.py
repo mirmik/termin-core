@@ -21,7 +21,6 @@ from .execution_manifest import (
     build_execution_manifest,
     build_expected_manifest,
     read_manifest,
-    validate_expected_manifest,
     verify_execution_manifests,
 )
 from .package_manifest import load_manifest as load_package_manifest
@@ -612,18 +611,15 @@ def build_ctest_execution_plan(
     profile: str,
     platform: str,
     capabilities: Iterable[str],
-    suite_ids: Iterable[str] | None = None,
 ) -> dict[str, object]:
     if not isinstance(ctest_payload, dict) or not isinstance(
         ctest_payload.get("tests"), list
     ):
         raise ManifestError("CTest JSON must contain a tests array")
-    allowed_suite_ids = set(suite_ids) if suite_ids is not None else None
-    selected_modules = {
-        suite["module"]
+    selected_suites = {
+        suite["module"]: suite["id"]
         for suite in build_plan(catalog, profile, platform)["suites"]
         if suite["executor"] == "ctest"
-        and (allowed_suite_ids is None or suite["id"] in allowed_suite_ids)
     }
     enabled_capabilities = set(capabilities)
     selected = []
@@ -638,7 +634,8 @@ def build_ctest_execution_plan(
         if len(module_labels) != 1:
             continue
         module = module_labels[0].removeprefix("termin:module:")
-        if module not in selected_modules:
+        suite_id = selected_suites.get(module)
+        if suite_id is None:
             continue
         required_capabilities = sorted(
             label.removeprefix("termin:capability:")
@@ -647,6 +644,7 @@ def build_ctest_execution_plan(
         )
         entry = {
             "name": raw_test["name"],
+            "suite_id": suite_id,
             "module": module,
             "capabilities": required_capabilities,
         }
@@ -718,6 +716,10 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
         errors.append(f"duplicate profile id: {profile_id}")
     for suite_id in _duplicates(suite.id for suite in catalog.suites):
         errors.append(f"duplicate suite id: {suite_id}")
+    for module_id in _duplicates(
+        suite.module for suite in catalog.suites if suite.executor == "ctest"
+    ):
+        errors.append(f"multiple CTest suites own module: {module_id}")
 
     module_ids = {module.id for module in catalog.modules}
     profile_ids = {profile.id for profile in catalog.profiles}
@@ -947,36 +949,6 @@ def build_plan(
         )
     except TestExecutionContractError as exc:
         raise ManifestError(str(exc)) from exc
-
-
-def load_plan_file(
-    path: Path,
-    catalog: RepositoryCatalog,
-    profile: str,
-    platform: str,
-) -> tuple[str, ...]:
-    try:
-        raw_plan = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ManifestError(f"planner JSON does not exist: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise ManifestError(f"invalid planner JSON in {path}: {exc}") from exc
-    if not isinstance(raw_plan, dict):
-        raise ManifestError(f"planner JSON root must be an object: {path}")
-    try:
-        validate_expected_manifest(raw_plan)
-    except TestExecutionContractError as exc:
-        raise ManifestError(f"invalid expected manifest {path}: {exc}") from exc
-    if raw_plan.get("profile") != profile or raw_plan.get("platform") != platform:
-        raise ManifestError(
-            f"planner JSON profile/platform does not match requested {profile}/{platform}"
-        )
-    local_expected = build_plan(catalog, profile, platform)
-    if raw_plan["fingerprint"] != local_expected["fingerprint"]:
-        raise ManifestError(
-            f"expected manifest differs from local {profile}/{platform} checkout"
-        )
-    return tuple(entry["id"] for entry in raw_plan["suites"])
 
 
 def _host_platform() -> str:
@@ -1314,7 +1286,6 @@ def _cmd_ctest_plan(
     capabilities: tuple[str, ...],
     json_output: bool,
     regex_output: bool,
-    plan_file: Path | None,
     config: str | None = None,
 ) -> int:
     catalog = _load_valid_catalog(repo_root)
@@ -1333,13 +1304,8 @@ def _cmd_ctest_plan(
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ManifestError(f"invalid CTest JSON from {build_dir}: {exc}") from exc
-    suite_ids = (
-        load_plan_file(plan_file, catalog, profile, platform)
-        if plan_file is not None
-        else None
-    )
     plan = build_ctest_execution_plan(
-        catalog, payload, profile, platform, capabilities, suite_ids
+        catalog, payload, profile, platform, capabilities
     )
     if config:
         plan["configuration"] = config
@@ -1354,7 +1320,9 @@ def _cmd_ctest_plan(
     return 0
 
 
-def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path) -> int:
+def _cmd_report_ctest(
+    repo_root: Path, selection_path: Path, junit_path: Path, output_path: Path
+) -> int:
     try:
         selection = json.loads(selection_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -1363,6 +1331,19 @@ def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path)
         raise ManifestError(f"invalid CTest selection JSON: {selection_path}: {exc}") from exc
     if not isinstance(selection, dict) or not isinstance(selection.get("selected"), list):
         raise ManifestError(f"CTest selection has no selected test list: {selection_path}")
+    if not isinstance(selection.get("skipped"), list):
+        raise ManifestError(f"CTest selection has no skipped test list: {selection_path}")
+    profile = selection.get("profile")
+    platform = selection.get("platform")
+    if not isinstance(profile, str) or not isinstance(platform, str):
+        raise ManifestError(
+            f"CTest selection has no profile/platform identity: {selection_path}"
+        )
+    expected = build_plan(_load_valid_catalog(repo_root), profile, platform)
+    expected_suite_ids = [
+        suite["id"] for suite in expected["suites"] if suite["executor"] == "ctest"
+    ]
+    expected_suite_id_set = set(expected_suite_ids)
     try:
         root = ET.parse(junit_path).getroot()
     except FileNotFoundError as exc:
@@ -1375,125 +1356,129 @@ def _cmd_report_ctest(selection_path: Path, junit_path: Path, output_path: Path)
         for testcase in root.iter("testcase")
         if "name" in testcase.attrib
     }
-    executed = []
-    failed = []
+    registration_executed = []
+    registration_failed = []
     runtime_skipped = []
     for entry in selection["selected"]:
-        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("name"), str)
+            or not isinstance(entry.get("suite_id"), str)
+        ):
             raise ManifestError(f"invalid selected CTest entry in {selection_path}")
         name = entry["name"]
         testcase = reported.get(name)
         result = dict(entry)
         if testcase is None:
             result["reason"] = "CTest did not report this selected registration"
-            failed.append(result)
+            registration_failed.append(result)
         elif testcase.find("failure") is not None or testcase.find("error") is not None:
-            failed.append(result)
+            result["reason"] = "CTest reported a failing registration"
+            registration_failed.append(result)
         elif testcase.find("skipped") is not None:
             result["reason"] = "CTest marked the registration skipped"
             runtime_skipped.append(result)
         else:
-            executed.append(result)
-    manifest = {
-        "schema": 1,
-        "profile": selection.get("profile"),
-        "platform": selection.get("platform"),
-        "capabilities": selection.get("capabilities", []),
-        "configuration": selection.get("configuration"),
-        "selected": selection["selected"],
-        "executed": executed,
-        "skipped": [*selection.get("skipped", []), *runtime_skipped],
-        "failed": failed,
+            registration_executed.append(result)
+
+    planner_skipped = []
+    for entry in selection["skipped"]:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("name"), str)
+            or not isinstance(entry.get("suite_id"), str)
+            or not isinstance(entry.get("reason"), str)
+            or not entry["reason"].strip()
+        ):
+            raise ManifestError(f"invalid skipped CTest entry in {selection_path}")
+        planner_skipped.append(dict(entry))
+
+    registrations = [
+        *registration_executed,
+        *runtime_skipped,
+        *registration_failed,
+        *planner_skipped,
+    ]
+    unexpected_suite_ids = sorted(
+        {
+            entry["suite_id"]
+            for entry in registrations
+            if entry["suite_id"] not in expected_suite_id_set
+        }
+    )
+    if unexpected_suite_ids:
+        raise ManifestError(
+            "CTest selection contains suites outside local expected coverage: "
+            + ", ".join(unexpected_suite_ids)
+        )
+
+    executed_by_suite = {entry["suite_id"] for entry in registration_executed}
+    failed_by_suite: dict[str, list[str]] = {}
+    for entry in registration_failed:
+        failed_by_suite.setdefault(entry["suite_id"], []).append(entry["name"])
+    skipped_reasons_by_suite: dict[str, list[str]] = {}
+    for entry in [*planner_skipped, *runtime_skipped]:
+        skipped_reasons_by_suite.setdefault(entry["suite_id"], []).append(
+            entry["reason"]
+        )
+    registrations_by_suite = {
+        suite_id: [
+            entry["name"] for entry in registrations if entry["suite_id"] == suite_id
+        ]
+        for suite_id in expected_suite_ids
     }
+
+    executed_suites = []
+    skipped_suites: dict[str, str] = {}
+    failed_suites: dict[str, str] = {}
+    for suite_id in expected_suite_ids:
+        failed_registrations = failed_by_suite.get(suite_id, [])
+        if failed_registrations:
+            failed_suites[suite_id] = "failed CTest registrations: " + ", ".join(
+                sorted(failed_registrations)
+            )
+        elif suite_id in executed_by_suite:
+            executed_suites.append(suite_id)
+        elif registrations_by_suite[suite_id]:
+            reasons = sorted(set(skipped_reasons_by_suite.get(suite_id, [])))
+            skipped_suites[suite_id] = "; ".join(reasons)
+        else:
+            failed_suites[suite_id] = "CTest selection contains no registrations"
+
+    manifest = build_execution_manifest(
+        expected,
+        "ctest",
+        selected=expected_suite_ids,
+        executed=executed_suites,
+        skipped=skipped_suites,
+        failed=failed_suites,
+        details={
+            "capabilities": selection.get("capabilities", []),
+            "configuration": selection.get("configuration"),
+            "registrations": {
+                "selected": selection["selected"],
+                "executed": registration_executed,
+                "skipped": [*planner_skipped, *runtime_skipped],
+                "failed": registration_failed,
+            },
+        },
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     _print_json(
         {
-            "executed": len(executed),
-            "skipped": len(manifest["skipped"]),
-            "failed": len(failed),
+            "executed_suites": len(executed_suites),
+            "skipped_suites": len(skipped_suites),
+            "failed_suites": len(failed_suites),
+            "executed_registrations": len(registration_executed),
+            "skipped_registrations": len(planner_skipped) + len(runtime_skipped),
+            "failed_registrations": len(registration_failed),
             "output": str(output_path),
         }
     )
-    return 1 if failed else 0
-
-
-def _read_execution_json(path: Path, description: str) -> dict[str, object]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ManifestError(f"{description} does not exist: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise ManifestError(f"invalid {description}: {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise ManifestError(f"{description} root must be an object: {path}")
-    return value
-
-
-def _entry_values(manifest: dict[str, object], field: str, key: str) -> set[str]:
-    entries = manifest.get(field)
-    if not isinstance(entries, list):
-        raise ManifestError(f"execution manifest field must be a list: {field}")
-    values = set()
-    for entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get(key), str):
-            raise ManifestError(f"invalid {field} entry in execution manifest")
-        value = entry[key]
-        if value in values:
-            raise ManifestError(
-                f"duplicate {field} entry in execution manifest: {value}"
-            )
-        if field == "skipped":
-            reason = entry.get("reason")
-            if not isinstance(reason, str) or not reason.strip():
-                raise ManifestError(
-                    f"skipped execution entry has no explicit reason: {value}"
-                )
-        values.add(value)
-    return values
-
-
-def _validate_execution_identity(
-    plan: dict[str, object],
-    manifest: dict[str, object],
-    description: str,
-) -> None:
-    if manifest.get("schema") != 1:
-        raise ManifestError(
-            f"{description} has unsupported schema: {manifest.get('schema')}"
-        )
-    for field in ("profile", "platform"):
-        expected = plan.get(field)
-        observed = manifest.get(field)
-        if observed != expected:
-            raise ManifestError(
-                f"{description} {field} does not match planner JSON: "
-                f"expected {expected!r}, got {observed!r}"
-            )
-
-
-def _execution_observed_ids(
-    manifest: dict[str, object], key: str
-) -> tuple[set[str], set[str]]:
-    outcomes = {
-        field: _entry_values(manifest, field, key)
-        for field in ("executed", "skipped", "failed")
-    }
-    for left, right in (
-        ("executed", "skipped"),
-        ("executed", "failed"),
-        ("skipped", "failed"),
-    ):
-        overlap = sorted(outcomes[left] & outcomes[right])
-        if overlap:
-            raise ManifestError(
-                f"execution entries have multiple outcomes ({left}, {right}): "
-                + ", ".join(overlap)
-            )
-    observed = outcomes["executed"] | outcomes["skipped"] | outcomes["failed"]
-    return observed, outcomes["failed"]
+    return 1 if failed_suites else 0
 
 
 def _cmd_verify_suite_execution(
@@ -1501,86 +1486,36 @@ def _cmd_verify_suite_execution(
 ) -> int:
     expected = read_manifest(plan_path, "expected manifest")
     manifest = read_manifest(manifest_path, f"{executor} execution manifest")
-    if manifest.get("kind") == "termin-test-execution":
-        if manifest.get("executor") != executor:
-            raise ManifestError(
-                f"execution manifest executor does not match requested {executor}"
-            )
-        try:
-            report = verify_execution_manifests(expected, [manifest])
-        except TestExecutionContractError as exc:
-            raise ManifestError(str(exc)) from exc
-        expected_executors = {
-            suite["executor"] for suite in expected["suites"]
-        }
-        unrelated_missing = {
-            suite["id"]
-            for suite in expected["suites"]
-            if suite["executor"] != executor
-        }
-        relevant_missing = set(report["missing"]) - unrelated_missing
-        relevant_missing_selected = set(report["missing_selected"]) - unrelated_missing
-        failed = bool(
-            report["failed"]
-            or relevant_missing
-            or relevant_missing_selected
-            or report["unexpected_selected"]
-            or report["unexpected_results"]
-            or report["unexpected_executors"]
-            or executor not in expected_executors
-        )
-        report["missing"] = sorted(relevant_missing)
-        report["missing_selected"] = sorted(relevant_missing_selected)
-        report["success"] = not failed
-        _print_json(report)
-        return 1 if failed else 0
-
-    plan = _read_execution_json(plan_path, "planner JSON")
-    manifest = _read_execution_json(manifest_path, f"{executor} execution manifest")
-    if plan.get("schema") != 1:
+    if manifest.get("executor") != executor:
         raise ManifestError(
-            f"planner JSON has unsupported schema: {plan.get('schema')}"
+            f"execution manifest executor does not match requested {executor}"
         )
-    _validate_execution_identity(plan, manifest, f"{executor} execution manifest")
-    suites = plan.get("suites")
-    if not isinstance(suites, list):
-        raise ManifestError(f"planner JSON has no suites list: {plan_path}")
-
-    expected = set()
-    for suite in suites:
-        if not isinstance(suite, dict):
-            raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
-        if suite.get("executor") == executor:
-            suite_id = suite.get("id")
-            if not isinstance(suite_id, str):
-                raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
-            expected.add(suite_id)
-
-    selected = _entry_values(manifest, "selected", "id")
-    observed, failures = _execution_observed_ids(manifest, "id")
-    missing_selected = sorted(expected - selected)
-    unexpected_selected = sorted(selected - expected)
-    missing_observed = sorted(expected - observed)
-    unexpected_observed = sorted(observed - expected)
-    summary = {
-        "profile": plan.get("profile"),
-        "platform": plan.get("platform"),
-        "executor": executor,
-        "expected_suites": len(expected),
-        "missing_selected_suites": missing_selected,
-        "unexpected_selected_suites": unexpected_selected,
-        "missing_observed_suites": missing_observed,
-        "unexpected_observed_suites": unexpected_observed,
-        "failed_suites": sorted(failures),
+    try:
+        report = verify_execution_manifests(expected, [manifest])
+    except TestExecutionContractError as exc:
+        raise ManifestError(str(exc)) from exc
+    expected_executors = {suite["executor"] for suite in expected["suites"]}
+    unrelated_missing = {
+        suite["id"]
+        for suite in expected["suites"]
+        if suite["executor"] != executor
     }
-    _print_json(summary)
-    return 1 if (
-        missing_selected
-        or unexpected_selected
-        or missing_observed
-        or unexpected_observed
-        or failures
-    ) else 0
+    relevant_missing = set(report["missing"]) - unrelated_missing
+    relevant_missing_selected = set(report["missing_selected"]) - unrelated_missing
+    failed = bool(
+        report["failed"]
+        or relevant_missing
+        or relevant_missing_selected
+        or report["unexpected_selected"]
+        or report["unexpected_results"]
+        or report["unexpected_executors"]
+        or executor not in expected_executors
+    )
+    report["missing"] = sorted(relevant_missing)
+    report["missing_selected"] = sorted(relevant_missing_selected)
+    report["success"] = not failed
+    _print_json(report)
+    return 1 if failed else 0
 
 
 def _cmd_verify_execution(
@@ -1598,66 +1533,6 @@ def _cmd_verify_execution(
     return 0 if report["success"] else 1
 
 
-def _cmd_verify_plan_execution(
-    plan_path: Path, ctest_path: Path, python_path: Path
-) -> int:
-    plan = _read_execution_json(plan_path, "planner JSON")
-    ctest_manifest = _read_execution_json(ctest_path, "CTest execution manifest")
-    python_manifest = _read_execution_json(
-        python_path, "Python execution manifest"
-    )
-    if plan.get("schema") != 1:
-        raise ManifestError(
-            f"planner JSON has unsupported schema: {plan.get('schema')}"
-        )
-    _validate_execution_identity(plan, ctest_manifest, "CTest execution manifest")
-    _validate_execution_identity(plan, python_manifest, "Python execution manifest")
-    suites = plan.get("suites")
-    if not isinstance(suites, list):
-        raise ManifestError(f"planner JSON has no suites list: {plan_path}")
-    expected_python = set()
-    expected_ctest_modules = set()
-    for suite in suites:
-        if not isinstance(suite, dict):
-            raise ManifestError(f"invalid suite in planner JSON: {plan_path}")
-        executor = suite.get("executor")
-        if executor == "pytest" and isinstance(suite.get("id"), str):
-            expected_python.add(suite["id"])
-        elif executor == "ctest" and isinstance(suite.get("module"), str):
-            expected_ctest_modules.add(suite["module"])
-
-    python_observed, python_failures = _execution_observed_ids(
-        python_manifest, "id"
-    )
-    ctest_observed, ctest_failures = _execution_observed_ids(
-        ctest_manifest, "module"
-    )
-    missing_python = sorted(expected_python - python_observed)
-    missing_ctest = sorted(expected_ctest_modules - ctest_observed)
-    unexpected_python = sorted(python_observed - expected_python)
-    unexpected_ctest = sorted(ctest_observed - expected_ctest_modules)
-    failures = python_failures | ctest_failures
-    summary = {
-        "profile": plan.get("profile"),
-        "platform": plan.get("platform"),
-        "expected_python_suites": len(expected_python),
-        "expected_ctest_modules": len(expected_ctest_modules),
-        "missing_python_suites": missing_python,
-        "missing_ctest_modules": missing_ctest,
-        "unexpected_python_suites": unexpected_python,
-        "unexpected_ctest_modules": unexpected_ctest,
-        "failed_entries": sorted(failures),
-    }
-    _print_json(summary)
-    return 1 if (
-        missing_python
-        or missing_ctest
-        or unexpected_python
-        or unexpected_ctest
-        or failures
-    ) else 0
-
-
 def _cmd_run(
     repo_root: Path,
     profile: str,
@@ -1665,7 +1540,6 @@ def _cmd_run(
     python_executable: str,
     python_arguments: tuple[str, ...],
     executor_filter: tuple[str, ...],
-    plan_file: Path | None,
     report_output: Path | None,
     capabilities: tuple[str, ...],
     configuration: str | None,
@@ -1675,8 +1549,6 @@ def _cmd_run(
     resolved_platform = platform or _host_platform()
     catalog = _load_valid_catalog(repo_root)
     expected = build_plan(catalog, profile, resolved_platform)
-    if plan_file is not None:
-        load_plan_file(plan_file, catalog, profile, resolved_platform)
     if executor_filter:
         catalog = RepositoryCatalog(
             modules=catalog.modules,
@@ -1811,7 +1683,6 @@ def main(argv: list[str] | None = None) -> int:
     ctest_plan_parser.add_argument("--capability", action="append", default=[])
     ctest_plan_parser.add_argument("--json", action="store_true", dest="json_output")
     ctest_plan_parser.add_argument("--regex", action="store_true", dest="regex_output")
-    ctest_plan_parser.add_argument("--plan-file", type=Path)
     ctest_plan_parser.add_argument(
         "--config", help="CTest multi-config configuration, for example Release."
     )
@@ -1822,14 +1693,6 @@ def main(argv: list[str] | None = None) -> int:
     ctest_report_parser.add_argument("--selection", type=Path, required=True)
     ctest_report_parser.add_argument("--junit", type=Path, required=True)
     ctest_report_parser.add_argument("--output", type=Path, required=True)
-
-    verify_parser = subparsers.add_parser(
-        "verify-plan-execution",
-        help="Verify that CTest and Python manifests cover a planner JSON.",
-    )
-    verify_parser.add_argument("--plan", type=Path, required=True)
-    verify_parser.add_argument("--ctest", type=Path, required=True)
-    verify_parser.add_argument("--python", type=Path, required=True)
 
     verify_suite_parser = subparsers.add_parser(
         "verify-suite-execution",
@@ -1860,7 +1723,6 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--executor", action="append", choices=sorted(SUPPORTED_EXECUTORS), default=[]
     )
-    run_parser.add_argument("--plan-file", type=Path)
     run_parser.add_argument("--report-output", type=Path)
     run_parser.add_argument("--capability", action="append", default=[])
     run_parser.add_argument("--configuration")
@@ -1900,16 +1762,14 @@ def main(argv: list[str] | None = None) -> int:
                 tuple(args.capability),
                 args.json_output,
                 args.regex_output,
-                args.plan_file.resolve() if args.plan_file else None,
                 args.config,
             )
         if args.command == "report-ctest":
             return _cmd_report_ctest(
-                args.selection.resolve(), args.junit.resolve(), args.output.resolve()
-            )
-        if args.command == "verify-plan-execution":
-            return _cmd_verify_plan_execution(
-                args.plan.resolve(), args.ctest.resolve(), args.python.resolve()
+                repo_root,
+                args.selection.resolve(),
+                args.junit.resolve(),
+                args.output.resolve(),
             )
         if args.command == "verify-suite-execution":
             return _cmd_verify_suite_execution(
@@ -1928,7 +1788,6 @@ def main(argv: list[str] | None = None) -> int:
                 args.python_executable,
                 tuple(args.python_arg),
                 tuple(args.executor),
-                args.plan_file.resolve() if args.plan_file else None,
                 args.report_output.resolve() if args.report_output else None,
                 tuple(args.capability),
                 args.configuration,

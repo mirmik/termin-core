@@ -136,6 +136,26 @@ def _add_process_smoke_suite(
     return command
 
 
+def _add_ctest_suite(repo: Path) -> None:
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suite_defaults"]["ctest"] = {
+        "profiles": ["pr"],
+        "environment": "cmake-top-level",
+        "platforms": ["linux"],
+        "capabilities": ["host"],
+    }
+    data["suites"].append(
+        {
+            "id": "alpha-native",
+            "module": "alpha",
+            "executor": "ctest",
+            "roots": ["alpha/tests"],
+        }
+    )
+    _write_json(manifest, data)
+
+
 def test_catalog_joins_python_packages_to_test_suites(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
 
@@ -455,6 +475,7 @@ def test_ctest_plan_reports_capability_exclusion_reason(tmp_path: Path) -> None:
     assert plan["skipped"] == [
         {
             "name": "alpha_vulkan_test",
+            "suite_id": "alpha-native",
             "module": "alpha",
             "capabilities": ["host", "vulkan"],
             "reason": "missing capabilities: vulkan",
@@ -874,8 +895,6 @@ def test_windows_process_smoke_executes_from_canonical_plan(
             "12",
             "--process-log-dir",
             str(log_dir),
-            "--plan-file",
-            str(plan_path),
             "--report-output",
             str(report_path),
         ]
@@ -954,9 +973,11 @@ def test_process_smoke_timeout_fails_and_retains_log(
 
 
 def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> None:
-    selection = tmp_path / "selection.json"
-    junit = tmp_path / "ctest.xml"
-    output = tmp_path / "execution.json"
+    repo = _repository(tmp_path)
+    _add_ctest_suite(repo)
+    selection = repo / "selection.json"
+    junit = repo / "ctest.xml"
+    output = repo / "execution.json"
     _write_json(
         selection,
         {
@@ -966,12 +987,23 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
             "configuration": "Release",
             "capabilities": ["host"],
             "selected": [
-                {"name": "passes", "module": "alpha", "capabilities": ["host"]},
-                {"name": "runtime_skip", "module": "alpha", "capabilities": ["host"]},
+                {
+                    "name": "passes",
+                    "suite_id": "alpha-native",
+                    "module": "alpha",
+                    "capabilities": ["host"],
+                },
+                {
+                    "name": "runtime_skip",
+                    "suite_id": "alpha-native",
+                    "module": "alpha",
+                    "capabilities": ["host"],
+                },
             ],
             "skipped": [
                 {
                     "name": "missing_capability",
+                    "suite_id": "alpha-native",
                     "module": "alpha",
                     "reason": "missing capabilities: vulkan",
                 }
@@ -986,121 +1018,23 @@ def test_ctest_report_records_selected_executed_and_skipped(tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    result = repository_control._cmd_report_ctest(selection, junit, output)
+    result = repository_control._cmd_report_ctest(repo, selection, junit, output)
 
     assert result == 0
     report = json.loads(output.read_text(encoding="utf-8"))
-    assert [entry["name"] for entry in report["executed"]] == ["passes"]
-    assert [entry["name"] for entry in report["skipped"]] == [
+    assert report["kind"] == "termin-test-execution"
+    assert report["executor"] == "ctest"
+    assert report["selected"] == [{"id": "alpha-native"}]
+    assert report["executed"] == [{"id": "alpha-native"}]
+    assert report["skipped"] == []
+    assert [
+        entry["name"] for entry in report["details"]["registrations"]["skipped"]
+    ] == [
         "missing_capability",
         "runtime_skip",
     ]
     assert report["failed"] == []
-    assert report["configuration"] == "Release"
-
-
-def test_verify_plan_execution_requires_python_and_ctest_coverage(
-    tmp_path: Path, capsys
-) -> None:
-    plan = tmp_path / "plan.json"
-    ctest = tmp_path / "ctest.json"
-    python = tmp_path / "python.json"
-    _write_json(
-        plan,
-        {
-            "schema": 1,
-            "profile": "pr",
-            "platform": "linux",
-            "suites": [
-                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
-                {"id": "alpha-native", "executor": "ctest", "module": "alpha"},
-            ],
-        },
-    )
-    _write_json(
-        ctest,
-        {
-            "schema": 1,
-            "profile": "pr",
-            "platform": "linux",
-            "executed": [{"module": "alpha"}],
-            "skipped": [],
-            "failed": [],
-        },
-    )
-    _write_json(
-        python,
-        {
-            "schema": 1,
-            "profile": "pr",
-            "platform": "linux",
-            "executed": [{"id": "alpha-python"}],
-            "skipped": [],
-            "failed": [],
-        },
-    )
-
-    result = repository_control._cmd_verify_plan_execution(plan, ctest, python)
-
-    assert result == 0
-    assert json.loads(capsys.readouterr().out)["missing_python_suites"] == []
-
-
-def test_verify_plan_execution_rejects_wrong_identity_and_unexpected_entries(
-    tmp_path: Path, capsys
-) -> None:
-    plan = tmp_path / "plan.json"
-    ctest = tmp_path / "ctest.json"
-    python = tmp_path / "python.json"
-    _write_json(
-        plan,
-        {
-            "schema": 1,
-            "profile": "pr",
-            "platform": "linux",
-            "suites": [
-                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
-                {"id": "alpha-native", "executor": "ctest", "module": "alpha"},
-            ],
-        },
-    )
-    _write_json(
-        ctest,
-        {
-            "schema": 1,
-            "profile": "linux-full",
-            "platform": "linux",
-            "executed": [{"module": "alpha"}],
-            "skipped": [],
-            "failed": [],
-        },
-    )
-    _write_json(
-        python,
-        {
-            "schema": 1,
-            "profile": "pr",
-            "platform": "linux",
-            "executed": [{"id": "alpha-python"}],
-            "skipped": [],
-            "failed": [],
-        },
-    )
-
-    with pytest.raises(repository_control.ManifestError, match="profile does not match"):
-        repository_control._cmd_verify_plan_execution(plan, ctest, python)
-
-    ctest_payload = json.loads(ctest.read_text(encoding="utf-8"))
-    ctest_payload["profile"] = "pr"
-    ctest_payload["executed"].append({"module": "unplanned"})
-    _write_json(ctest, ctest_payload)
-
-    result = repository_control._cmd_verify_plan_execution(plan, ctest, python)
-
-    assert result == 1
-    assert json.loads(capsys.readouterr().out)["unexpected_ctest_modules"] == [
-        "unplanned"
-    ]
+    assert report["details"]["configuration"] == "Release"
 
 
 def test_verify_suite_execution_requires_exact_executor_coverage(
@@ -1108,45 +1042,36 @@ def test_verify_suite_execution_requires_exact_executor_coverage(
 ) -> None:
     plan = tmp_path / "plan.json"
     manifest = tmp_path / "process.json"
-    _write_json(
-        plan,
-        {
-            "schema": 1,
-            "profile": "sdk-installed",
-            "platform": "linux",
-            "suites": [
-                {
-                    "id": "installed-smoke",
-                    "executor": "process-smoke",
-                    "module": "alpha",
-                },
-                {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
-            ],
-        },
+    expected = repository_control.build_expected_manifest(
+        "sdk-installed",
+        "linux",
+        [
+            {
+                "id": "installed-smoke",
+                "executor": "process-smoke",
+                "module": "alpha",
+            },
+            {"id": "alpha-python", "executor": "pytest", "module": "alpha"},
+        ],
+        [],
     )
-    _write_json(
-        manifest,
-        {
-            "schema": 1,
-            "profile": "sdk-installed",
-            "platform": "linux",
-            "selected": [
-                {"id": "installed-smoke", "executor": "process-smoke"}
-            ],
-            "executed": [
-                {"id": "installed-smoke", "executor": "process-smoke"}
-            ],
-            "skipped": [],
-            "failed": [],
-        },
+    execution = repository_control.build_execution_manifest(
+        expected,
+        "process-smoke",
+        selected=["installed-smoke"],
+        executed=["installed-smoke"],
+        skipped={},
+        failed={},
     )
+    _write_json(plan, expected)
+    _write_json(manifest, execution)
 
     result = repository_control._cmd_verify_suite_execution(
         plan, manifest, "process-smoke"
     )
 
     assert result == 0
-    assert json.loads(capsys.readouterr().out)["expected_suites"] == 1
+    assert json.loads(capsys.readouterr().out)["success"] is True
 
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["executed"] = []
@@ -1157,54 +1082,4 @@ def test_verify_suite_execution_requires_exact_executor_coverage(
     )
 
     assert result == 1
-    assert json.loads(capsys.readouterr().out)["missing_observed_suites"] == [
-        "installed-smoke"
-    ]
-
-
-def test_execution_manifest_requires_skip_reason_and_single_outcome(
-    tmp_path: Path,
-) -> None:
-    plan = tmp_path / "plan.json"
-    manifest = tmp_path / "process.json"
-    _write_json(
-        plan,
-        {
-            "schema": 1,
-            "profile": "pr",
-            "platform": "linux",
-            "suites": [
-                {"id": "alpha-smoke", "executor": "process-smoke"}
-            ],
-        },
-    )
-    payload = {
-        "schema": 1,
-        "profile": "pr",
-        "platform": "linux",
-        "selected": [{"id": "alpha-smoke"}],
-        "executed": [],
-        "skipped": [{"id": "alpha-smoke"}],
-        "failed": [],
-    }
-    _write_json(manifest, payload)
-
-    with pytest.raises(
-        repository_control.ManifestError,
-        match="skipped execution entry has no explicit reason: alpha-smoke",
-    ):
-        repository_control._cmd_verify_suite_execution(
-            plan, manifest, "process-smoke"
-        )
-
-    payload["skipped"][0]["reason"] = "unsupported display"
-    payload["executed"] = [{"id": "alpha-smoke"}]
-    _write_json(manifest, payload)
-
-    with pytest.raises(
-        repository_control.ManifestError,
-        match="multiple outcomes .*alpha-smoke",
-    ):
-        repository_control._cmd_verify_suite_execution(
-            plan, manifest, "process-smoke"
-        )
+    assert json.loads(capsys.readouterr().out)["missing"] == ["installed-smoke"]
