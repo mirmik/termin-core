@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import sys
 import uuid
 from pathlib import Path
@@ -10,6 +11,22 @@ from pathlib import Path
 
 SDK_CAPABILITIES_NAME = "termin-sdk-capabilities.json"
 ANDROID_ABI_CAPABILITIES_RELATIVE = Path("share/termin/android-capabilities.json")
+
+
+def _desktop_target() -> tuple[str, str]:
+    if sys.platform == "win32":
+        target_os = "windows"
+    elif sys.platform.startswith("linux"):
+        target_os = "linux"
+    else:
+        raise RuntimeError(f"unsupported desktop SDK operating system: {sys.platform}")
+
+    machine = platform.machine().lower()
+    if machine in {"x86_64", "amd64"}:
+        target_arch = "x86_64"
+    else:
+        raise RuntimeError(f"unsupported desktop SDK architecture: {machine or 'unknown'}")
+    return target_os, target_arch
 
 
 def _cmake_cache_values(path: Path) -> dict[str, str]:
@@ -125,6 +142,51 @@ def _update_aggregate_manifest(
         "openxr_loader": bool(quest_abis),
         "vulkan": bool(quest_abis),
     }
+
+
+def write_desktop_capabilities(*, sdk_root: Path) -> None:
+    """Record the installed desktop payload and its exact build target."""
+
+    manifest_path = sdk_root / SDK_CAPABILITIES_NAME
+    manifest = (
+        _read_versioned_object(manifest_path, "SDK capability manifest")
+        if manifest_path.is_file()
+        else {"version": 1, "sdk_version": "", "tools": {}}
+    )
+    target_os, target_arch = _desktop_target()
+    executable_suffix = ".exe" if target_os == "windows" else ""
+    player_path = sdk_root / "bin" / f"termin_player{executable_suffix}"
+    shaderc_path = sdk_root / "bin" / f"termin_shaderc{executable_suffix}"
+    native_patterns = ("*.dll",) if target_os == "windows" else ("*.so", "*.so.*")
+    native_libraries = any(
+        path.is_file()
+        for directory in (sdk_root / "bin", sdk_root / "lib")
+        if directory.is_dir()
+        for pattern in native_patterns
+        for path in directory.glob(pattern)
+    )
+    if target_os == "windows":
+        python_runtime = (sdk_root / "python" / "Lib" / "os.py").is_file()
+    else:
+        python_runtime = any((path / "os.py").is_file() for path in (sdk_root / "lib").glob("python3.*"))
+
+    platforms = manifest.setdefault("platforms", {})
+    if not isinstance(platforms, dict):
+        raise RuntimeError("SDK capability field 'platforms' must be an object")
+    platforms["desktop"] = {
+        "os": target_os,
+        "arch": target_arch,
+        "player": player_path.is_file(),
+        "native_libraries": native_libraries,
+        "python_runtime": python_runtime,
+        "builtin_shaders": (sdk_root / "share" / "termin" / "builtin_shaders").is_dir(),
+    }
+    tools = manifest.setdefault("tools", {})
+    if not isinstance(tools, dict):
+        raise RuntimeError("SDK capability field 'tools' must be an object")
+    tools["termin_player"] = player_path.relative_to(sdk_root).as_posix()
+    tools["termin_shaderc"] = shaderc_path.relative_to(sdk_root).as_posix()
+    _write_json_atomic(manifest_path, manifest)
 
 
 def write_android_capabilities(

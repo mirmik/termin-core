@@ -1332,6 +1332,11 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
         }
     ]
     assert artifact["features"] == ["sample"]
+    capabilities = json.loads(
+        (sdk_prefix / "termin-sdk-capabilities.json").read_text(encoding="utf-8")
+    )
+    assert capabilities["platforms"]["desktop"]["os"] == "linux"
+    assert capabilities["platforms"]["desktop"]["arch"] == "x86_64"
     build_data = json.loads(
         (build_dir / "termin-build-artifacts.json").read_text()
     )

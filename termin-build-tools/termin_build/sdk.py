@@ -32,7 +32,7 @@ from .sdk_python_layout import (
     publish_cmake_python_install,
     resolve_sdk_python_layout,
 )
-from .sdk_capabilities import write_android_capabilities
+from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
 
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
@@ -683,6 +683,11 @@ def write_artifacts(
         json.dumps(sdk_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    try:
+        write_desktop_capabilities(sdk_root=sdk_prefix)
+    except (OSError, RuntimeError) as error:
+        print(f"ERROR: failed to write desktop SDK capabilities: {error}", file=sys.stderr)
+        return 1
     print(f"Wrote build artifact manifest: {build_output}")
     print(f"Wrote SDK artifact manifest: {sdk_output}")
     return 0

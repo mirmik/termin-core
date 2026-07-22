@@ -461,9 +461,18 @@ override-ами для smoke/manual runs.
 Для desktop profile `runtime.backends` одновременно задаёт набор поставляемых
 shader artifact families и порядок выбора backend на целевой машине. Runtime
 package export пишет артефакты только для запрошенных backend targets и
-добавляет ordered список в `target_requirements.shader_targets` manifest-а.
-Packaged player использует первый target из этого списка, который поддержан
-собранным runtime; `TERMIN_BACKEND`/`--backend` остаются явным override-ом.
+добавляет тот же ordered список в `target_requirements.backends`, а `app.json`
+повторяет его как `runtime.backends`. Валидатор требует точного равенства списка
+и shader artifact families. Packaged player проверяет равенство обоих
+манифестов и пробует backend-ы по порядку только во время начального создания
+graphics session/window, логируя каждую неудачу. `TERMIN_BACKEND`/`--backend`
+выбирает ровно один packaged backend и запрещает fallback.
+
+SDK записывает целевые `platforms.desktop.os` и `platforms.desktop.arch` в
+`termin-sdk-capabilities.json`. Desktop preflight отклоняет SDK, target которого
+не совпадает с typed profile; `app.json` и runtime package manifest повторяют
+согласованные `os/arch`, поэтому host defaults не могут незаметно изменить
+profile intent.
 D3D11-артефакты генерируются как `shaders/d3d11/<uuid>.vs.cso` /
 `shaders/d3d11/<uuid>.ps.cso` и остаются opt-in, чтобы обычные Linux/Android
 сборки не требовали Windows SDK `fxc`.
