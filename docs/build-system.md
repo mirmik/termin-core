@@ -427,6 +427,16 @@ manifest-ами и entry point-ами, но используют общий APK 
 включая проверку `applicationId`; фиксированное имя `app-debug.apk` не является
 частью контракта.
 
+Оба Android-family target-а читают один `application` из канонического
+`project_settings/project.json`: base application ID, launcher label,
+целочисленный Android version code и отображаемый version name. Новому проекту
+эти поля записываются сразу; для старого проекта без блока `application`
+детерминированный ID и label выводятся из имени проекта. Android и Quest одного
+проекта намеренно используют одинаковую base identity; profile suffix пока не
+добавляется, поскольку контракт одновременной установки вариантов не заявлен.
+Явно заданные некорректные identity/version values отклоняются, а не
+подменяются молча.
+
 Release APK всегда должен быть подписан. Для обоих продуктов используются
 одинаковые обязательные переменные окружения:
 
@@ -455,6 +465,12 @@ Project-level defaults для окна standalone player хранятся в
 
 ```json
 {
+  "application": {
+    "id": "com.example.game",
+    "label": "Example Game",
+    "version_code": 1,
+    "version_name": "0.1.0"
+  },
   "player_window": {
     "width": 1280,
     "height": 720,
