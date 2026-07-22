@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,10 @@ from .artifact_manifest import (
     compute_native_build_id,
     current_python_abi,
     sha256_file,
+)
+from .application_payload import (
+    install_application_payloads,
+    load_application_payloads,
 )
 from .package_manifest import PackageEntry, load_manifest, repo_root_from
 from .sdk_python_layout import (
@@ -557,6 +562,7 @@ def write_artifacts(
     install_dir: Path | None = None,
 ) -> int:
     packages = load_manifest(repo_root)
+    application_payloads = load_application_payloads(repo_root)
     build_artifacts = []
     sdk_artifacts = []
     missing_required = []
@@ -588,70 +594,88 @@ def write_artifacts(
             pending.extend(_native_runtime_dependencies(dependency_path))
         return bundled, external
 
-    for package in packages:
-        for native_extension in package.native_extensions:
-            build_path = _find_native_artifact(build_dir, native_extension.target)
-            if build_path is None:
-                if native_extension.optional:
-                    continue
-                missing_required.append(
-                    f"{package.path}: {native_extension.extension} "
-                    f"(target {native_extension.target})"
-                )
+    extension_owners = [
+        (
+            package.path,
+            {"package_path": package.path, "distribution": package.distribution},
+            package.features,
+            native_extension,
+        )
+        for package in packages
+        for native_extension in package.native_extensions
+    ]
+    extension_owners.extend(
+        (
+            payload.name,
+            {"application_payload": payload.name},
+            (),
+            native_extension,
+        )
+        for payload in application_payloads
+        for native_extension in payload.native_extensions
+    )
+
+    for owner, ownership, owner_features, native_extension in extension_owners:
+        build_path = _find_native_artifact(build_dir, native_extension.target)
+        if build_path is None:
+            if native_extension.optional:
                 continue
-            installed_path = _find_installed_artifact(
-                artifact_install_dir,
-                native_extension.extension,
-                native_extension.target,
+            missing_required.append(
+                f"{owner}: {native_extension.extension} "
+                f"(target {native_extension.target})"
             )
-            if installed_path is None:
-                missing_required.append(
-                    f"{package.path}: installed {native_extension.extension} "
-                    f"(target {native_extension.target})"
-                )
-                continue
-            installed_path = installed_path.resolve()
-            try:
-                installed_relative = installed_path.relative_to(sdk_root)
-            except ValueError:
-                missing_required.append(
-                    f"{package.path}: installed artifact is outside SDK root: "
-                    f"{installed_path}"
-                )
-                continue
-            dependency_names = _native_runtime_dependencies(installed_path)
-            runtime_dependencies, external_dependencies = bundled_runtime_dependencies(
-                dependency_names
+            continue
+        installed_path = _find_installed_artifact(
+            artifact_install_dir,
+            native_extension.extension,
+            native_extension.target,
+        )
+        if installed_path is None:
+            missing_required.append(
+                f"{owner}: installed {native_extension.extension} "
+                f"(target {native_extension.target})"
             )
-            common = {
-                "kind": "python-extension",
-                "package_path": package.path,
-                "distribution": package.distribution,
-                "extension": native_extension.extension,
-                "target": native_extension.target,
-                "python_abi": current_python_abi(),
-                "optional": native_extension.optional,
-                "features": list(
-                    dict.fromkeys((*package.features, *native_extension.features))
-                ),
-                "external_runtime_dependencies": external_dependencies,
+            continue
+        installed_path = installed_path.resolve()
+        try:
+            installed_relative = installed_path.relative_to(sdk_root)
+        except ValueError:
+            missing_required.append(
+                f"{owner}: installed artifact is outside SDK root: {installed_path}"
+            )
+            continue
+        dependency_names = _native_runtime_dependencies(installed_path)
+        runtime_dependencies, external_dependencies = bundled_runtime_dependencies(
+            dependency_names
+        )
+        common = {
+            "kind": "python-extension",
+            **ownership,
+            "extension": native_extension.extension,
+            "target": native_extension.target,
+            "python_abi": current_python_abi(),
+            "optional": native_extension.optional,
+            "features": list(
+                dict.fromkeys((*owner_features, *native_extension.features))
+            ),
+            "external_runtime_dependencies": external_dependencies,
+        }
+        build_artifacts.append(
+            {
+                **common,
+                "path": str(build_path.resolve()),
+                "sha256": sha256_file(build_path),
+                "runtime_dependencies": [],
             }
-            build_artifacts.append(
-                {
-                    **common,
-                    "path": str(build_path.resolve()),
-                    "sha256": sha256_file(build_path),
-                    "runtime_dependencies": [],
-                }
-            )
-            sdk_artifacts.append(
-                {
-                    **common,
-                    "path": installed_relative.as_posix(),
-                    "sha256": sha256_file(installed_path),
-                    "runtime_dependencies": runtime_dependencies,
-                }
-            )
+        )
+        sdk_artifacts.append(
+            {
+                **common,
+                "path": installed_relative.as_posix(),
+                "sha256": sha256_file(installed_path),
+                "runtime_dependencies": runtime_dependencies,
+            }
+        )
 
     if missing_required:
         print("ERROR: required native artifacts are missing:", file=sys.stderr)
@@ -761,6 +785,18 @@ def install_python_packages(
     )
     if result != 0:
         return result
+    try:
+        install_application_payloads(
+            repo_root=repo_root,
+            sdk_prefix=sdk_prefix,
+            site_packages=bundled_site_packages,
+            resolve_native_artifact=lambda target: _find_native_artifact(
+                build_dir, target
+            ),
+        )
+    except RuntimeError as error:
+        print(f"ERROR: failed to install application Python payload: {error}", file=sys.stderr)
+        return 1
     try:
         write_python_runtime_manifest(repo_root, sdk_prefix, bundled_site_packages)
     except RuntimeError as error:
@@ -1362,11 +1398,72 @@ def build_wheelhouse(
     )
     if result != 0:
         return result
+    result = _verify_library_wheel_subset_install(wheel_dir, build_python)
+    if result != 0:
+        return result
 
     print("")
     print("========================================")
     print(f"  SDK wheelhouse ready: {wheel_dir}")
     print("========================================")
+    return 0
+
+
+def _verify_library_wheel_subset_install(
+    wheel_dir: Path,
+    build_python: Path,
+) -> int:
+    wheel_patterns = (
+        "tcbase-*.whl",
+        "tgfx-*.whl",
+        "termin_display-*.whl",
+        "termin_gui_native-*.whl",
+    )
+    wheels = []
+    for pattern in wheel_patterns:
+        matching = sorted(wheel_dir.glob(pattern))
+        if len(matching) != 1:
+            print(
+                f"ERROR: representative library subset expected one {pattern}, "
+                f"found {len(matching)}",
+                file=sys.stderr,
+            )
+            return 1
+        wheels.append(matching[0])
+    if list(wheel_dir.glob("termin_app-*.whl")):
+        print("ERROR: termin-app wheel remains in public wheelhouse", file=sys.stderr)
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="termin-wheel-subset-") as temp_dir:
+        result = _run(
+            [
+                str(build_python),
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--no-deps",
+                "--no-compile",
+                "--target",
+                temp_dir,
+                *(str(wheel) for wheel in wheels),
+            ],
+            cwd=wheel_dir,
+            env=os.environ.copy(),
+        )
+        if result != 0:
+            print("ERROR: representative library wheel subset install failed", file=sys.stderr)
+            return result
+        installed = Path(temp_dir)
+        if list(installed.glob("termin_app-*.dist-info")) or (
+            installed / "termin/editor"
+        ).exists():
+            print(
+                "ERROR: representative library subset installed editor payload",
+                file=sys.stderr,
+            )
+            return 1
+    print("Representative editor-free library wheel subset install OK")
     return 0
 
 

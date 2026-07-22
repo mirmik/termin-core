@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import zipfile
@@ -15,6 +16,10 @@ from .artifact_manifest import (
     ArtifactManifestError,
     SDK_MANIFEST_KIND,
     SDK_MANIFEST_NAME,
+)
+from .application_payload import (
+    INSTALLED_MANIFEST_NAME as APPLICATION_PAYLOAD_MANIFEST_NAME,
+    INSTALLED_SCHEMA as APPLICATION_PAYLOAD_MANIFEST_SCHEMA,
 )
 from .sdk_runtime_metadata import (
     RUNTIME_MANIFEST_NAME,
@@ -169,7 +174,24 @@ def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
     result = verify_python_wheelhouse(sdk_prefix)
     if result != 0:
         return result
+    result = verify_application_python_payloads(sdk_prefix)
+    if result != 0:
+        return result
     return verify_sdk_python_launcher(sdk_prefix)
+
+
+def _hostile_python_environment(sdk_prefix: Path) -> dict[str, str]:
+    hostile_env = os.environ.copy()
+    hostile_env.update(
+        {
+            "PYTHONHOME": str(sdk_prefix / "__invalid_python_home__"),
+            "PYTHONPATH": str(sdk_prefix / "__invalid_python_path__"),
+            "PYTHONUSERBASE": str(sdk_prefix / "__invalid_user_base__"),
+            "PYTHONNOUSERSITE": "0",
+            "TERMIN_SDK": str(sdk_prefix.resolve()),
+        }
+    )
+    return hostile_env
 
 
 def _python_version_and_paths(py_exec: str) -> dict[str, object]:
@@ -196,15 +218,7 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
         print(f"FAILED: SDK Python launcher is missing: {launcher}", file=sys.stderr)
         return 1
 
-    hostile_env = os.environ.copy()
-    hostile_env.update(
-        {
-            "PYTHONHOME": str(sdk_prefix / "__invalid_python_home__"),
-            "PYTHONPATH": str(sdk_prefix / "__invalid_python_path__"),
-            "PYTHONUSERBASE": str(sdk_prefix / "__invalid_user_base__"),
-            "PYTHONNOUSERSITE": "0",
-        }
-    )
+    hostile_env = _hostile_python_environment(sdk_prefix)
     info_result = subprocess.run(
         [str(launcher), "--termin-info"],
         check=False,
@@ -280,6 +294,136 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
     return 0
 
 
+def verify_application_python_payloads(sdk_prefix: Path) -> int:
+    print("Verifying: application-owned Python payloads")
+    manifest_path = sdk_prefix / APPLICATION_PAYLOAD_MANIFEST_NAME
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"FAILED: cannot read application payload manifest: {error}", file=sys.stderr)
+        return 1
+    if manifest.get("schema") != APPLICATION_PAYLOAD_MANIFEST_SCHEMA:
+        print("FAILED: unsupported application payload manifest schema", file=sys.stderr)
+        return 1
+
+    sdk_root = sdk_prefix.resolve()
+    site_packages = (sdk_root / str(manifest.get("site_packages", ""))).resolve()
+    if not site_packages.is_relative_to(sdk_root) or not site_packages.is_dir():
+        print("FAILED: application payload site-packages path is invalid", file=sys.stderr)
+        return 1
+
+    raw_files = manifest.get("files")
+    raw_payloads = manifest.get("payloads")
+    if not isinstance(raw_files, list) or not isinstance(raw_payloads, list):
+        print("FAILED: application payload manifest has invalid lists", file=sys.stderr)
+        return 1
+    errors = []
+    seen_paths = set()
+    for entry in raw_files:
+        if not isinstance(entry, dict):
+            errors.append("invalid application payload file record")
+            continue
+        raw_path = entry.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            errors.append("application payload file record has no path")
+            continue
+        path = (sdk_root / raw_path).resolve()
+        if not path.is_relative_to(sdk_root):
+            errors.append(f"application payload path escapes SDK: {raw_path}")
+            continue
+        if raw_path in seen_paths:
+            errors.append(f"duplicate application payload path: {raw_path}")
+            continue
+        seen_paths.add(raw_path)
+        if not path.is_file():
+            errors.append(f"application payload file is missing: {raw_path}")
+            continue
+        expected_hash = entry.get("sha256")
+        actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if expected_hash != actual_hash:
+            errors.append(f"application payload hash mismatch: {raw_path}")
+    if errors:
+        for error in errors[:50]:
+            print(f"  {error}", file=sys.stderr)
+        print(f"FAILED: {len(errors)} application payload error(s)", file=sys.stderr)
+        return 1
+
+    imports = []
+    executables = []
+    for payload in raw_payloads:
+        if not isinstance(payload, dict):
+            print("FAILED: invalid application payload entry", file=sys.stderr)
+            return 1
+        payload_imports = payload.get("imports", [])
+        payload_executables = payload.get("executables", [])
+        if not isinstance(payload_imports, list) or not all(
+            isinstance(module, str) and module for module in payload_imports
+        ):
+            print("FAILED: invalid application payload imports", file=sys.stderr)
+            return 1
+        if not isinstance(payload_executables, list) or not all(
+            isinstance(name, str) and name for name in payload_executables
+        ):
+            print("FAILED: invalid application payload executables", file=sys.stderr)
+            return 1
+        imports.extend(payload_imports)
+        executables.extend(payload_executables)
+
+    launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
+    launcher = sdk_root / "bin" / launcher_name
+    import_script = (
+        "import importlib, json, pathlib; "
+        f"root = pathlib.Path({str(site_packages)!r}).resolve(); "
+        f"names = {imports!r}; "
+        "paths = {name: pathlib.Path(importlib.import_module(name).__file__).resolve() "
+        "for name in names}; "
+        "assert all(path.is_relative_to(root) for path in paths.values()), paths; "
+        "print(json.dumps({name: str(path) for name, path in paths.items()}))"
+    )
+    import_result = subprocess.run(
+        [str(launcher), "-c", import_script],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=_hostile_python_environment(sdk_root),
+    )
+    if import_result.returncode != 0:
+        print(
+            "FAILED: application payload import smoke failed: "
+            + import_result.stderr.strip(),
+            file=sys.stderr,
+        )
+        return 1
+
+    executable_suffix = ".exe" if _is_windows() else ""
+    for executable in executables:
+        executable_path = sdk_root / "bin" / f"{executable}{executable_suffix}"
+        if not executable_path.is_file():
+            print(f"FAILED: application executable is missing: {executable_path}", file=sys.stderr)
+            return 1
+        result = subprocess.run(
+            [str(executable_path), "--termin-python-layout-smoke"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_hostile_python_environment(sdk_root),
+        )
+        if result.returncode != 0:
+            print(
+                f"FAILED: {executable} application payload smoke failed: "
+                + result.stderr.strip(),
+                file=sys.stderr,
+            )
+            return 1
+    print(
+        f"  OK: {len(raw_files)} app-owned files, {len(imports)} imports and "
+        f"{len(executables)} executable hosts verified"
+    )
+    return 0
+
+
 def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
     print("Verifying: SDK Python runtime manifest")
     manifest_path = sdk_prefix / RUNTIME_MANIFEST_NAME
@@ -334,8 +478,10 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
         declared[normalized] = entry
 
     native_distributions = {
-        _normalized_distribution_name(str(entry.get("distribution", "")))
+        _normalized_distribution_name(distribution)
         for entry in artifact_manifest.data["artifacts"]
+        if isinstance((distribution := entry.get("distribution")), str)
+        and distribution
     }
     expected_suffix = f"+sdk{artifact_manifest.native_build_id}"
     for normalized in sorted(native_distributions):
@@ -439,7 +585,10 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
     }
     artifacts_by_distribution: dict[str, list[dict[str, object]]] = {}
     for entry in artifact_manifest.data["artifacts"]:
-        normalized = _normalized_distribution_name(str(entry.get("distribution", "")))
+        distribution = entry.get("distribution")
+        if not isinstance(distribution, str) or not distribution:
+            continue
+        normalized = _normalized_distribution_name(distribution)
         artifacts_by_distribution.setdefault(normalized, []).append(entry)
 
     wheels: dict[str, list[tuple[Path, str, zipfile.ZipFile]]] = {}
@@ -453,6 +602,8 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
         normalized = _normalized_distribution_name(name)
         wheels.setdefault(normalized, []).append((wheel, version, archive))
     try:
+        if "termin-app" in wheels:
+            errors.append("application product termin-app must not have a public wheel")
         for distribution, artifacts in artifacts_by_distribution.items():
             matching = wheels.get(distribution, [])
             if len(matching) != 1:
@@ -481,6 +632,32 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
                     errors.append(
                         f"wheel native payload hash mismatch: {wheel.name}:{payloads[0]}"
                     )
+        for _distribution, matching in wheels.items():
+            for wheel, _, archive in matching:
+                metadata_names = [
+                    name
+                    for name in archive.namelist()
+                    if name.endswith(".dist-info/METADATA")
+                ]
+                if len(metadata_names) != 1:
+                    continue
+                metadata = archive.read(metadata_names[0]).decode(
+                    "utf-8", errors="replace"
+                )
+                requirements = [
+                    line.split(":", 1)[1].strip()
+                    for line in metadata.splitlines()
+                    if line.startswith("Requires-Dist:")
+                ]
+                for requirement in requirements:
+                    match = re.match(r"([A-Za-z0-9_.-]+)", requirement)
+                    if (
+                        match is not None
+                        and _normalized_distribution_name(match.group(1))
+                        == "termin-app"
+                    ):
+                        errors.append(f"wheel {wheel.name} depends on termin-app")
+                        break
     finally:
         for matching in wheels.values():
             for _, _, archive in matching:
@@ -490,7 +667,23 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
             print(f"  {error}", file=sys.stderr)
         print(f"FAILED: {len(errors)} wheelhouse provenance error(s)", file=sys.stderr)
         return 1
+    subset_names = ("tcbase", "tgfx", "termin-display", "termin-gui-native")
+    if not set(subset_names) <= runtime_versions.keys():
+        print(
+            f"  OK: {len(artifacts_by_distribution)} native wheel versions and "
+            "payloads verified"
+        )
+        return 0
+    for name in subset_names:
+        matching = wheels.get(name, [])
+        if len(matching) != 1:
+            print(
+                f"FAILED: library subset requires one {name} wheel, found {len(matching)}",
+                file=sys.stderr,
+            )
+            return 1
     print(
-        f"  OK: {len(artifacts_by_distribution)} native wheel versions and payloads verified"
+        f"  OK: {len(artifacts_by_distribution)} native wheel versions, payloads and "
+        "editor-free library subset metadata verified"
     )
     return 0

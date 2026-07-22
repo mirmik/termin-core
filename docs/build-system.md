@@ -177,13 +177,20 @@ Runtime population разделён на build и install:
   `build/python-runtime/termin-wheels`;
 - SDK `site-packages` очищается и устанавливается одним offline-проходом с
   `--no-index --no-deps`;
+- editor/launcher Python-код устанавливается после library wheels из явно
+  перечисленных roots в `build-system/application-python-payloads.json`;
+  этот шаг также возвращает `_editor_native` из native build tree и пишет
+  `sdk/application-python-payloads.json` с hashes всех app-owned файлов;
 - `sdk/python-runtime-manifest.json` фиксирует Python ABI, lock hash, полный
   набор distributions и hashes их `RECORD`.
 
 SDK verification сверяет manifest с фактическими metadata и payload hashes и
-падает на лишнем, отсутствующем или изменённом distribution. Копирование
-runtime-пакетов из host `site-packages` запрещено. После первичного заполнения
-wheelhouse population можно проверить без сети:
+падает на лишнем, отсутствующем или изменённом distribution. Application
+payload проверяется отдельно: без фиктивной `.dist-info`, с hostile-environment
+imports и `--termin-python-layout-smoke` через bundled `termin_editor` и
+`termin_launcher`. Копирование runtime-пакетов из host `site-packages`
+запрещено. После первичного заполнения wheelhouse population можно проверить
+без сети:
 
 ```bash
 TERMIN_PYTHON_RUNTIME_OFFLINE=1 \
@@ -357,11 +364,10 @@ mylib/
 
 ## Bundled Python
 
-> Архитектурное направление принято 2026-07-19: проверенное SDK install tree
-> является единственным editor/launcher runtime artifact. `termin-app` —
-> application product с внутренним Python payload, а не самостоятельный
-> library wheel. Текущий `termin-app` wheel и host-derived standalone packager
-> ещё существуют как незавершённая миграция; см.
+> Проверенное SDK install tree является единственным editor/launcher runtime
+> artifact. `termin-app` — application product с внутренним Python payload, а
+> не самостоятельный library wheel. Wheel и distribution metadata удалены;
+> оставшийся host-derived standalone packager вынесен в последующую #681. См.
 > [протокол совета](architecture-council/2026-07-19-termin-app-product-boundary.md).
 
 Launcher и editor — это C++ исполняемые файлы, которые встраивают Python-интерпретатор. При сборке с `BUNDLE_PYTHON=ON` в SDK копируется:
@@ -377,15 +383,19 @@ Launcher при запуске:
 4. Запускает Python-код приложения
 
 Stage 3 SDK build устанавливает exact-locked runtime offline из подготовленного
-wheelhouse и проверяет его через `python-runtime-manifest.json`. Копирование из
-ambient host `site-packages` запрещено. При этом отдельный top-level
-`termin-app` standalone path пока всё ещё читает host `sys.prefix`; этот
-legacy path подлежит удалению согласно принятому решению.
+wheelhouse, затем устанавливает editor payload по отдельному app manifest.
+Library distributions проверяются через `python-runtime-manifest.json`, а
+editor payload — через `application-python-payloads.json`. Копирование из
+ambient host `site-packages` запрещено. Отдельный top-level `termin-app`
+standalone path пока всё ещё читает host `sys.prefix`; этот legacy path
+подлежит удалению в #681.
 
 Нижележащие library packages продолжают собираться отдельными wheels. В
 частности, graphics/display/GUI subset должен устанавливаться из `sdk/wheels`
 без `termin-app`; внешний Diffusion Editor является consumer gate этого
-контракта.
+контракта. Финальная wheelhouse verification устанавливает representative
+`tcbase`/`tgfx`/`termin-display`/`termin-gui-native` subset в чистый target и
+отвергает `termin-app` wheel или dependency.
 
 ---
 

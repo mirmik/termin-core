@@ -14,6 +14,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .application_payload import load_application_payloads
 from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND
 from .package_manifest import load_manifest, repo_root_from
 
@@ -131,6 +132,34 @@ def create_overlay_manifest(
     distributions = _distribution_index(site_packages)
     mappings: dict[str, dict[str, str]] = {}
 
+    def add_mapping(relative: Path, source_file: Path) -> None:
+        if relative.name == "__init__.py":
+            module = ".".join(relative.parent.parts)
+            if not module or module == "termin":
+                return
+            entry = {
+                "kind": "package",
+                "source": str(source_file.parent),
+                "source_paths": [str(source_file.parent)],
+                "installed": str((site_packages / relative.parent).resolve()),
+            }
+        else:
+            module = ".".join(relative.with_suffix("").parts)
+            entry = {
+                "kind": "module",
+                "source": str(source_file),
+                "installed": str((site_packages / relative).resolve()),
+            }
+        previous = mappings.get(module)
+        if previous is not None and previous != entry:
+            if previous["kind"] != "package" or entry["kind"] != "package":
+                raise OverlayError(f"multiple source owners for Python module {module}")
+            previous_paths = list(previous.get("source_paths", [previous["source"]]))
+            entry["source_paths"] = list(
+                dict.fromkeys([entry["source"], *previous_paths])
+            )
+        mappings[module] = entry
+
     for package in load_manifest(repo_root):
         distribution = distributions.get(_normalized_distribution_name(package.distribution))
         if distribution is None:
@@ -139,7 +168,15 @@ def create_overlay_manifest(
             )
         package_root = (repo_root / package.path).resolve()
         source_files = _source_python_files(package_root)
-        for installed_file in distribution.files or ():
+        distribution_files = tuple(distribution.files or ())
+        installed_roots = {
+            Path(str(installed_file)).parts[0]
+            for installed_file in distribution_files
+            if Path(str(installed_file)).parts
+            and not Path(str(installed_file)).parts[0].endswith(".dist-info")
+        }
+        mapped_sources = set()
+        for installed_file in distribution_files:
             relative = Path(str(installed_file))
             if (
                 relative.suffix != ".py"
@@ -150,32 +187,39 @@ def create_overlay_manifest(
             source_file = _find_source_file(package_root, source_files, relative)
             if source_file is None:
                 continue
-            if relative.name == "__init__.py":
-                module = ".".join(relative.parent.parts)
-                if not module or module == "termin":
+            add_mapping(relative, source_file)
+            mapped_sources.add(source_file)
+
+        # A checkout overlay must also expose newly added modules before the
+        # SDK wheel has been rebuilt.  Infer their installed path only below a
+        # top-level package already owned by this distribution; this avoids
+        # broad repository discovery while preserving edit/test iteration.
+        for source_file in source_files:
+            if source_file in mapped_sources:
+                continue
+            source_relative = source_file.relative_to(package_root)
+            candidates = [
+                Path(*source_relative.parts[index:])
+                for index, part in enumerate(source_relative.parts)
+                if part in installed_roots
+            ]
+            if len(candidates) == 1:
+                add_mapping(candidates[0], source_file)
+
+    for payload in load_application_payloads(repo_root):
+        source_root = (repo_root / payload.source_root).resolve()
+        destination_root = Path(payload.destination_root)
+        for declared_path in payload.paths:
+            source = source_root / declared_path
+            candidates = (source,) if source.is_file() else source.rglob("*.py")
+            for source_file in candidates:
+                if (
+                    source_file.suffix != ".py"
+                    or "__pycache__" in source_file.parts
+                ):
                     continue
-                entry = {
-                    "kind": "package",
-                    "source": str(source_file.parent),
-                    "source_paths": [str(source_file.parent)],
-                    "installed": str((site_packages / relative.parent).resolve()),
-                }
-            else:
-                module = ".".join(relative.with_suffix("").parts)
-                entry = {
-                    "kind": "module",
-                    "source": str(source_file),
-                    "installed": str((site_packages / relative).resolve()),
-                }
-            previous = mappings.get(module)
-            if previous is not None and previous != entry:
-                if previous["kind"] != "package" or entry["kind"] != "package":
-                    raise OverlayError(f"multiple source owners for Python module {module}")
-                previous_paths = list(previous.get("source_paths", [previous["source"]]))
-                entry["source_paths"] = list(
-                    dict.fromkeys([entry["source"], *previous_paths])
-                )
-            mappings[module] = entry
+                relative = destination_root / source_file.relative_to(source_root)
+                add_mapping(relative, source_file)
 
     resolved_extra_sites = []
     for path in extra_sites:

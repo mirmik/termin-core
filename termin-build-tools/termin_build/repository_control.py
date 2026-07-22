@@ -23,6 +23,7 @@ from .execution_manifest import (
     read_manifest,
     verify_execution_manifests,
 )
+from .application_payload import load_application_payloads
 from .package_manifest import load_manifest as load_package_manifest
 from .package_manifest import repo_root_from
 from .process_smoke import ProcessSmokeRun, execute_process_smoke_suites
@@ -240,6 +241,17 @@ def load_modules(repo_root: Path) -> tuple[ModuleEntry, ...]:
             f"{path}: python_package_manifest must reference the canonical "
             "build-system/packages.json"
         )
+    application_manifest = data.get("application_python_payload_manifest")
+    if application_manifest is not None:
+        if application_manifest != "build-system/application-python-payloads.json":
+            raise ManifestError(
+                f"{path}: application_python_payload_manifest must reference "
+                "build-system/application-python-payloads.json"
+            )
+        try:
+            load_application_payloads(repo_root)
+        except RuntimeError as error:
+            raise ManifestError(str(error)) from error
 
     modules = [
         ModuleEntry(
