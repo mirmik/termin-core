@@ -74,9 +74,8 @@ class SuiteEntry:
     executor: str
     roots: tuple[str, ...]
     profiles: tuple[str, ...]
-    environment: str
     platforms: tuple[str, ...]
-    capabilities: tuple[str, ...]
+    required_capabilities: tuple[str, ...]
     reason: str | None
 
 
@@ -151,15 +150,13 @@ def _required_string(raw: dict[str, object], field: str, context: str) -> str:
     return value
 
 
-def _string_with_default(
-    raw: dict[str, object],
-    field: str,
-    context: str,
-    defaults: dict[str, object],
-) -> str:
-    if field in raw:
-        return _required_string(raw, field, context)
-    return _required_string(defaults, field, f"{context} defaults")
+def _reject_unknown_fields(
+    raw: dict[str, object], allowed: set[str], context: str
+) -> None:
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        label = "field" if len(unknown) == 1 else "fields"
+        raise ManifestError(f"{context}: unknown {label}: {', '.join(unknown)}")
 
 
 def _optional_string(
@@ -289,6 +286,23 @@ def load_profiles_and_suites(
     raw_defaults = data.get("suite_defaults", {})
     if not isinstance(raw_defaults, dict):
         raise ManifestError(f"{path}: suite_defaults must be an object")
+    unknown_executors = sorted(set(raw_defaults) - SUPPORTED_EXECUTORS)
+    if unknown_executors:
+        raise ManifestError(
+            f"{path}: suite_defaults contains unsupported executors: "
+            + ", ".join(unknown_executors)
+        )
+    for executor, defaults in raw_defaults.items():
+        if not isinstance(defaults, dict):
+            raise ManifestError(
+                f"{path}: suite_defaults.{executor} must be an object"
+            )
+        allowed = {"profiles", "platforms"}
+        if executor == "process-smoke":
+            allowed.add("required_capabilities")
+        _reject_unknown_fields(
+            defaults, allowed, f"{path}: suite_defaults.{executor}"
+        )
 
     raw_inventory = data.get("python_test_inventory")
     if not isinstance(raw_inventory, dict):
@@ -368,6 +382,18 @@ def load_profiles_and_suites(
             raise ManifestError(
                 f"{path}: suite_defaults.{executor} must be an object"
             )
+        allowed = {
+            "id",
+            "module",
+            "executor",
+            "roots",
+            "profiles",
+            "platforms",
+            "reason",
+        }
+        if executor == "process-smoke":
+            allowed.add("required_capabilities")
+        _reject_unknown_fields(raw, allowed, context)
         suites.append(
             SuiteEntry(
                 id=_required_string(raw, "id", context),
@@ -381,14 +407,18 @@ def load_profiles_and_suites(
                     executor_defaults,
                     required=True,
                 ),
-                environment=_string_with_default(
-                    raw, "environment", context, executor_defaults
-                ),
                 platforms=_string_tuple_with_default(
                     raw, "platforms", context, executor_defaults
                 ),
-                capabilities=_string_tuple_with_default(
-                    raw, "capabilities", context, executor_defaults
+                required_capabilities=(
+                    _string_tuple_with_default(
+                        raw,
+                        "required_capabilities",
+                        context,
+                        executor_defaults,
+                    )
+                    if executor == "process-smoke"
+                    else ()
                 ),
                 reason=_optional_string(raw, "reason", context),
             )
@@ -905,12 +935,19 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
     return errors
 
 
+def _suite_as_json(suite: SuiteEntry) -> dict[str, object]:
+    entry = asdict(suite)
+    if suite.executor != "process-smoke":
+        entry.pop("required_capabilities")
+    return entry
+
+
 def catalog_as_json(catalog: RepositoryCatalog) -> dict[str, object]:
     return {
         "schema": 1,
         "modules": [asdict(module) for module in catalog.modules],
         "profiles": [asdict(profile) for profile in catalog.profiles],
-        "suites": [asdict(suite) for suite in catalog.suites],
+        "suites": [_suite_as_json(suite) for suite in catalog.suites],
         "python_test_inventory": asdict(catalog.python_test_inventory),
         "native_test_inventory": asdict(catalog.native_test_inventory),
         "documentation": asdict(catalog.documentation),
@@ -943,7 +980,7 @@ def build_plan(
                 f"platform {resolved_platform!r} is not in declared platforms: "
                 + ", ".join(suite.platforms)
             )
-        entry = asdict(suite)
+        entry = _suite_as_json(suite)
         if reasons:
             inapplicable.append(
                 {

@@ -658,6 +658,16 @@ Python suite roots больше не перечисляются в `run-tests-py
 отдельно; planner продолжает прогон после ошибки и печатает общий список
 упавших suites.
 
+Suite manifest описывает только реально исполняемый scheduling contract:
+`executor`, `roots`, `profiles`, `platforms` и диагностический `reason`.
+Общих полей `environment` и `capabilities` нет: planner не создаёт отдельное
+окружение и не фильтрует обычные suites по таким декларациям, поэтому старые
+поля отклоняются как schema error. Единственное executor-specific исключение —
+`required_capabilities` у `process-smoke`: этот список непосредственно
+проверяется process adapter перед запуском. CTest requirements по-прежнему
+принадлежат configured `termin:capability:*` labels и native source
+classifications, а не suite-level metadata.
+
 Проверка manifests и orphan-test gate не требует запуска самих тестов:
 
 ```bash

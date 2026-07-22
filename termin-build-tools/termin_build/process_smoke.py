@@ -82,7 +82,9 @@ def execute_process_smoke_suites(
 
     for suite in suite_list:
         suite_id = str(suite["id"])
-        required_capabilities = {str(value) for value in suite["capabilities"]}
+        required_capabilities = {
+            str(value) for value in suite["required_capabilities"]
+        }
         missing_capabilities = sorted(required_capabilities - enabled_capabilities)
         if missing_capabilities:
             reason = "missing capabilities: " + ", ".join(missing_capabilities)

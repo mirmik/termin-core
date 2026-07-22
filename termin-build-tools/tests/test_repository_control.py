@@ -54,9 +54,7 @@ def _repository(tmp_path: Path) -> Path:
             "suite_defaults": {
                 "pytest": {
                     "profiles": ["pr"],
-                    "environment": "bootstrap-python",
                     "platforms": ["linux"],
-                    "capabilities": [],
                 }
             },
             "profiles": [
@@ -115,9 +113,8 @@ def _add_process_smoke_suite(
     data["profiles"].append({"id": profile, "description": "Process smoke"})
     data["suite_defaults"]["process-smoke"] = {
         "profiles": [profile],
-        "environment": "process-smoke",
         "platforms": [platform],
-        "capabilities": [capability],
+        "required_capabilities": [capability],
     }
     data["suites"].append(
         {
@@ -141,9 +138,7 @@ def _add_ctest_suite(repo: Path) -> None:
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["suite_defaults"]["ctest"] = {
         "profiles": ["pr"],
-        "environment": "cmake-top-level",
         "platforms": ["linux"],
-        "capabilities": ["host"],
     }
     data["suites"].append(
         {
@@ -172,6 +167,32 @@ def test_catalog_joins_python_packages_to_test_suites(tmp_path: Path) -> None:
     assert catalog.documentation.sites == ()
     assert catalog.profiles[0].pytest_mark_expression == "not full"
     assert repository_control.validate_catalog(repo, catalog) == []
+    assert "required_capabilities" not in repository_control.build_plan(
+        catalog, "pr", "linux"
+    )["suites"][0]
+
+
+@pytest.mark.parametrize("field", ["environment", "capabilities"])
+@pytest.mark.parametrize("location", ["defaults", "suite"])
+def test_catalog_rejects_removed_suite_planning_fields(
+    tmp_path: Path, field: str, location: str
+) -> None:
+    repo = _repository(tmp_path)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    target = (
+        data["suite_defaults"]["pytest"]
+        if location == "defaults"
+        else data["suites"][0]
+    )
+    target[field] = [] if field == "capabilities" else "legacy-environment"
+    _write_json(manifest, data)
+
+    with pytest.raises(
+        repository_control.ManifestError,
+        match=rf"unknown field: {field}",
+    ):
+        repository_control.load_catalog(repo)
 
 
 def test_catalog_rejects_unknown_module_and_profile(tmp_path: Path) -> None:
@@ -212,7 +233,6 @@ def test_catalog_rejects_paths_outside_repository(tmp_path: Path) -> None:
     manifest = repo / repository_control.TEST_MANIFEST
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["suites"][0]["roots"] = ["../external-tests"]
-    data["suites"][0]["capabilities"] = []
     _write_json(manifest, data)
 
     errors = repository_control.validate_catalog(
@@ -356,9 +376,7 @@ def test_ctest_inventory_requires_standard_labels_and_registered_module(
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["suite_defaults"]["ctest"] = {
         "profiles": ["pr"],
-        "environment": "cmake-top-level",
         "platforms": ["linux"],
-        "capabilities": ["host"],
     }
     data["suites"].append(
         {
@@ -434,9 +452,7 @@ def test_ctest_plan_reports_capability_exclusion_reason(tmp_path: Path) -> None:
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["suite_defaults"]["ctest"] = {
         "profiles": ["pr"],
-        "environment": "cmake-top-level",
         "platforms": ["linux"],
-        "capabilities": ["host"],
     }
     data["suites"].append(
         {
@@ -491,9 +507,7 @@ def test_native_compile_inventory_rejects_source_outside_cmake_graph(tmp_path: P
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["suite_defaults"]["ctest"] = {
         "profiles": ["pr"],
-        "environment": "cmake-top-level",
         "platforms": ["linux"],
-        "capabilities": ["host"],
     }
     data["suites"].append(
         {"id": "alpha-native", "module": "alpha", "executor": "ctest", "roots": ["alpha/tests"]}
@@ -768,9 +782,8 @@ def test_run_executes_manifest_process_smoke(tmp_path: Path, monkeypatch) -> Non
     )
     data["suite_defaults"]["process-smoke"] = {
         "profiles": ["editor-smoke"],
-        "environment": "sdk-installed",
         "platforms": ["linux"],
-        "capabilities": ["editor"],
+        "required_capabilities": ["editor"],
     }
     data["suites"].append(
         {
