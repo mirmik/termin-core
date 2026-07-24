@@ -17,9 +17,10 @@ from pathlib import Path
 from .application_payload import load_application_payloads
 from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND
 from .package_manifest import load_manifest, repo_root_from
+from .python_abi import PythonAbiError, PythonAbiIdentity
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _EXCLUDED_SOURCE_DIRECTORIES = {
     ".git",
     ".venv",
@@ -61,7 +62,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _sdk_fingerprint(sdk_root: Path) -> str:
+def _sdk_artifact_manifest(sdk_root: Path) -> ArtifactManifest:
     artifacts = sdk_root / "termin-artifacts.json"
     if not artifacts.is_file():
         raise OverlayError(f"SDK artifact manifest is missing: {artifacts}")
@@ -71,6 +72,12 @@ def _sdk_fingerprint(sdk_root: Path) -> str:
         manifest.validate_all()
     except RuntimeError as error:
         raise OverlayError(f"SDK artifact manifest is invalid: {error}") from error
+    return manifest
+
+
+def _sdk_fingerprint(sdk_root: Path) -> str:
+    artifacts = sdk_root / "termin-artifacts.json"
+    _sdk_artifact_manifest(sdk_root)
     return _sha256(artifacts)
 
 
@@ -228,12 +235,13 @@ def create_overlay_manifest(
             raise OverlayError(f"overlay extra site is missing: {resolved}")
         resolved_extra_sites.append(str(resolved))
 
+    sdk_manifest = _sdk_artifact_manifest(sdk_root)
     manifest: dict[str, object] = {
         "schema": SCHEMA_VERSION,
         "repo_root": str(repo_root),
         "sdk_root": str(sdk_root),
-        "sdk_fingerprint": _sdk_fingerprint(sdk_root),
-        "python_abi": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "sdk_fingerprint": _sha256(sdk_root / "termin-artifacts.json"),
+        "python_abi": sdk_manifest.python_abi.to_dict(),
         "extra_sites": resolved_extra_sites,
         "mappings": dict(sorted(mappings.items())),
     }
@@ -287,12 +295,17 @@ def activate_overlay(manifest_path: str | Path) -> None:
             f"Python overlay expects TERMIN_SDK={sdk_root}, "
             f"got {os.environ.get('TERMIN_SDK')!r}"
         )
-    expected_abi = str(raw.get("python_abi", ""))
-    actual_abi = f"{sys.version_info.major}.{sys.version_info.minor}"
-    if expected_abi != actual_abi:
-        raise OverlayError(
-            f"Python overlay ABI mismatch: expected {expected_abi}, running {actual_abi}"
+    try:
+        expected_abi = PythonAbiIdentity.from_mapping(
+            raw.get("python_abi"),
+            context=f"Python overlay {path} ABI",
         )
+        actual_abi = PythonAbiIdentity.current()
+        expected_abi.require_matches(actual_abi, context="Python overlay ABI")
+    except PythonAbiError as error:
+        raise OverlayError(
+            str(error)
+        ) from error
     if raw.get("sdk_fingerprint") != _sdk_fingerprint(sdk_root):
         raise OverlayError(
             "Python overlay is stale for the current SDK; regenerate the test environment"

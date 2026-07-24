@@ -6,16 +6,38 @@ from pathlib import Path
 import pytest
 
 from termin_build import sdk
+from termin_build import artifact_manifest
 from termin_build.application_payload import (
     INSTALLED_MANIFEST_NAME,
     install_application_payloads,
     load_application_payloads,
 )
 from termin_build.package_manifest import load_manifest
+from termin_build.python_abi import PythonAbiIdentity
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _write_empty_artifact_manifest(sdk_root: Path) -> None:
+    python_abi = PythonAbiIdentity.current()
+    artifacts: list[dict[str, object]] = []
+    (sdk_root / artifact_manifest.SDK_MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "schema": artifact_manifest.SCHEMA_VERSION,
+                "manifest_kind": artifact_manifest.SDK_MANIFEST_KIND,
+                "python_abi": python_abi.to_dict(),
+                "native_build_id": artifact_manifest.compute_native_build_id(
+                    artifacts,
+                    python_abi,
+                ),
+                "artifacts": artifacts,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_termin_app_is_an_explicit_application_payload_not_a_distribution() -> None:
@@ -96,6 +118,7 @@ def test_application_payload_install_uses_only_declared_roots(tmp_path: Path) ->
     sdk_root = tmp_path / "sdk"
     site_packages = sdk_root / "lib/python3.10/site-packages"
     site_packages.mkdir(parents=True)
+    _write_empty_artifact_manifest(sdk_root)
 
     installed_manifest = install_application_payloads(
         repo_root,
@@ -110,6 +133,7 @@ def test_application_payload_install_uses_only_declared_roots(tmp_path: Path) ->
     assert (site_packages / "termin/editor/_editor_native.so").is_file()
     assert not (site_packages / "termin/private.py").exists()
     installed = json.loads(installed_manifest.read_text(encoding="utf-8"))
+    assert installed["python_abi"] == PythonAbiIdentity.current().to_dict()
     assert {entry["kind"] for entry in installed["files"]} == {
         "source",
         "native-extension",
@@ -147,6 +171,7 @@ def test_application_payload_install_rejects_library_collision(tmp_path: Path) -
     installed_init = site_packages / "termin/__init__.py"
     installed_init.parent.mkdir(parents=True)
     installed_init.write_text("LIBRARY = True\n", encoding="utf-8")
+    _write_empty_artifact_manifest(sdk_root)
 
     with pytest.raises(RuntimeError, match="collides with an installed library"):
         install_application_payloads(

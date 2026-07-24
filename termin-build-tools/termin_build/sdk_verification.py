@@ -31,6 +31,7 @@ from .sdk_runtime_metadata import (
     _sha256_file,
     _verify_distribution_records,
 )
+from .python_abi import PythonAbiError, PythonAbiIdentity
 
 
 def _is_windows() -> bool:
@@ -198,6 +199,9 @@ def _python_version_and_paths(py_exec: str) -> dict[str, object]:
     script = (
         "import json, site, sys, sysconfig; "
         "print(json.dumps({'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
+        "'soabi': sysconfig.get_config_var('SOABI') or '', "
+        "'free_threaded': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0), "
+        "'py_gil_disabled': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0), "
         "'prefix': sys.prefix, 'base_prefix': sys.base_prefix, "
         "'executable': sys.executable, 'base_executable': sys._base_executable, "
         "'stdlib': sysconfig.get_paths()['stdlib'], "
@@ -304,6 +308,24 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
         return 1
     if manifest.get("schema") != APPLICATION_PAYLOAD_MANIFEST_SCHEMA:
         print("FAILED: unsupported application payload manifest schema", file=sys.stderr)
+        return 1
+    try:
+        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+        artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+        payload_abi = PythonAbiIdentity.from_mapping(
+            manifest.get("python_abi"),
+            context="application payload Python ABI",
+        )
+        artifact_manifest.python_abi.require_matches(
+            payload_abi,
+            context="artifact/application payload Python ABI",
+        )
+        artifact_manifest.python_abi.require_matches(
+            PythonAbiIdentity.current(),
+            context="application payload/runtime Python ABI",
+        )
+    except (ArtifactManifestError, PythonAbiError) as error:
+        print(f"FAILED: {error}", file=sys.stderr)
         return 1
 
     sdk_root = sdk_prefix.resolve()
@@ -448,6 +470,22 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
     if manifest.get("native_build_id") != artifact_manifest.native_build_id:
         print("FAILED: Python runtime native_build_id mismatch", file=sys.stderr)
         return 1
+    try:
+        runtime_abi = PythonAbiIdentity.from_mapping(
+            manifest.get("python_abi"),
+            context="Python runtime manifest ABI",
+        )
+        artifact_manifest.python_abi.require_matches(
+            runtime_abi,
+            context="artifact/runtime manifest Python ABI",
+        )
+        artifact_manifest.python_abi.require_matches(
+            PythonAbiIdentity.current(),
+            context="SDK/runtime Python ABI",
+        )
+    except PythonAbiError as error:
+        print(f"FAILED: {error}", file=sys.stderr)
+        return 1
 
     lock_path = (sdk_prefix / str(manifest.get("runtime_lock", ""))).resolve()
     if not lock_path.is_relative_to(sdk_prefix.resolve()) or not lock_path.is_file():
@@ -561,6 +599,50 @@ def _wheel_metadata(wheel: Path) -> tuple[str, str, zipfile.ZipFile]:
     return fields["name"], fields["version"], archive
 
 
+def _wheel_abi_tags(archive: zipfile.ZipFile, *, wheel_name: str) -> set[str]:
+    wheel_metadata_names = [
+        name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")
+    ]
+    if len(wheel_metadata_names) != 1:
+        raise RuntimeError(
+            f"wheel has {len(wheel_metadata_names)} WHEEL files: {wheel_name}"
+        )
+    metadata = archive.read(wheel_metadata_names[0]).decode(
+        "utf-8",
+        errors="replace",
+    )
+    tags = {
+        line.split(":", 1)[1].strip()
+        for line in metadata.splitlines()
+        if line.startswith("Tag:")
+    }
+    if not tags:
+        raise RuntimeError(f"wheel metadata has no Tag fields: {wheel_name}")
+    abi_tags = set()
+    for tag in tags:
+        parts = tag.rsplit("-", 2)
+        if len(parts) != 3:
+            raise RuntimeError(f"wheel has malformed Tag {tag!r}: {wheel_name}")
+        abi_tags.update(parts[1].split("."))
+    return abi_tags
+
+
+def _require_wheel_python_abi(
+    abi_tags: set[str],
+    python_abi: PythonAbiIdentity,
+    *,
+    wheel_name: str,
+) -> None:
+    native_abi_tags = abi_tags - {"none"}
+    expected_abi_tag = python_abi.wheel_abi_tag
+    if native_abi_tags and expected_abi_tag not in native_abi_tags:
+        rendered = ", ".join(sorted(native_abi_tags))
+        raise RuntimeError(
+            f"wheel {wheel_name} Python ABI mismatch: expected "
+            f"{expected_abi_tag}, got {rendered}"
+        )
+
+
 def verify_python_wheelhouse(sdk_prefix: Path) -> int:
     wheel_dir = sdk_prefix / "wheels"
     print("Verifying: SDK Python wheelhouse provenance")
@@ -574,7 +656,23 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
         runtime_manifest = json.loads(
             (sdk_prefix / RUNTIME_MANIFEST_NAME).read_text(encoding="utf-8")
         )
-    except (ArtifactManifestError, OSError, json.JSONDecodeError) as error:
+        if runtime_manifest.get("schema") != RUNTIME_MANIFEST_SCHEMA:
+            raise RuntimeError("unsupported Python runtime manifest schema")
+        runtime_abi = PythonAbiIdentity.from_mapping(
+            runtime_manifest.get("python_abi"),
+            context="Python runtime manifest ABI",
+        )
+        artifact_manifest.python_abi.require_matches(
+            runtime_abi,
+            context="artifact/runtime manifest Python ABI",
+        )
+    except (
+        ArtifactManifestError,
+        PythonAbiError,
+        OSError,
+        RuntimeError,
+        json.JSONDecodeError,
+    ) as error:
         print(f"FAILED: cannot verify SDK wheelhouse: {error}", file=sys.stderr)
         return 1
 
@@ -594,9 +692,18 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
     wheels: dict[str, list[tuple[Path, str, zipfile.ZipFile]]] = {}
     errors = []
     for wheel in sorted(wheel_dir.glob("*.whl")):
+        archive = None
         try:
             name, version, archive = _wheel_metadata(wheel)
+            abi_tags = _wheel_abi_tags(archive, wheel_name=wheel.name)
+            _require_wheel_python_abi(
+                abi_tags,
+                artifact_manifest.python_abi,
+                wheel_name=wheel.name,
+            )
         except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+            if archive is not None:
+                archive.close()
             errors.append(str(error))
             continue
         normalized = _normalized_distribution_name(name)

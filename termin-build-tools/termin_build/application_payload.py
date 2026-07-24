@@ -8,14 +8,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
-from .artifact_manifest import sha256_file
+from .artifact_manifest import (
+    ArtifactManifest,
+    SDK_MANIFEST_KIND,
+    SDK_MANIFEST_NAME,
+    sha256_file,
+)
 from .package_manifest import NativeExtension
+from .python_abi import PythonAbiIdentity
 
 
 SOURCE_MANIFEST = Path("build-system/application-python-payloads.json")
 INSTALLED_MANIFEST_NAME = "application-python-payloads.json"
 SOURCE_SCHEMA = 1
-INSTALLED_SCHEMA = 1
+INSTALLED_SCHEMA = 2
 
 _IGNORED_DIRECTORY_NAMES = {"__pycache__"}
 _IGNORED_FILE_SUFFIXES = {".pyc", ".pyo", ".so", ".pyd", ".dylib", ".dll"}
@@ -169,6 +175,12 @@ def install_application_payloads(
     site_packages: Path,
     resolve_native_artifact: Callable[[str], Path | None],
 ) -> Path:
+    artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+    artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+    artifact_manifest.python_abi.require_matches(
+        PythonAbiIdentity.current(),
+        context="application payload/runtime Python ABI",
+    )
     records: list[dict[str, object]] = []
     installed_payloads = []
     sdk_root = sdk_prefix.resolve()
@@ -230,6 +242,7 @@ def install_application_payloads(
 
     manifest = {
         "schema": INSTALLED_SCHEMA,
+        "python_abi": artifact_manifest.python_abi.to_dict(),
         "site_packages": site_root.relative_to(sdk_root).as_posix(),
         "payloads": installed_payloads,
         "files": sorted(records, key=lambda record: str(record["path"])),

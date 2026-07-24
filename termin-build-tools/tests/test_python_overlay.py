@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import sys
 
 import pytest
 
@@ -12,6 +11,7 @@ from termin_build.artifact_manifest import (
     SDK_MANIFEST_KIND,
     compute_native_build_id,
 )
+from termin_build.python_abi import PythonAbiIdentity
 
 
 def test_overlay_finder_combines_source_and_installed_package_paths(tmp_path: Path) -> None:
@@ -48,12 +48,14 @@ def test_activate_overlay_rejects_stale_sdk_fingerprint(
 ) -> None:
     sdk_root = tmp_path / "sdk"
     sdk_root.mkdir()
+    python_abi = PythonAbiIdentity.current()
     (sdk_root / "termin-artifacts.json").write_text(
         json.dumps(
             {
                 "schema": SCHEMA_VERSION,
                 "manifest_kind": SDK_MANIFEST_KIND,
-                "native_build_id": compute_native_build_id([]),
+                "python_abi": python_abi.to_dict(),
+                "native_build_id": compute_native_build_id([], python_abi),
                 "artifacts": [],
             }
         ),
@@ -63,10 +65,10 @@ def test_activate_overlay_rejects_stale_sdk_fingerprint(
     manifest.write_text(
         json.dumps(
             {
-                "schema": 1,
+                "schema": python_overlay.SCHEMA_VERSION,
                 "sdk_root": str(sdk_root),
                 "sdk_fingerprint": "stale",
-                "python_abi": f"{sys.version_info.major}.{sys.version_info.minor}",
+                "python_abi": python_abi.to_dict(),
                 "extra_sites": [],
                 "mappings": {},
             }

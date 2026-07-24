@@ -12,11 +12,15 @@
 - `termin_build.cmake_ext` with setuptools/CMake build classes used by native Python packages.
 - SDK orchestration, including isolated Python wheel preparation, offline
   runtime population, runtime manifest generation and verification.
-- Strict schema-v2 artifact manifests: relocatable SDK entries are resolved
+- Strict schema-v3 artifact manifests: relocatable SDK entries are resolved
   relative to the manifest, while developer build artifacts require an
-  explicitly selected build manifest.
+  explicitly selected build manifest. Every manifest carries the canonical
+  Python ABI identity: `version`, `soabi`, `free_threaded` and
+  `py_gil_disabled`.
 - One content-derived native build ID shared by installed runtime metadata and
-  public wheels, with final wheel version and payload provenance verification.
+  public wheels. The Python ABI identity participates in that ID, and final
+  verification rejects runtime, application payload, overlay and native wheel
+  ABI mismatches before importing an extension.
 
 ## Публичный API
 

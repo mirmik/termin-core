@@ -20,7 +20,6 @@ from .artifact_manifest import (
     SDK_MANIFEST_KIND,
     SDK_MANIFEST_NAME,
     compute_native_build_id,
-    current_python_abi,
     sha256_file,
 )
 from .application_payload import (
@@ -28,6 +27,7 @@ from .application_payload import (
     load_application_payloads,
 )
 from .package_manifest import PackageEntry, load_manifest, repo_root_from
+from .python_abi import PythonAbiIdentity
 from .sdk_python_layout import (
     _copy_tree_contents,
     _find_bundled_python_dir,
@@ -563,6 +563,7 @@ def write_artifacts(
 ) -> int:
     packages = load_manifest(repo_root)
     application_payloads = load_application_payloads(repo_root)
+    python_abi = PythonAbiIdentity.current()
     build_artifacts = []
     sdk_artifacts = []
     missing_required = []
@@ -653,7 +654,6 @@ def write_artifacts(
             **ownership,
             "extension": native_extension.extension,
             "target": native_extension.target,
-            "python_abi": current_python_abi(),
             "optional": native_extension.optional,
             "features": list(
                 dict.fromkeys((*owner_features, *native_extension.features))
@@ -686,7 +686,8 @@ def write_artifacts(
     build_manifest = {
         "schema": ARTIFACT_MANIFEST_SCHEMA,
         "manifest_kind": BUILD_MANIFEST_KIND,
-        "native_build_id": compute_native_build_id(build_artifacts),
+        "python_abi": python_abi.to_dict(),
+        "native_build_id": compute_native_build_id(build_artifacts, python_abi),
         "artifacts": build_artifacts,
     }
     build_output = build_dir / BUILD_MANIFEST_NAME
@@ -698,7 +699,8 @@ def write_artifacts(
     sdk_manifest = {
         "schema": ARTIFACT_MANIFEST_SCHEMA,
         "manifest_kind": SDK_MANIFEST_KIND,
-        "native_build_id": compute_native_build_id(sdk_artifacts),
+        "python_abi": python_abi.to_dict(),
+        "native_build_id": compute_native_build_id(sdk_artifacts, python_abi),
         "artifacts": sdk_artifacts,
     }
     sdk_prefix.mkdir(parents=True, exist_ok=True)

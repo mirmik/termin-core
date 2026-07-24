@@ -10,6 +10,7 @@ from termin_build import artifact_manifest
 from termin_build.artifact_manifest import ArtifactManifestError
 from termin_build.cmake_ext import TerminCMakeBuildExt
 from termin_build import sdk_verification
+from termin_build.python_abi import PythonAbiIdentity
 
 
 EXTENSION = "termin.sample._sample_native"
@@ -24,6 +25,7 @@ def _write_manifest(
     path_value: str | None = None,
     digest: str | None = None,
 ) -> Path:
+    python_abi = PythonAbiIdentity.current()
     manifest_path = root / (
         artifact_manifest.SDK_MANIFEST_NAME
         if kind == artifact_manifest.SDK_MANIFEST_KIND
@@ -32,13 +34,13 @@ def _write_manifest(
     data = {
         "schema": artifact_manifest.SCHEMA_VERSION,
         "manifest_kind": kind,
+        "python_abi": python_abi.to_dict(),
         "artifacts": [
             {
                 "kind": "python-extension",
                 "distribution": "termin-sample",
                 "extension": EXTENSION,
                 "target": TARGET,
-                "python_abi": artifact_manifest.current_python_abi(),
                 "path": path_value
                 if path_value is not None
                 else (
@@ -52,7 +54,8 @@ def _write_manifest(
         ],
     }
     data["native_build_id"] = artifact_manifest.compute_native_build_id(
-        data["artifacts"]
+        data["artifacts"],
+        python_abi,
     )
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
@@ -136,13 +139,18 @@ def test_sdk_selection_never_falls_back_to_competing_checkout_artifact(
 ) -> None:
     sdk_root = tmp_path / "sdk"
     sdk_root.mkdir()
+    python_abi = PythonAbiIdentity.current()
     manifest_path = sdk_root / artifact_manifest.SDK_MANIFEST_NAME
     manifest_path.write_text(
         json.dumps(
             {
                 "schema": artifact_manifest.SCHEMA_VERSION,
                 "manifest_kind": artifact_manifest.SDK_MANIFEST_KIND,
-                "native_build_id": artifact_manifest.compute_native_build_id([]),
+                "python_abi": python_abi.to_dict(),
+                "native_build_id": artifact_manifest.compute_native_build_id(
+                    [],
+                    python_abi,
+                ),
                 "artifacts": [],
             }
         ),
@@ -173,12 +181,27 @@ def test_manifest_rejects_wrong_kind_target_and_abi(tmp_path: Path) -> None:
         artifact_manifest.ArtifactManifest.load(manifest_path).resolve_extension(EXTENSION)
 
     entry["kind"] = "python-extension"
-    entry["python_abi"] = "wrong-abi"
+    wrong_abi = PythonAbiIdentity(
+        version="3.14",
+        soabi="cpython-314t-x86_64-linux-gnu",
+        free_threaded=True,
+        py_gil_disabled=True,
+    )
+    data["python_abi"] = wrong_abi.to_dict()
+    data["native_build_id"] = artifact_manifest.compute_native_build_id(
+        data["artifacts"],
+        wrong_abi,
+    )
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ArtifactManifestError, match="ABI mismatch"):
         artifact_manifest.ArtifactManifest.load(manifest_path).resolve_extension(EXTENSION)
 
-    entry["python_abi"] = artifact_manifest.current_python_abi()
+    current_abi = PythonAbiIdentity.current()
+    data["python_abi"] = current_abi.to_dict()
+    data["native_build_id"] = artifact_manifest.compute_native_build_id(
+        data["artifacts"],
+        current_abi,
+    )
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ArtifactManifestError, match="target mismatch"):
         artifact_manifest.ArtifactManifest.load(manifest_path).resolve_extension(
@@ -220,6 +243,12 @@ def _write_test_wheel(
             f"termin_sample-{version}.dist-info/METADATA",
             f"Name: termin-sample\nVersion: {version}\n",
         )
+        archive.writestr(
+            f"termin_sample-{version}.dist-info/WHEEL",
+            "Wheel-Version: 1.0\n"
+            f"Tag: cp{PythonAbiIdentity.current().version.replace('.', '')}-"
+            f"{PythonAbiIdentity.current().wheel_abi_tag}-any\n",
+        )
         archive.writestr(f"termin/sample/{payload_name}", payload)
 
 
@@ -236,7 +265,9 @@ def test_wheelhouse_verification_rejects_stale_version_and_payload(
     (sdk_root / "python-runtime-manifest.json").write_text(
         json.dumps(
             {
+                "schema": sdk_verification.RUNTIME_MANIFEST_SCHEMA,
                 "native_build_id": manifest.native_build_id,
+                "python_abi": manifest.python_abi.to_dict(),
                 "distributions": [{"name": "termin-sample", "version": version}],
             }
         ),

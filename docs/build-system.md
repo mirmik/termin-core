@@ -132,18 +132,21 @@ sdk/
 
 ### Артефактные manifests
 
-Native Python artifacts имеют два разных schema-v2 контракта:
+Native Python artifacts имеют два разных schema-v3 контракта:
 
 - `sdk/termin-artifacts.json` — поставляемый relocatable SDK manifest. Поле
   `path` всегда относительно корня SDK; entry фиксирует kind, extension,
-  target, Python ABI, SHA-256 и bundled/external runtime dependencies. Manifest
-  не содержит checkout, `build_dir`, `sdk_prefix` или других абсолютных путей.
+  target, SHA-256 и bundled/external runtime dependencies. Top-level
+  `python_abi` однозначно задаёт `version`, `soabi`, `free_threaded` и
+  `py_gil_disabled` для всего набора. Manifest не содержит checkout,
+  `build_dir`, `sdk_prefix` или других абсолютных путей.
 - `build/<config>/termin-build-artifacts.json` — внутренний developer manifest
   с точными абсолютными путями build tree. Он не поставляется как часть SDK.
 
 Оба manifest фиксируют content-derived `native_build_id`. Для SDK он вычисляется
-из SHA-256 всех native extensions и транзитивно bundled shared libraries, а не
-из mtimes. Этот ID становится PEP 440 suffix `+sdk<id>` и без пересчёта
+из канонической Python ABI identity, SHA-256 всех native extensions и
+транзитивно bundled shared libraries, а не из mtimes. Этот ID становится PEP
+440 suffix `+sdk<id>` и без пересчёта
 используется runtime wheels, `python-runtime-manifest.json` и public
 `sdk/wheels`. Повторный wheel-stage сохраняет ID, пока native payload не
 изменился. Финальная SDK verification сопоставляет версии и байты native
@@ -183,6 +186,12 @@ Runtime population разделён на build и install:
   `sdk/application-python-payloads.json` с hashes всех app-owned файлов;
 - `sdk/python-runtime-manifest.json` фиксирует Python ABI, lock hash, полный
   набор distributions и hashes их `RECORD`.
+
+Artifact, runtime, installed application-payload и checkout-overlay manifests
+используют один и тот же объект `python_abi`. Проверка сравнивает все четыре
+поля, поэтому одинаковые `major.minor` не позволяют смешать обычный `cp314` с
+free-threaded `cp314t`. Native wheels дополнительно проверяются по ABI tag из
+их `WHEEL` metadata до import.
 
 SDK verification сверяет manifest с фактическими metadata и payload hashes и
 падает на лишнем, отсутствующем или изменённом distribution. Application

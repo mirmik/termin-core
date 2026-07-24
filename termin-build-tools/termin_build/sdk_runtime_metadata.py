@@ -14,12 +14,13 @@ from pathlib import Path
 
 from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND, SDK_MANIFEST_NAME
 from .package_manifest import load_manifest
+from .python_abi import PythonAbiIdentity
 from .python_interpreter import resolve_python_executable
 
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
 RUNTIME_MANIFEST_NAME = "python-runtime-manifest.json"
-RUNTIME_MANIFEST_SCHEMA = 2
+RUNTIME_MANIFEST_SCHEMA = 3
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
     "Pillow": ("PIL", "pillow.libs", "Pillow.libs"),
 }
@@ -33,6 +34,9 @@ def _python_version_and_paths(py_exec: str) -> dict[str, object]:
     script = (
         "import json, site, sys, sysconfig; "
         "print(json.dumps({'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
+        "'soabi': sysconfig.get_config_var('SOABI') or '', "
+        "'free_threaded': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0), "
+        "'py_gil_disabled': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0), "
         "'prefix': sys.prefix, 'base_prefix': sys.base_prefix, "
         "'executable': sys.executable, 'base_executable': sys._base_executable, "
         "'stdlib': sysconfig.get_paths()['stdlib'], "
@@ -270,10 +274,18 @@ def write_python_runtime_manifest(
     installed_lock = sdk_prefix / "python-runtime-lock.txt"
     shutil.copy2(lock_path, installed_lock)
     python_info = _python_version_and_paths(_python_executable())
+    runtime_abi = PythonAbiIdentity.from_runtime_probe(
+        python_info,
+        context="SDK Python runtime",
+    )
+    artifact_manifest.python_abi.require_matches(
+        runtime_abi,
+        context="SDK artifact/runtime Python ABI",
+    )
     manifest = {
         "schema": RUNTIME_MANIFEST_SCHEMA,
         "native_build_id": artifact_manifest.native_build_id,
-        "python_abi": str(python_info["version"]),
+        "python_abi": runtime_abi.to_dict(),
         "platform": sys.platform,
         "runtime_lock": installed_lock.relative_to(sdk_prefix).as_posix(),
         "runtime_lock_sha256": _sha256_file(installed_lock),

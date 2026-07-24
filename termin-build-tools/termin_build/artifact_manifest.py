@@ -7,11 +7,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import sysconfig
 from typing import Any
 
+from .python_abi import PythonAbiError, PythonAbiIdentity
 
-SCHEMA_VERSION = 2
+
+SCHEMA_VERSION = 3
 SDK_MANIFEST_KIND = "termin-sdk-artifacts"
 BUILD_MANIFEST_KIND = "termin-build-artifacts"
 SDK_MANIFEST_NAME = "termin-artifacts.json"
@@ -31,11 +32,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def current_python_abi() -> str:
-    return str(sysconfig.get_config_var("SOABI") or "unknown")
-
-
-def compute_native_build_id(artifacts: list[dict[str, Any]]) -> str:
+def compute_native_build_id(
+    artifacts: list[dict[str, Any]],
+    python_abi: PythonAbiIdentity,
+) -> str:
     """Return a stable identity for native payloads and bundled dependencies."""
     payloads: set[tuple[str, str]] = set()
     for entry in artifacts:
@@ -54,6 +54,9 @@ def compute_native_build_id(artifacts: list[dict[str, Any]]) -> str:
             if isinstance(path, str) and isinstance(dependency_digest, str):
                 payloads.add((f"runtime:{path}", dependency_digest))
     digest = hashlib.sha256()
+    digest.update(b"python-abi\0")
+    digest.update(python_abi.canonical_json().encode("utf-8"))
+    digest.update(b"\0")
     for identity, payload_hash in sorted(payloads):
         digest.update(identity.encode("utf-8"))
         digest.update(b"\0")
@@ -98,8 +101,15 @@ class ArtifactManifest:
                 f"artifact manifest {self.path} must contain an artifacts list"
             )
         self._artifacts = artifacts
+        try:
+            self.python_abi = PythonAbiIdentity.from_mapping(
+                data.get("python_abi"),
+                context=f"artifact manifest {self.path} Python ABI",
+            )
+        except PythonAbiError as error:
+            raise ArtifactManifestError(str(error)) from error
         self.native_build_id = str(data.get("native_build_id", ""))
-        expected_build_id = compute_native_build_id(artifacts)
+        expected_build_id = compute_native_build_id(artifacts, self.python_abi)
         if self.native_build_id != expected_build_id:
             raise ArtifactManifestError(
                 f"native_build_id mismatch in {self.path}: "
@@ -208,11 +218,12 @@ class ArtifactManifest:
             raise ArtifactManifestError(
                 f"{context} target mismatch: expected {expected_target!r}, got {target!r}"
             )
-        abi = entry.get("python_abi")
-        expected_abi = current_python_abi()
-        if abi != expected_abi:
+        expected_abi = PythonAbiIdentity.current()
+        if self.python_abi != expected_abi:
             raise ArtifactManifestError(
-                f"{context} Python ABI mismatch: expected {expected_abi!r}, got {abi!r}"
+                f"{context} Python ABI mismatch: expected "
+                f"{expected_abi.canonical_json()}, got "
+                f"{self.python_abi.canonical_json()}"
             )
         path = self._resolve_path(entry.get("path"), context=context)
         self._verify_file(path, entry.get("sha256"), context=context)

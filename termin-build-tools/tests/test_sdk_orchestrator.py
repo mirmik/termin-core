@@ -45,12 +45,17 @@ def _write_test_distribution(
 
 def _write_empty_artifact_manifest(sdk_prefix: Path) -> None:
     artifacts: list[dict[str, object]] = []
+    python_abi = artifact_manifest.PythonAbiIdentity.current()
     (sdk_prefix / artifact_manifest.SDK_MANIFEST_NAME).write_text(
         json.dumps(
             {
                 "schema": artifact_manifest.SCHEMA_VERSION,
                 "manifest_kind": artifact_manifest.SDK_MANIFEST_KIND,
-                "native_build_id": artifact_manifest.compute_native_build_id(artifacts),
+                "python_abi": python_abi.to_dict(),
+                "native_build_id": artifact_manifest.compute_native_build_id(
+                    artifacts,
+                    python_abi,
+                ),
                 "artifacts": artifacts,
             }
         ),
@@ -653,6 +658,11 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
     monkeypatch.setattr(sdk, "_prepare_external_runtime_wheels", lambda *_args: 0)
     monkeypatch.setattr(sdk, "_build_local_package_wheels", lambda **_kwargs: 0)
     monkeypatch.setattr(sdk, "_install_prepared_runtime_wheels", lambda **_kwargs: 0)
+    monkeypatch.setattr(
+        sdk,
+        "install_application_payloads",
+        lambda **_kwargs: Path("application-manifest"),
+    )
     monkeypatch.setattr(sdk, "write_python_runtime_manifest", lambda *_args: Path("manifest"))
 
     result = sdk.install_python_packages(
@@ -1115,6 +1125,11 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     )
     monkeypatch.setattr(
         sdk,
+        "install_application_payloads",
+        lambda **_kwargs: Path("application-manifest"),
+    )
+    monkeypatch.setattr(
+        sdk,
         "write_python_runtime_manifest",
         lambda *args: calls.append(("manifest", args)) or Path("manifest"),
     )
@@ -1176,14 +1191,16 @@ def test_runtime_manifest_records_declared_distributions_and_verifies_hashes(
     monkeypatch.setattr(
         sdk_runtime_metadata,
         "_python_version_and_paths",
-        lambda _python: {"version": "3.10"},
+        lambda _python: {
+            **artifact_manifest.PythonAbiIdentity.current().to_dict(),
+        },
     )
     monkeypatch.setattr(sdk_runtime_metadata, "_python_executable", lambda: "python")
 
     output = sdk.write_python_runtime_manifest(repo_root, sdk_prefix, site_packages)
 
     data = json.loads(output.read_text(encoding="utf-8"))
-    assert data["python_abi"] == "3.10"
+    assert data["python_abi"] == artifact_manifest.PythonAbiIdentity.current().to_dict()
     assert [entry["kind"] for entry in data["distributions"]] == [
         "runtime",
         "termin",
@@ -1208,7 +1225,9 @@ def test_runtime_manifest_rejects_undeclared_and_modified_distributions(
     monkeypatch.setattr(
         sdk_runtime_metadata,
         "_python_version_and_paths",
-        lambda _python: {"version": "3.10"},
+        lambda _python: {
+            **artifact_manifest.PythonAbiIdentity.current().to_dict(),
+        },
     )
     monkeypatch.setattr(sdk_runtime_metadata, "_python_executable", lambda: "python")
     sdk.write_python_runtime_manifest(repo_root, sdk_prefix, site_packages)
@@ -1319,8 +1338,9 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
 
     assert result == 0
     data = json.loads((sdk_prefix / "termin-artifacts.json").read_text())
-    assert data["schema"] == 2
+    assert data["schema"] == artifact_manifest.SCHEMA_VERSION
     assert data["manifest_kind"] == "termin-sdk-artifacts"
+    assert data["python_abi"] == artifact_manifest.PythonAbiIdentity.current().to_dict()
     artifact = data["artifacts"][0]
     assert artifact["path"] == install_artifact.relative_to(sdk_prefix).as_posix()
     assert artifact["sha256"] == hashlib.sha256(b"native").hexdigest()
