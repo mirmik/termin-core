@@ -2,8 +2,10 @@
 #include <nanobind/stl/string.h>
 #include <tcbase/input_enums.hpp>
 #include <tcbase/tc_log.hpp>
+#include <tcbase/tc_resource.h>
 #include <tcbase/tc_string.h>
 #include <tcbase/settings.h>
+#include <utility>
 #include "trent_helpers.hpp"
 
 namespace nb = nanobind;
@@ -11,6 +13,50 @@ namespace nb = nanobind;
 void bind_profiler(nb::module_& m);
 
 static nb::callable g_py_callback;
+static nb::callable g_resource_loader_callback;
+
+static bool py_resource_loader_wrapper(const char* uuid, void* user_data) {
+    (void)user_data;
+    // On free-threaded CPython this attaches a Python thread state; it does not
+    // acquire a global interpreter lock or synchronize resource-loader state.
+    // Future concurrent loader install/invoke/teardown needs separate locking.
+    nb::gil_scoped_acquire acquire;
+    if (!g_resource_loader_callback.is_valid()) {
+        tc_log_error(
+            "Python resource loader bridge is not installed for '%s'",
+            uuid ? uuid : ""
+        );
+        return false;
+    }
+
+    try {
+        return nb::cast<bool>(g_resource_loader_callback(uuid ? uuid : ""));
+    } catch (const std::exception& e) {
+        tc_log_error(
+            "Python resource loader failed for '%s': %s",
+            uuid ? uuid : "",
+            e.what()
+        );
+        return false;
+    }
+}
+
+static void bind_resource_loader(nb::module_& m) {
+    m.def("set_resource_loader", [](nb::callable callback) {
+        g_resource_loader_callback = std::move(callback);
+        tc_resource_set_loader(py_resource_loader_wrapper, nullptr);
+    }, nb::arg("callback"),
+        "Install the process-wide UUID resource loader");
+
+    m.def("clear_resource_loader", []() {
+        tc_resource_clear_loader();
+        g_resource_loader_callback = nb::callable();
+    }, "Clear the process-wide UUID resource loader");
+
+    m.def("request_resource_load", [](const std::string& uuid) {
+        return tc_resource_request_load(uuid.c_str());
+    }, nb::arg("uuid"), "Request lazy resource loading by canonical UUID");
+}
 
 static void py_log_callback_wrapper(tc_log_level level, const char* message) {
     if (g_py_callback.is_valid()) {
@@ -198,6 +244,7 @@ NB_MODULE(_tcbase_native, m) {
     auto log_module = m.def_submodule("log", "Logging module");
     bind_log(log_module);
     bind_intern_strings(m);
+    bind_resource_loader(m);
 
     // Profiler submodule — hierarchical CPU section timing backed by
     // tc_profiler. Lives here so non-termin hosts (tcgui standalone

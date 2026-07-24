@@ -4,6 +4,21 @@
 
 Python-пакет: `tcbase`.
 
+## Process-wide resource loader
+
+Ленивые native-ресурсы проходят через один нейтральный UUID callback из
+`tcbase/tc_resource.h`. Host устанавливает его через
+`tc_resource_set_loader()`, registries запрашивают загрузку через
+`tc_resource_request_load()`, а shutdown снимает через
+`tc_resource_clear_loader()`. Resource handles хранят только identity и loaded
+state, но не callbacks или Python objects.
+
+Жизненным циклом Python bridge владеет
+`termin_assets.set_resource_manager_factory()`. На каждый запрос bridge получает
+текущий canonical manager, находит canonical asset по UUID и вызывает
+`Asset.ensure_loaded()`. Поэтому замена manager не удерживает старый экземпляр
+в native interop state.
+
 Связанные документы:
 
 - [Module Map](../../docs/modules.md#termin-base--tcbase)

@@ -16,6 +16,7 @@ add_library(termin_base SHARED
     src/tc_value.c
     src/tc_pool.c
     src/tc_event.c
+    src/tc_resource.c
     src/tc_resource_map.c
     src/tc_string.c
     src/tc_uuid.c
@@ -88,6 +89,14 @@ if(TERMIN_BASE_BUILD_TESTS)
     )
     target_link_libraries(termin_base_resource_map_test PRIVATE termin_base)
     add_test(NAME termin_base_resource_map_test COMMAND termin_base_resource_map_test)
+
+    add_executable(termin_base_resource_test tests/test_tc_resource.c)
+    set_target_properties(termin_base_resource_test PROPERTIES LINKER_LANGUAGE CXX)
+    target_include_directories(termin_base_resource_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
+    target_link_libraries(termin_base_resource_test PRIVATE termin_base)
+    add_test(NAME termin_base_resource_test COMMAND termin_base_resource_test)
 
     add_executable(termin_base_pool_test tests/test_tc_pool.c)
     set_target_properties(termin_base_pool_test PROPERTIES LINKER_LANGUAGE CXX)

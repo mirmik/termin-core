@@ -11,14 +11,17 @@
 extern "C" {
 #endif
 
-// ============================================================================
-// Generic load callback
-// ============================================================================
-// Called when resource data is needed but not loaded.
-// The resource pointer is the containing struct (tc_mesh*, tc_texture*, etc.)
-// Returns true if loading succeeded, false otherwise.
+// Process-wide bridge from native resource registries to the canonical asset
+// runtime. UUIDs are globally unique, so resource types do not participate in
+// lazy-load routing.
+typedef bool (*tc_resource_loader_fn)(const char* uuid, void* user_data);
 
-typedef bool (*tc_resource_load_fn)(void* resource, void* user_data);
+TCBASE_API void tc_resource_set_loader(
+    tc_resource_loader_fn callback,
+    void* user_data
+);
+TCBASE_API void tc_resource_clear_loader(void);
+TCBASE_API bool tc_resource_request_load(const char* uuid);
 
 // ============================================================================
 // Resource header - common fields for all resources
@@ -33,8 +36,6 @@ typedef struct tc_resource_header {
     uint32_t pool_index;            // index in resource pool (for GPUContext lookup)
     uint8_t is_loaded;              // true if data is loaded
     uint8_t _pad[3];
-    tc_resource_load_fn load_callback;  // callback to load data (NULL if no lazy loading)
-    void* load_user_data;               // user data for load callback
 } tc_resource_header;
 
 // ============================================================================
@@ -85,27 +86,13 @@ static inline void tc_resource_header_init(tc_resource_header* header, const cha
     header->ref_count = 0;
     header->pool_index = 0;
     header->is_loaded = 0;
-    header->load_callback = NULL;
-    header->load_user_data = NULL;
 }
 
-// Set load callback
-static inline void tc_resource_header_set_load_callback(
-    tc_resource_header* header,
-    tc_resource_load_fn callback,
-    void* user_data
-) {
-    header->load_callback = callback;
-    header->load_user_data = user_data;
-}
-
-// Trigger load if not loaded and callback exists
-// Returns true if loaded (or was already loaded), false if no callback or load failed
-static inline bool tc_resource_header_ensure_loaded(tc_resource_header* header, void* resource) {
+// Trigger process-wide UUID loading when the resource is not loaded.
+static inline bool tc_resource_header_ensure_loaded(tc_resource_header* header) {
     if (header->is_loaded) return true;
-    if (!header->load_callback) return false;
 
-    bool success = header->load_callback(resource, header->load_user_data);
+    bool success = tc_resource_request_load(header->uuid);
     if (success) {
         header->is_loaded = 1;
     }
