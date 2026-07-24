@@ -14,6 +14,48 @@
 
 Внутри root build зависимости между модулями выражены CMake targets. Для standalone-сборок модулей остаётся путь через `find_package()` и `CMAKE_PREFIX_PATH=sdk/`.
 
+### Канонический Python toolchain
+
+SDK не использует системный Python как целевой runtime. Host Python нужен
+только для запуска `termin_build`; перед CMake-стадией оркестратор
+материализует exact-pinned CPython 3.14t из
+`build-system/python-toolchain-lock.json`:
+
+- Linux x86_64 собирается из закреплённого source archive с проверкой SHA-256,
+  `--disable-gil` и shared `libpython3.14t`;
+- Windows x86_64 использует закреплённый официальный
+  `python-freethreaded` NuGet development/runtime input;
+- runtime кешируется в `build/python-toolchain/runtimes`, причём fingerprint
+  включает artifact, configure profile и версию build recipe;
+- disposable build frontend в `build/python-runtime/build-env` всегда создаётся
+  именно от выбранного target runtime. Совпадения только `major.minor` или
+  SOABI недостаточно: смена точного base interpreter пересоздаёт environment.
+
+Перед использованием toolchain проверяются Python 3.14, `Py_GIL_DISABLED`,
+`cpython-314t` SOABI, `t` в `sys.abiflags` и изначально выключенный GIL.
+Root CMake build дополнительно требует ABI 3.14t и останавливается, если ему
+передан обычный cp314 либо старый Python.
+
+Toolchain можно подготовить отдельно:
+
+```bash
+PYTHONPATH=termin-build-tools \
+  python3 -m termin_build.sdk --repo-root . prepare-python-toolchain
+```
+
+После первого заполнения кеша acquisition/build проверяется без сети:
+
+```bash
+TERMIN_PYTHON_TOOLCHAIN_OFFLINE=1 \
+  PYTHONPATH=termin-build-tools \
+  python3 -m termin_build.sdk --repo-root . prepare-python-toolchain
+```
+
+`TERMIN_PYTHON_TOOLCHAIN_BUILD_DIR` переносит generated cache в другой
+каталог. Сетевой runtime lock/wheelhouse — отдельный слой и управляется
+`TERMIN_PYTHON_RUNTIME_OFFLINE`; toolchain и runtime dependencies намеренно
+не смешиваются.
+
 Типичная сборка SDK:
 
 ```bash
@@ -130,7 +172,7 @@ sdk/
 ├── bin/            # Исполняемые файлы, включая termin_python; DLL на Windows
 ├── lib/            # Import libraries (.lib), shared libraries на Linux (.so), cmake configs
 │   ├── cmake/      # find_package() конфиги для каждого модуля
-│   └── python3.10/site-packages/
+│   └── python3.14t/site-packages/
 │       # Python-пакеты (native-модули + .py исходники) на Linux
 ├── include/        # C/C++ заголовки
 └── python/Lib/site-packages/
@@ -387,7 +429,7 @@ mylib/
 > [протокол совета](architecture-council/2026-07-19-termin-app-product-boundary.md).
 
 Launcher и editor — это C++ исполняемые файлы, которые встраивают Python-интерпретатор. При сборке с `BUNDLE_PYTHON=ON` в SDK копируется:
-- Python stdlib (`python/Lib/` на Windows, `lib/pythonX.Y/` на Linux)
+- Python stdlib (`python/Lib/` на Windows, `lib/python3.14t/` на Linux)
 - Внешние pip-пакеты в `python/Lib/site-packages/` на Windows или
   `lib/pythonX.Y/site-packages/` на Linux
 - DLL/so Python-рантайма

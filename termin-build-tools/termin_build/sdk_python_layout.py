@@ -67,10 +67,16 @@ def _copy_tree_contents(source: Path, dest: Path, ignore_names: set[str]) -> Non
             shutil.copy2(child, target)
 
 
+def _bundled_python_dir_name(version: str, *, free_threaded: bool) -> str:
+    suffix = "t" if free_threaded else ""
+    return f"python{version}{suffix}"
+
+
 def _find_bundled_python_dir(
     sdk_prefix: Path,
     *,
     expected_version: str | None = None,
+    expected_free_threaded: bool = False,
 ) -> Path | None:
     if _is_windows():
         windows_lib = sdk_prefix / "python" / "Lib"
@@ -90,7 +96,10 @@ def _find_bundled_python_dir(
         return None
     bundled_py_dir = matches[0]
     if expected_version is not None:
-        expected = lib_dir / f"python{expected_version}"
+        expected = lib_dir / _bundled_python_dir_name(
+            expected_version,
+            free_threaded=expected_free_threaded,
+        )
         if bundled_py_dir != expected:
             raise RuntimeError(
                 f"SDK Python ABI mismatch: expected {expected}, found {bundled_py_dir}. "
@@ -109,6 +118,7 @@ def resolve_sdk_python_layout(
     bundled_py_dir = _find_bundled_python_dir(
         sdk_prefix,
         expected_version=version,
+        expected_free_threaded=bool(info.get("free_threaded", False)),
     )
     if bundled_py_dir is None:
         raise RuntimeError(
@@ -134,18 +144,16 @@ def publish_cmake_python_install(
     sdk_prefix: Path,
 ) -> Path:
     """Normalize CMake-installed Python modules into SDK site-packages."""
-    info = _python_version_and_paths(_python_executable())
-    version = str(info["version"])
     site_packages = resolve_sdk_python_layout(sdk_prefix)
 
     source_roots = [install_dir / "lib" / "python"]
     if _is_windows():
         source_roots.append(install_dir / "python" / "Lib" / "site-packages")
     else:
-        staged_python = _find_bundled_python_dir(
-            install_dir,
-            expected_version=version,
-        )
+        # CMake's generic install scheme can use pythonX.Y even when extension
+        # suffixes and the final runtime layout use the free-threaded "t" ABI.
+        # The staging tree is an input to normalization, not an SDK runtime.
+        staged_python = _find_bundled_python_dir(install_dir)
         if staged_python is not None:
             source_roots.append(staged_python / "site-packages")
 

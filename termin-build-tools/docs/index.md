@@ -12,6 +12,11 @@
 - `termin_build.cmake_ext` with setuptools/CMake build classes used by native Python packages.
 - SDK orchestration, including isolated Python wheel preparation, offline
   runtime population, runtime manifest generation and verification.
+- Exact-pinned CPython 3.14t acquisition: a SHA-verified Linux source build
+  with `--disable-gil`, an official Windows free-threaded NuGet input, stable
+  cache fingerprints, offline reuse and hard runtime identity probes. Host
+  Python only bootstraps the orchestrator; it is never selected as the SDK
+  target implicitly.
 - Strict schema-v3 artifact manifests: relocatable SDK entries are resolved
   relative to the manifest, while developer build artifacts require an
   explicitly selected build manifest. Every manifest carries the canonical
