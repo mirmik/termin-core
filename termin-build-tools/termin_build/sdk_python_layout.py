@@ -32,6 +32,8 @@ def _python_version_and_paths(py_exec: str) -> dict[str, object]:
         "'executable': sys.executable, "
         "'base_executable': sys._base_executable, "
         "'stdlib': sysconfig.get_paths()['stdlib'], "
+        "'include': sysconfig.get_paths()['include'], "
+        "'platinclude': sysconfig.get_paths()['platinclude'], "
         "'libdir': sysconfig.get_config_var('LIBDIR') or '', "
         "'ldlibrary': sysconfig.get_config_var('LDLIBRARY') or '', "
         "'sitepackages': site.getsitepackages() + ([site.getusersitepackages()] if site.getusersitepackages() else [])"

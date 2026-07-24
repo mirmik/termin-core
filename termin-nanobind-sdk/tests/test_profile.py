@@ -160,8 +160,17 @@ def test_installed_cmake_package_applies_interpreter_abi_profile(
         stderr=subprocess.STDOUT,
     )
     assert result.returncode == 0, result.stdout
+    build_result = subprocess.run(
+        [cmake, "--build", str(build_dir)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    assert build_result.returncode == 0, build_result.stdout
     profile = (build_dir / "profile.txt").read_text(encoding="utf-8")
     assert "nanobind::nanobind-ft" in profile
+    assert "Python::Module" in profile
     assert "NB_FREE_THREADED" in profile
 
 

@@ -668,6 +668,7 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
 ):
     sdk_prefix = tmp_path / "sdk"
     stdlib = tmp_path / "host" / "lib" / "python3.10"
+    include = tmp_path / "host" / "include" / "python3.10"
     libdir = tmp_path / "host" / "lib"
     config_dir = stdlib / "config-3.10-x86_64-linux-gnu"
     config_dir.mkdir(parents=True)
@@ -675,6 +676,8 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
     (stdlib / "ensurepip").mkdir()
     (stdlib / "ctypes").mkdir()
     (stdlib / "ctypes" / "__init__.py").write_text("", encoding="utf-8")
+    include.mkdir(parents=True)
+    (include / "Python.h").write_text("/* fixture */\n", encoding="utf-8")
     (libdir / "libpython3.10.so.1.0").write_bytes(b"shared")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
@@ -685,6 +688,8 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
         lambda _py_exec: {
             "version": "3.10",
             "stdlib": str(stdlib),
+            "include": str(include),
+            "platinclude": str(include),
             "libdir": str(libdir),
             "sitepackages": [],
         },
@@ -694,6 +699,9 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
 
     assert bundled_py_dir == sdk_prefix / "lib" / "python3.10"
     assert (sdk_prefix / "lib" / "libpython3.10.so.1.0").read_bytes() == b"shared"
+    assert (
+        sdk_prefix / "include" / "python3.10" / "Python.h"
+    ).read_text(encoding="utf-8") == "/* fixture */\n"
     assert not (bundled_py_dir / "config-3.10-x86_64-linux-gnu").exists()
     assert (bundled_py_dir / "ctypes" / "__init__.py").is_file()
 

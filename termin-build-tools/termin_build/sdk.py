@@ -386,6 +386,28 @@ def _ensure_linux_python_shared_library(sdk_prefix: Path, info: dict[str, object
     )
 
 
+def _copy_python_development_headers(
+    sdk_prefix: Path,
+    info: dict[str, object],
+) -> Path | None:
+    source_values = {
+        str(info.get("include") or ""),
+        str(info.get("platinclude") or ""),
+    }
+    sources = [Path(value) for value in source_values if value]
+    sources = [source for source in sources if source.is_dir()]
+    if not sources:
+        return None
+
+    version = str(info["version"])
+    suffix = "t" if bool(info.get("free_threaded", False)) else ""
+    destination = sdk_prefix / "include" / f"python{version}{suffix}"
+    destination.mkdir(parents=True, exist_ok=True)
+    for source in sources:
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+    return destination
+
+
 def ensure_bundled_python_cli(
     sdk_prefix: Path,
     *,
@@ -471,6 +493,7 @@ def ensure_bundled_python_runtime(
                 )
     else:
         _ensure_linux_python_shared_library(sdk_prefix, info)
+    _copy_python_development_headers(sdk_prefix, info)
 
     _copy_tree_contents(
         stdlib,
@@ -840,6 +863,7 @@ def install_python_packages(
         return 1
     _remove_linux_python_config_artifacts(bundled_py_dir)
     _ensure_linux_python_shared_library(sdk_prefix, info)
+    _copy_python_development_headers(sdk_prefix, info)
     ensure_bundled_python_cli(
         sdk_prefix,
         python_executable=Path(py_exec),
@@ -940,6 +964,7 @@ def prepare_build_python_runtime(sdk_prefix: Path) -> int:
         else:
             _remove_linux_python_config_artifacts(bundled_py_dir)
             _ensure_linux_python_shared_library(sdk_prefix, info)
+            _copy_python_development_headers(sdk_prefix, info)
     except RuntimeError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

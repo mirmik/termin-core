@@ -75,6 +75,7 @@ function(nanobind_add_module name)
     )
     nanobind_extension(${name})
 
+    target_link_libraries(${name} PRIVATE Python::Module)
     termin_nanobind_link_runtime(${name} PRIVATE)
 
     if(NOT ARG_PROTECT_STACK)

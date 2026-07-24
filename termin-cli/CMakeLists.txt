@@ -59,4 +59,4 @@ termin_cli_add_tool(termin_builder src/termin_builder.cpp)
 target_link_libraries(termin_builder PRIVATE termin_cli_python_backend)
 
 termin_cli_add_tool(termin_runner src/termin_runner.cpp)
-target_link_libraries(termin_runner PRIVATE tcbase::termin_base)
+target_link_libraries(termin_runner PRIVATE tcbase::termin_base termin_cli_python_backend)

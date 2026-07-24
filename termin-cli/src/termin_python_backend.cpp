@@ -170,17 +170,13 @@ void configure_environment() {
 
 std::optional<fs::path> bundled_python_executable(const fs::path &install_root) {
 #ifdef _WIN32
-    std::vector<fs::path> candidates = {install_root / "python" / "python.exe",
-                                        install_root / "bin" / "python.exe"};
+    const fs::path candidate = install_root / "bin" / "termin_python.exe";
 #else
-    std::vector<fs::path> candidates = {install_root / "bin" / "python3",
-                                        install_root / "bin" / "python"};
+    const fs::path candidate = install_root / "bin" / "termin_python";
 #endif
     std::error_code ec;
-    for (const fs::path &candidate : candidates) {
-        if (fs::exists(candidate, ec) && fs::is_regular_file(candidate, ec))
-            return candidate;
-    }
+    if (fs::exists(candidate, ec) && fs::is_regular_file(candidate, ec))
+        return candidate;
     return std::nullopt;
 }
 
@@ -191,15 +187,9 @@ std::vector<std::string> python_module_command(const std::string &module_name) {
     if (std::optional<fs::path> python = bundled_python_executable(sdk_root)) {
         return {python->string(), "-m", module_name};
     }
-    return {
-#ifdef _WIN32
-        "python",
-#else
-        "python3",
-#endif
-        "-m",
-        module_name,
-    };
+    throw std::runtime_error(
+        "bundled SDK Python host was not found under " + (sdk_root / "bin").string()
+    );
 }
 
 int run_process(const std::vector<std::string> &args, const char *process_label) {
