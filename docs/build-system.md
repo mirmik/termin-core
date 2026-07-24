@@ -224,11 +224,14 @@ Runtime population разделён на build и install:
   third-party distributions, поставляемых с SDK, включая `pytest` и его
   транзитивные зависимости;
 - external wheels материализуются в `build/python-runtime/external-wheels`
-  (sdist-only `pyassimp` собирается в wheel на этой стадии);
+  во временном каталоге, проверяются по exact lock и supported tags целевого
+  Python, после чего атомарно заменяют предыдущий wheelhouse;
 - все Termin wheels собираются из `build-system/packages.json` в
   `build/python-runtime/termin-wheels`;
 - SDK `site-packages` очищается и устанавливается одним offline-проходом с
   `--no-index --no-deps`;
+- offline-проход повторяет проверку полноты lock и отвергает native wheels с
+  несовместимым ABI, включая обычный `cp314` при целевом `cp314t`;
 - editor/launcher Python-код устанавливается после library wheels из явно
   перечисленных roots в `build-system/application-python-payloads.json`;
   этот шаг также возвращает `_editor_native` из native build tree и пишет

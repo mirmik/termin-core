@@ -62,7 +62,10 @@ class TerminCMakeBuildExt(build_ext):
         manifest = load_selected_manifest(required=False)
         if manifest is None:
             return base_version
-        manifest.validate_all()
+        # The manifest also contains application-owned native payloads.  They
+        # are installed after library wheels and may legitimately be absent
+        # while those wheels are being materialized.  Individual extensions
+        # are verified by ``resolve_extension`` when build_ext consumes them.
         return f"{base_version}+sdk{manifest.native_build_id}"
 
     def _get_source_dir(self):

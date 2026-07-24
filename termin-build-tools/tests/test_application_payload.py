@@ -125,6 +125,7 @@ def test_application_payload_install_uses_only_declared_roots(tmp_path: Path) ->
         sdk_root,
         site_packages,
         lambda target: native if target == "_editor_native" else None,
+        runtime_python_abi=PythonAbiIdentity.current(),
     )
 
     assert installed_manifest == sdk_root / INSTALLED_MANIFEST_NAME
@@ -179,6 +180,7 @@ def test_application_payload_install_rejects_library_collision(tmp_path: Path) -
             sdk_root,
             site_packages,
             lambda _target: None,
+            runtime_python_abi=PythonAbiIdentity.current(),
         )
 
 

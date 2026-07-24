@@ -41,6 +41,11 @@ from .sdk_python_layout import (
     resolve_sdk_python_layout,
 )
 from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
+from .wheelhouse import (
+    WheelhouseError,
+    supported_wheel_tags,
+    validate_locked_wheelhouse,
+)
 
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
@@ -517,10 +522,15 @@ def _artifact_roots(build_dir: Path) -> list[Path]:
     return roots
 
 
-def _find_native_artifact(build_dir: Path, target: str) -> Path | None:
+def _find_native_artifact(
+    build_dir: Path,
+    target: str,
+    *,
+    python_abi: PythonAbiIdentity,
+) -> Path | None:
     patterns = (
-        f"{target}.*.so",
-        f"{target}.*.pyd",
+        f"{target}.{python_abi.soabi}.so",
+        f"{target}.{python_abi.soabi}.pyd",
         f"{target}.pyd",
         f"{target}.so",
     )
@@ -661,7 +671,11 @@ def write_artifacts(
     )
 
     for owner, ownership, owner_features, native_extension in extension_owners:
-        build_path = _find_native_artifact(build_dir, native_extension.target)
+        build_path = _find_native_artifact(
+            build_dir,
+            native_extension.target,
+            python_abi=python_abi,
+        )
         if build_path is None:
             if native_extension.optional:
                 continue
@@ -772,6 +786,10 @@ def install_python_packages(
 ) -> int:
     py_exec = str(python_executable) if python_executable else _python_executable()
     info = _python_version_and_paths(py_exec)
+    target_python_abi = PythonAbiIdentity.from_runtime_probe(
+        info,
+        context="SDK target Python",
+    )
     _remove_incompatible_bundled_python_runtimes(sdk_prefix, info)
     try:
         bundled_py_dir = _find_bundled_python_dir(
@@ -853,14 +871,22 @@ def install_python_packages(
             sdk_prefix=sdk_prefix,
             site_packages=bundled_site_packages,
             resolve_native_artifact=lambda target: _find_native_artifact(
-                build_dir, target
+                build_dir,
+                target,
+                python_abi=target_python_abi,
             ),
+            runtime_python_abi=target_python_abi,
         )
     except RuntimeError as error:
         print(f"ERROR: failed to install application Python payload: {error}", file=sys.stderr)
         return 1
     try:
-        write_python_runtime_manifest(repo_root, sdk_prefix, bundled_site_packages)
+        write_python_runtime_manifest(
+            repo_root,
+            sdk_prefix,
+            bundled_site_packages,
+            runtime_python_abi=target_python_abi,
+        )
     except RuntimeError as error:
         print(f"ERROR: failed to write SDK Python runtime manifest: {error}", file=sys.stderr)
         return 1
@@ -1010,31 +1036,72 @@ def _prepare_external_runtime_wheels(
 ) -> int:
     lock_path = repo_root / RUNTIME_LOCK_RELATIVE
     try:
-        _load_runtime_lock(repo_root)
+        runtime_lock = _load_runtime_lock(repo_root)
+        python_abi = PythonAbiIdentity.from_runtime_probe(
+            _python_version_and_paths(str(build_python)),
+            context="SDK Python build environment",
+        )
+        target_tags = supported_wheel_tags(build_python)
     except RuntimeError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
     wheel_dir.mkdir(parents=True, exist_ok=True)
     if os.environ.get("TERMIN_PYTHON_RUNTIME_OFFLINE") == "1":
         print(f"Using offline SDK runtime wheelhouse: {wheel_dir}")
+        try:
+            validate_locked_wheelhouse(
+                wheel_dir,
+                runtime_lock,
+                python_abi=python_abi,
+                supported_tags=target_tags,
+            )
+        except WheelhouseError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
         return 0
     print(f"Preparing pinned SDK runtime wheels: {wheel_dir}")
-    return _run(
-        [
-            str(build_python),
-            "-m",
-            "pip",
-            "wheel",
-            "--no-build-isolation",
-            "--no-deps",
-            "--wheel-dir",
-            str(wheel_dir),
-            "-r",
-            str(lock_path),
-        ],
-        cwd=repo_root,
-        env=os.environ.copy(),
+    wheel_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="external-wheels.",
+        dir=wheel_dir.parent,
+    ) as temporary_root:
+        prepared = Path(temporary_root) / "wheels"
+        prepared.mkdir()
+        result = _run(
+            [
+                str(build_python),
+                "-m",
+                "pip",
+                "wheel",
+                "--no-build-isolation",
+                "--no-deps",
+                "--wheel-dir",
+                str(prepared),
+                "-r",
+                str(lock_path),
+            ],
+            cwd=repo_root,
+            env=os.environ.copy(),
+        )
+        if result != 0:
+            return result
+        try:
+            validate_locked_wheelhouse(
+                prepared,
+                runtime_lock,
+                python_abi=python_abi,
+                supported_tags=target_tags,
+            )
+        except WheelhouseError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
+        shutil.rmtree(wheel_dir)
+        prepared.replace(wheel_dir)
+    print(
+        f"Validated {len(runtime_lock)} exact runtime wheels for "
+        f"{python_abi.wheel_abi_tag}"
     )
+    return 0
 
 
 def _install_prepared_runtime_wheels(
@@ -1044,6 +1111,21 @@ def _install_prepared_runtime_wheels(
     local_wheels: Path,
     build_python: Path,
 ) -> int:
+    try:
+        runtime_lock = _load_runtime_lock(repo_root)
+        python_abi = PythonAbiIdentity.from_runtime_probe(
+            _python_version_and_paths(str(build_python)),
+            context="SDK Python build environment",
+        )
+        validate_locked_wheelhouse(
+            external_wheels,
+            runtime_lock,
+            python_abi=python_abi,
+            supported_tags=supported_wheel_tags(build_python),
+        )
+    except RuntimeError as error:
+        print(f"ERROR: cannot install SDK Python runtime: {error}", file=sys.stderr)
+        return 1
     wheels = sorted(local_wheels.glob("*.whl"))
     expected_local_count = len(load_manifest(repo_root))
     if len(wheels) != expected_local_count:

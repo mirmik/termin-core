@@ -32,6 +32,7 @@ from .sdk_runtime_metadata import (
     _verify_distribution_records,
 )
 from .python_abi import PythonAbiError, PythonAbiIdentity
+from .wheelhouse import require_wheel_python_abi as _require_wheel_python_abi
 
 
 def _is_windows() -> bool:
@@ -332,10 +333,6 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
             payload_abi,
             context="artifact/application payload Python ABI",
         )
-        artifact_manifest.python_abi.require_matches(
-            PythonAbiIdentity.current(),
-            context="application payload/runtime Python ABI",
-        )
     except (ArtifactManifestError, PythonAbiError) as error:
         print(f"FAILED: {error}", file=sys.stderr)
         return 1
@@ -473,27 +470,23 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
         print("FAILED: unsupported Python runtime manifest schema", file=sys.stderr)
         return 1
     try:
+        runtime_abi = PythonAbiIdentity.from_mapping(
+            manifest.get("python_abi"),
+            context="Python runtime manifest ABI",
+        )
         artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
         artifact_manifest.require_kind(SDK_MANIFEST_KIND)
-        artifact_manifest.validate_all()
-    except ArtifactManifestError as error:
+        artifact_manifest.validate_all(expected_python_abi=runtime_abi)
+    except (ArtifactManifestError, PythonAbiError) as error:
         print(f"FAILED: invalid SDK artifact manifest: {error}", file=sys.stderr)
         return 1
     if manifest.get("native_build_id") != artifact_manifest.native_build_id:
         print("FAILED: Python runtime native_build_id mismatch", file=sys.stderr)
         return 1
     try:
-        runtime_abi = PythonAbiIdentity.from_mapping(
-            manifest.get("python_abi"),
-            context="Python runtime manifest ABI",
-        )
         artifact_manifest.python_abi.require_matches(
             runtime_abi,
             context="artifact/runtime manifest Python ABI",
-        )
-        artifact_manifest.python_abi.require_matches(
-            PythonAbiIdentity.current(),
-            context="SDK/runtime Python ABI",
         )
     except PythonAbiError as error:
         print(f"FAILED: {error}", file=sys.stderr)
@@ -639,22 +632,6 @@ def _wheel_abi_tags(archive: zipfile.ZipFile, *, wheel_name: str) -> set[str]:
     return abi_tags
 
 
-def _require_wheel_python_abi(
-    abi_tags: set[str],
-    python_abi: PythonAbiIdentity,
-    *,
-    wheel_name: str,
-) -> None:
-    native_abi_tags = abi_tags - {"none"}
-    expected_abi_tag = python_abi.wheel_abi_tag
-    if native_abi_tags and expected_abi_tag not in native_abi_tags:
-        rendered = ", ".join(sorted(native_abi_tags))
-        raise RuntimeError(
-            f"wheel {wheel_name} Python ABI mismatch: expected "
-            f"{expected_abi_tag}, got {rendered}"
-        )
-
-
 def verify_python_wheelhouse(sdk_prefix: Path) -> int:
     wheel_dir = sdk_prefix / "wheels"
     print("Verifying: SDK Python wheelhouse provenance")
@@ -662,9 +639,6 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
         print("  SKIP: public SDK wheelhouse is not present")
         return 0
     try:
-        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
-        artifact_manifest.require_kind(SDK_MANIFEST_KIND)
-        artifact_manifest.validate_all()
         runtime_manifest = json.loads(
             (sdk_prefix / RUNTIME_MANIFEST_NAME).read_text(encoding="utf-8")
         )
@@ -674,6 +648,9 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
             runtime_manifest.get("python_abi"),
             context="Python runtime manifest ABI",
         )
+        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+        artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+        artifact_manifest.validate_all(expected_python_abi=runtime_abi)
         artifact_manifest.python_abi.require_matches(
             runtime_abi,
             context="artifact/runtime manifest Python ABI",

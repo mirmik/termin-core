@@ -181,11 +181,21 @@ def test_manifest_rejects_wrong_kind_target_and_abi(tmp_path: Path) -> None:
         artifact_manifest.ArtifactManifest.load(manifest_path).resolve_extension(EXTENSION)
 
     entry["kind"] = "python-extension"
-    wrong_abi = PythonAbiIdentity(
-        version="3.14",
-        soabi="cpython-314t-x86_64-linux-gnu",
-        free_threaded=True,
-        py_gil_disabled=True,
+    current_abi = PythonAbiIdentity.current()
+    wrong_abi = (
+        PythonAbiIdentity(
+            version="3.14",
+            soabi="cpython-314-x86_64-linux-gnu",
+            free_threaded=False,
+            py_gil_disabled=False,
+        )
+        if current_abi.free_threaded
+        else PythonAbiIdentity(
+            version="3.14",
+            soabi="cpython-314t-x86_64-linux-gnu",
+            free_threaded=True,
+            py_gil_disabled=True,
+        )
     )
     data["python_abi"] = wrong_abi.to_dict()
     data["native_build_id"] = artifact_manifest.compute_native_build_id(
@@ -196,7 +206,6 @@ def test_manifest_rejects_wrong_kind_target_and_abi(tmp_path: Path) -> None:
     with pytest.raises(ArtifactManifestError, match="ABI mismatch"):
         artifact_manifest.ArtifactManifest.load(manifest_path).resolve_extension(EXTENSION)
 
-    current_abi = PythonAbiIdentity.current()
     data["python_abi"] = current_abi.to_dict()
     data["native_build_id"] = artifact_manifest.compute_native_build_id(
         data["artifacts"],

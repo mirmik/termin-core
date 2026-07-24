@@ -174,11 +174,13 @@ def install_application_payloads(
     sdk_prefix: Path,
     site_packages: Path,
     resolve_native_artifact: Callable[[str], Path | None],
+    *,
+    runtime_python_abi: PythonAbiIdentity,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
     artifact_manifest.require_kind(SDK_MANIFEST_KIND)
     artifact_manifest.python_abi.require_matches(
-        PythonAbiIdentity.current(),
+        runtime_python_abi,
         context="application payload/runtime Python ABI",
     )
     records: list[dict[str, object]] = []

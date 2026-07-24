@@ -176,7 +176,11 @@ class ArtifactManifest:
                 f"expected {expected_kind!r}"
             )
 
-    def validate_all(self) -> None:
+    def validate_all(
+        self,
+        *,
+        expected_python_abi: PythonAbiIdentity | None = None,
+    ) -> None:
         extensions = []
         for entry in self._artifacts:
             extension = entry.get("extension")
@@ -186,13 +190,17 @@ class ArtifactManifest:
                 )
             extensions.append(extension)
         for extension in extensions:
-            self.resolve_extension(extension)
+            self.resolve_extension(
+                extension,
+                expected_python_abi=expected_python_abi,
+            )
 
     def resolve_extension(
         self,
         extension: str,
         *,
         expected_target: str | None = None,
+        expected_python_abi: PythonAbiIdentity | None = None,
     ) -> ResolvedArtifact:
         matches = [
             entry for entry in self._artifacts if entry.get("extension") == extension
@@ -218,7 +226,7 @@ class ArtifactManifest:
             raise ArtifactManifestError(
                 f"{context} target mismatch: expected {expected_target!r}, got {target!r}"
             )
-        expected_abi = PythonAbiIdentity.current()
+        expected_abi = expected_python_abi or PythonAbiIdentity.current()
         if self.python_abi != expected_abi:
             raise ArtifactManifestError(
                 f"{context} Python ABI mismatch: expected "

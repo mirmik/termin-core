@@ -260,10 +260,12 @@ def write_python_runtime_manifest(
     repo_root: Path,
     sdk_prefix: Path,
     site_packages: Path,
+    *,
+    runtime_python_abi: PythonAbiIdentity,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
     artifact_manifest.require_kind(SDK_MANIFEST_KIND)
-    artifact_manifest.validate_all()
+    artifact_manifest.validate_all(expected_python_abi=runtime_python_abi)
     runtime_lock = _load_runtime_lock(repo_root)
     local_names = {
         _normalized_distribution_name(package.distribution)
@@ -273,19 +275,14 @@ def write_python_runtime_manifest(
     lock_path = repo_root / RUNTIME_LOCK_RELATIVE
     installed_lock = sdk_prefix / "python-runtime-lock.txt"
     shutil.copy2(lock_path, installed_lock)
-    python_info = _python_version_and_paths(_python_executable())
-    runtime_abi = PythonAbiIdentity.from_runtime_probe(
-        python_info,
-        context="SDK Python runtime",
-    )
     artifact_manifest.python_abi.require_matches(
-        runtime_abi,
+        runtime_python_abi,
         context="SDK artifact/runtime Python ABI",
     )
     manifest = {
         "schema": RUNTIME_MANIFEST_SCHEMA,
         "native_build_id": artifact_manifest.native_build_id,
-        "python_abi": runtime_abi.to_dict(),
+        "python_abi": runtime_python_abi.to_dict(),
         "platform": sys.platform,
         "runtime_lock": installed_lock.relative_to(sdk_prefix).as_posix(),
         "runtime_lock_sha256": _sha256_file(installed_lock),
