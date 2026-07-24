@@ -1537,6 +1537,49 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
     assert build_data["artifacts"][0]["path"] == str(build_artifact.resolve())
 
 
+def test_native_runtime_dependencies_are_locale_independent(monkeypatch):
+    captured_env = {}
+
+    def run(command, **kwargs):
+        captured_env.update(kwargs["env"])
+        return sdk.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                " 0x0000000000000001 (NEEDED)             "
+                "Совм. исп. библиотека: [libnanobind-ft.so]\n"
+                " 0x0000000000000001 (NEEDED)             "
+                "Совм. исп. библиотека: [libc.so.6]\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk.subprocess, "run", run)
+
+    dependencies = sdk._native_runtime_dependencies(Path("extension.so"))
+
+    assert dependencies == ["libnanobind-ft.so", "libc.so.6"]
+    assert captured_env["LC_ALL"] == "C"
+    assert captured_env["LANGUAGE"] == "C"
+
+
+def test_native_runtime_dependencies_reports_readelf_failure(monkeypatch):
+    def run(command, **_kwargs):
+        return sdk.subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="readelf: Error: Not an ELF file",
+        )
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk.subprocess, "run", run)
+
+    with pytest.raises(RuntimeError, match="Not an ELF file"):
+        sdk._native_runtime_dependencies(Path("extension.so"))
+
+
 def test_write_artifacts_reports_missing_required_binding(
     tmp_path,
     monkeypatch,

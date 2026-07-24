@@ -547,24 +547,39 @@ def _find_native_artifact(
 def _native_runtime_dependencies(binary: Path) -> list[str]:
     if _is_windows():
         return []
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    env["LANGUAGE"] = "C"
     try:
         result = subprocess.run(
             ["readelf", "-d", str(binary)],
             check=False,
             text=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
         )
-    except OSError:
-        return []
+    except OSError as error:
+        raise RuntimeError(
+            f"failed to execute readelf for {binary}: {error}"
+        ) from error
     if result.returncode != 0:
-        return []
+        detail = result.stderr.strip() or result.stdout.strip()
+        if not detail:
+            detail = f"exit code {result.returncode}"
+        raise RuntimeError(f"readelf failed for {binary}: {detail}")
     dependencies = []
     for line in result.stdout.splitlines():
-        marker = "Shared library: ["
-        if marker not in line:
+        if "(NEEDED)" not in line:
             continue
-        dependency = line.split(marker, 1)[1].split("]", 1)[0]
+        opening = line.rfind("[")
+        closing = line.find("]", opening + 1)
+        if opening < 0 or closing < 0:
+            raise RuntimeError(
+                f"readelf returned an unrecognized NEEDED entry for {binary}: "
+                f"{line.strip()}"
+            )
+        dependency = line[opening + 1 : closing]
         dependencies.append(dependency)
     return dependencies
 
@@ -703,10 +718,17 @@ def write_artifacts(
                 f"{owner}: installed artifact is outside SDK root: {installed_path}"
             )
             continue
-        dependency_names = _native_runtime_dependencies(installed_path)
-        runtime_dependencies, external_dependencies = bundled_runtime_dependencies(
-            dependency_names
-        )
+        try:
+            dependency_names = _native_runtime_dependencies(installed_path)
+            runtime_dependencies, external_dependencies = bundled_runtime_dependencies(
+                dependency_names
+            )
+        except RuntimeError as error:
+            print(
+                f"ERROR: failed to inspect native dependencies: {error}",
+                file=sys.stderr,
+            )
+            return 1
         common = {
             "kind": "python-extension",
             **ownership,
