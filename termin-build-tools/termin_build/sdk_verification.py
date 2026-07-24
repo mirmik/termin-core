@@ -191,6 +191,9 @@ def verify_sdk(
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result
+    result = verify_embedded_python_hosts(sdk_prefix)
+    if result != 0:
+        return result
     result = verify_sdk_python_launcher(sdk_prefix)
     if result != 0:
         return result
@@ -610,6 +613,53 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
         f"  OK: {len(raw_files)} app-owned files, {len(imports)} imports and "
         f"{len(executables)} executable hosts verified"
     )
+    return 0
+
+
+def verify_embedded_python_hosts(sdk_prefix: Path) -> int:
+    print("Verifying: embedded Python product hosts")
+    executable_suffix = ".exe" if _is_windows() else ""
+    player = sdk_prefix / "bin" / f"termin_player{executable_suffix}"
+    if not player.is_file():
+        print(f"FAILED: embedded Python host is missing: {player}", file=sys.stderr)
+        return 1
+    result = subprocess.run(
+        [str(player), "--termin-python-layout-smoke"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=_hostile_python_environment(sdk_prefix),
+    )
+    if result.returncode != 0:
+        print(
+            "FAILED: termin_player embedded Python smoke failed: "
+            + result.stderr.strip(),
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError) as error:
+        print(
+            f"FAILED: termin_player embedded Python smoke returned invalid JSON: {error}",
+            file=sys.stderr,
+        )
+        return 1
+    if payload.get("module") != "_termin_player_native":
+        print(
+            "FAILED: termin_player did not import its raw native module",
+            file=sys.stderr,
+        )
+        return 1
+    if payload.get("free_threaded") is not True or payload.get("gil_enabled") is not False:
+        print(
+            "FAILED: termin_player raw native module enabled the GIL: "
+            + json.dumps(payload, sort_keys=True),
+            file=sys.stderr,
+        )
+        return 1
+    print("  OK: termin_player raw module imports without enabling the GIL")
     return 0
 
 

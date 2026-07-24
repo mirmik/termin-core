@@ -2,6 +2,7 @@
 #include <Python.h>
 
 #include "termin_python_backend.hpp"
+#include "termin/python_host/python_host.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -176,55 +177,25 @@ void print_info(const PythonLayout& layout, const LauncherOptions& options) {
         << "}\n";
 }
 
-std::optional<int> report_status(const char* operation, PyStatus status, PyConfig* config) {
-    if (!PyStatus_Exception(status)) {
-        return std::nullopt;
-    }
-    std::cerr << "termin_python: " << operation << " failed";
-    if (status.err_msg != nullptr) {
-        std::cerr << ": " << status.err_msg;
-    }
-    std::cerr << std::endl;
-    PyConfig_Clear(config);
-    return PyStatus_IsExit(status) ? status.exitcode : 1;
-}
-
 int run_python(const PythonLayout& layout, const LauncherOptions& options) {
     termin_cli::python_backend::set_env_value("TERMIN_SDK", layout.sdk_root.string());
 
-    PyConfig config;
-    PyConfig_InitPythonConfig(&config);
-    config.isolated = 1;
-    config.use_environment = 0;
-    config.user_site_directory = 0;
-    config.site_import = 1;
-    config.write_bytecode = 0;
-    config.parse_argv = 1;
-
-    const std::wstring home = layout.python_home.wstring();
-    PyStatus status = PyConfig_SetString(&config, &config.home, home.c_str());
-    if (std::optional<int> result = report_status("configuring Python home", status, &config)) {
-        return *result;
+    termin::python_host::Config config;
+    config.host_name = "termin_python";
+    config.home = layout.python_home;
+    config.argv = options.python_args;
+    config.isolated = true;
+    config.use_environment = false;
+    config.user_site_directory = false;
+    config.site_import = true;
+    config.write_bytecode = false;
+    config.parse_argv = true;
+    const termin::python_host::InitResult initialized =
+        termin::python_host::initialize(config);
+    if (!initialized.ok) {
+        std::cerr << initialized.error << std::endl;
+        return initialized.exit_code;
     }
-
-    std::vector<char*> python_argv;
-    python_argv.reserve(options.python_args.size());
-    for (const std::string& argument : options.python_args) {
-        python_argv.push_back(const_cast<char*>(argument.c_str()));
-    }
-    status = PyConfig_SetBytesArgv(
-        &config,
-        static_cast<Py_ssize_t>(python_argv.size()),
-        python_argv.data());
-    if (std::optional<int> result = report_status("configuring Python arguments", status, &config)) {
-        return *result;
-    }
-
-    status = Py_InitializeFromConfig(&config);
-    if (std::optional<int> result = report_status("initializing bundled Python", status, &config)) {
-        return *result;
-    }
-    PyConfig_Clear(&config);
 
     PyObject* sys_path = PySys_GetObject("path");
     if (sys_path == nullptr || !PyList_Check(sys_path)) {

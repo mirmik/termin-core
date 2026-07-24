@@ -42,9 +42,17 @@ target_link_libraries(termin_modules_cli PRIVATE termin_cli_python_backend)
 termin_cli_add_tool(termin_stdlib src/termin_stdlib.cpp)
 
 if(TERMIN_BUILD_PYTHON)
+    if(NOT TARGET termin_python_host::termin_python_host)
+        find_package(termin_python_host REQUIRED)
+    endif()
     termin_cli_add_tool(termin_python src/termin_python.cpp)
     target_link_libraries(termin_python PRIVATE termin_cli_python_backend)
-    target_link_libraries(termin_python PRIVATE Python::Python)
+    target_link_libraries(
+        termin_python
+        PRIVATE
+            Python::Python
+            termin_python_host::termin_python_host
+    )
 endif()
 
 termin_cli_add_tool(termin_builder src/termin_builder.cpp)
