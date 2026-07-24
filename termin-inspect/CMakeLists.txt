@@ -72,7 +72,7 @@ if(TI_BUILD_PYTHON_BRIDGE)
         endif()
     endif()
 
-    find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
+    find_package(Python 3.14 COMPONENTS Interpreter Development REQUIRED)
 
     find_package(nanobind CONFIG REQUIRED)
 endif()

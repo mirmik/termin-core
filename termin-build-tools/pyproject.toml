@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "termin-build-tools"
 version = "0.1.0"
 description = "Common build utilities for termin SDK Python packages"
-requires-python = ">=3.8"
+requires-python = ">=3.14"
 dependencies = ["setuptools"]
 
 [tool.setuptools]

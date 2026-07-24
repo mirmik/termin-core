@@ -35,6 +35,16 @@ from .python_abi import PythonAbiError, PythonAbiIdentity
 from .wheelhouse import require_wheel_python_abi as _require_wheel_python_abi
 
 
+_PRODUCT_IMPORT_GRAPH_ROOTS = (
+    "termin.engine",
+    "termin.player",
+    "termin.player.headless",
+)
+_GIL_WARNING_FILTER = (
+    r"error:The global interpreter lock \(GIL\) has been enabled:RuntimeWarning"
+)
+
+
 def _is_windows() -> bool:
     return os.name == "nt"
 
@@ -415,16 +425,93 @@ def verify_nanobind_extensions(sdk_prefix: Path) -> int:
         print("FAILED: SDK artifact manifest has no Python extensions", file=sys.stderr)
         return 1
 
+    try:
+        entry_modules = _installed_product_import_roots(sdk_prefix)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(
+            f"FAILED: cannot determine product import graph roots: {error}",
+            file=sys.stderr,
+        )
+        return 1
+
+    result = _run_python_import_graph_probe(
+        launcher=_sdk_python_launcher(sdk_prefix),
+        extensions=extensions,
+        entry_modules=entry_modules,
+        runtime_paths=list(dict.fromkeys(runtime_paths)),
+        free_threaded=free_threaded,
+        environment=_hostile_python_environment(sdk_prefix),
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        print(
+            "FAILED: native extension import graph smoke failed: "
+            + details,
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"  OK: {len(extensions)} native extensions use {runtime_name}; "
+        f"{len(entry_modules)} product roots imported; free-threaded={free_threaded}"
+    )
+    return 0
+
+
+def _sdk_python_launcher(sdk_prefix: Path) -> Path:
     launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
-    launcher = sdk_prefix / "bin" / launcher_name
-    import_script = "\n".join(
+    return sdk_prefix / "bin" / launcher_name
+
+
+def _installed_product_import_roots(sdk_prefix: Path) -> list[str]:
+    manifest_path = sdk_prefix / APPLICATION_PAYLOAD_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != APPLICATION_PAYLOAD_MANIFEST_SCHEMA:
+        raise ValueError("unsupported application payload manifest schema")
+
+    imports: list[str] = []
+    payloads = manifest.get("payloads")
+    if not isinstance(payloads, list):
+        raise ValueError("application payload manifest has no payload list")
+    for index, payload in enumerate(payloads):
+        if not isinstance(payload, dict):
+            raise ValueError(f"application payload {index} is not an object")
+        payload_imports = payload.get("imports", [])
+        if not isinstance(payload_imports, list) or not all(
+            isinstance(module, str) and module for module in payload_imports
+        ):
+            raise ValueError(f"application payload {index} has invalid imports")
+        imports.extend(payload_imports)
+    imports.extend(_PRODUCT_IMPORT_GRAPH_ROOTS)
+    return list(dict.fromkeys(imports))
+
+
+def _python_import_graph_probe_script(
+    *,
+    extensions: list[str],
+    entry_modules: list[str],
+    runtime_paths: list[str],
+    free_threaded: bool,
+    import_paths: list[str],
+) -> str:
+    return "\n".join(
         (
-            "import ctypes, importlib, json, os, pathlib, sys",
-            f"names = {extensions!r}",
-            f"runtime_paths = {list(dict.fromkeys(runtime_paths))!r}",
+            "import ctypes, importlib, json, os, pathlib, sys, sysconfig",
+            f"extensions = {extensions!r}",
+            f"entry_modules = {entry_modules!r}",
+            f"runtime_paths = {runtime_paths!r}",
             f"free_threaded = {free_threaded!r}",
-            "loaded = []",
-            "gil_enablers = []",
+            f"import_paths = {import_paths!r}",
+            "sys.path[:0] = import_paths",
+            "runtime = {",
+            "    'version': f'{sys.version_info.major}.{sys.version_info.minor}',",
+            "    'soabi': sysconfig.get_config_var('SOABI') or '',",
+            "    'py_gil_disabled': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0),",
+            "    'gil_enabled': sys._is_gil_enabled(),",
+            "}",
+            "if runtime['py_gil_disabled'] != free_threaded:",
+            "    raise RuntimeError(f'import gate ABI mismatch: {runtime}')",
+            "if free_threaded and runtime['gil_enabled']:",
+            "    raise RuntimeError(f'import gate started with the GIL enabled: {runtime}')",
             "dll_handles = []",
             "if sys.platform == 'win32':",
             "    directories = {str(pathlib.Path(path).parent) for path in runtime_paths}",
@@ -441,35 +528,51 @@ def verify_nanobind_extensions(sdk_prefix: Path) -> int:
             "        if len(failed) == len(pending):",
             "            raise RuntimeError(f'cannot preload native dependencies: {failed}')",
             "        pending = [path for path, _error in failed]",
-            "for name in names:",
-            "    importlib.import_module(name)",
-            "    loaded.append(name)",
-            "    if free_threaded and sys._is_gil_enabled():",
-            "        gil_enablers.append(name)",
-            "assert not gil_enablers, gil_enablers",
-            "print(json.dumps(loaded))",
+            "loaded = []",
+            "for kind, names in (('native extension', extensions), ('product root', entry_modules)):",
+            "    for name in names:",
+            "        try:",
+            "            importlib.import_module(name)",
+            "        except BaseException as error:",
+            "            raise RuntimeError(",
+            "                f'import graph failed at {kind} {name!r}; runtime={runtime}'",
+            "            ) from error",
+            "        loaded.append(name)",
+            "        if free_threaded and sys._is_gil_enabled():",
+            "            runtime['gil_enabled'] = True",
+            "            raise RuntimeError(",
+            "                f'GIL enabled after importing {kind} {name!r}; runtime={runtime}'",
+            "            )",
+            "print(json.dumps({'loaded': loaded, 'runtime': runtime}, sort_keys=True))",
         )
     )
-    result = subprocess.run(
-        [str(launcher), "-c", import_script],
+
+
+def _run_python_import_graph_probe(
+    *,
+    launcher: Path,
+    extensions: list[str],
+    entry_modules: list[str],
+    runtime_paths: list[str],
+    free_threaded: bool,
+    environment: dict[str, str],
+    import_paths: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    script = _python_import_graph_probe_script(
+        extensions=extensions,
+        entry_modules=entry_modules,
+        runtime_paths=runtime_paths,
+        free_threaded=free_threaded,
+        import_paths=import_paths or [],
+    )
+    return subprocess.run(
+        [str(launcher), "-W", _GIL_WARNING_FILTER, "-c", script],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=_hostile_python_environment(sdk_prefix),
+        env=environment,
     )
-    if result.returncode != 0:
-        print(
-            "FAILED: native extension import graph smoke failed: "
-            + result.stderr.strip(),
-            file=sys.stderr,
-        )
-        return 1
-    print(
-        f"  OK: {len(extensions)} native extensions use {runtime_name}; "
-        f"free-threaded={free_threaded}"
-    )
-    return 0
 
 
 def verify_application_python_payloads(sdk_prefix: Path) -> int:

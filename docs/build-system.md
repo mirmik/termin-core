@@ -36,6 +36,15 @@ SDK не использует системный Python как целевой ru
 Root CMake build дополнительно требует ABI 3.14t и останавливается, если ему
 передан обычный cp314 либо старый Python.
 
+CPython 3.14t является единственным Python runtime contract проекта. CMake не
+предоставляет переключатель на GIL-enabled профиль, все first-party Python
+packages объявляют `Requires-Python >=3.14`, а standalone editor build получает
+тот же exact-pinned build interpreter через `termin_build`. Системный Python
+остаётся только bootstrap-интерпретатором для запуска оркестратора.
+Граница между free-threaded interpreter и последовательным engine API
+зафиксирована в
+[Python Runtime and Threading Contract](architecture/2026-07-24-python-runtime-contract.md).
+
 Toolchain можно подготовить отдельно:
 
 ```bash
@@ -416,12 +425,24 @@ C++ часть каждого модуля полностью самодоста
 Биндинги строятся через [nanobind](https://github.com/wjakob/nanobind). Каждый модуль может опционально собирать Python-расширение при `-DTERMIN_BUILD_PYTHON=ON`.
 
 В SDK build project-модули используют один shared nanobind runtime (`NB_SHARED`):
-`libnanobind.so` для обычного CPython или `libnanobind-ft.so` для
-free-threaded ABI. `termin-nanobind-sdk` определяет профиль по Python SOABI и
+`libnanobind-ft.so`. `termin-nanobind-sdk` требует Python 3.14t и
 централизованно добавляет `NB_FREE_THREADED` всем модулям. Установленный CMake
 package отвергает другой Python ABI и не позволяет собрать локальную вторую
-копию runtime. Финальная SDK verification импортирует весь manifest native
-extensions и проверяет, что ни один импорт не включил GIL.
+копию runtime. Финальная SDK verification в hostile Python environment
+проверяет выключенный GIL до первого импорта, последовательно импортирует все
+manifest native extensions, затем editor/launcher/engine/player/headless
+корни product graph и проверяет GIL после каждого шага. Предупреждение CPython
+о загрузке extension без free-threaded opt-in является ошибкой; диагностика
+называет первый импорт и фактические version/SOABI/Py_GIL_DISABLED.
+
+Тот же gate входит в центральные `./run-tests.sh` и `run-tests.ps1`. Отдельно
+его можно запустить без полной SDK verification:
+
+```bash
+sdk/bin/termin_python --termin-overlay build/python-envs/test/overlay.json \
+  -m termin_build.sdk --repo-root . \
+  verify-python-import-graph --sdk-prefix sdk
+```
 
 ```
 mylib/

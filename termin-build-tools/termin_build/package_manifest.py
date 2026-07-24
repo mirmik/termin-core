@@ -19,6 +19,11 @@ _PACKAGE_LIST_RE = re.compile(
     r"TERMIN_PYTHON_PACKAGES=\((?P<body>.*?)\)",
     re.DOTALL,
 )
+_PYPROJECT_REQUIRES_PYTHON_RE = re.compile(
+    r'^\s*requires-python\s*=\s*"(?P<value>[^"]+)"',
+    re.MULTILINE,
+)
+CANONICAL_REQUIRES_PYTHON = ">=3.14"
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,36 @@ def setup_extensions(package_dir: Path, package: PackageEntry | None = None) -> 
     return extensions
 
 
+def package_requires_python(package_dir: Path) -> str | None:
+    setup_py = package_dir / "setup.py"
+    if setup_py.is_file():
+        tree = ast.parse(
+            setup_py.read_text(encoding="utf-8"),
+            filename=str(setup_py),
+        )
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "setup":
+                continue
+            for keyword in node.keywords:
+                if (
+                    keyword.arg == "python_requires"
+                    and isinstance(keyword.value, ast.Constant)
+                    and isinstance(keyword.value.value, str)
+                ):
+                    return keyword.value.value
+
+    pyproject_toml = package_dir / "pyproject.toml"
+    if pyproject_toml.is_file():
+        match = _PYPROJECT_REQUIRES_PYTHON_RE.search(
+            pyproject_toml.read_text(encoding="utf-8")
+        )
+        if match is not None:
+            return match.group("value")
+    return None
+
+
 def validate(repo_root: Path) -> list[str]:
     errors = []
     packages = load_manifest(repo_root)
@@ -186,6 +221,13 @@ def validate(repo_root: Path) -> list[str]:
         if not setup_py.is_file() and not pyproject_toml.is_file():
             errors.append(
                 f"package has neither setup.py nor pyproject.toml: {package.path}"
+            )
+        requires_python = package_requires_python(package_dir)
+        if requires_python != CANONICAL_REQUIRES_PYTHON:
+            errors.append(
+                f"{package.path}: requires Python "
+                f"{CANONICAL_REQUIRES_PYTHON}, got "
+                f"{requires_python or 'no requires-python metadata'}"
             )
         setup_extension_names = setup_extensions(package_dir, package)
         for native_extension in package.native_extensions:

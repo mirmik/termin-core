@@ -10,7 +10,7 @@ setup(
     description="Shared MCP helpers for Termin runtime processes",
     author="mirmik",
     author_email="mirmikns@yandex.ru",
-    python_requires=">=3.10",
+    python_requires=">=3.14",
     packages=["termin.mcp"],
     package_dir={"termin.mcp": "termin/mcp"},
     install_requires=[

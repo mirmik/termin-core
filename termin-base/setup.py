@@ -22,7 +22,7 @@ setup(
     description="Base types shared between termin libraries",
     author="mirmik",
     author_email="mirmikns@yandex.ru",
-    python_requires=">=3.8",
+    python_requires=">=3.14",
     packages=["tcbase", "termin.geombase", "termin.artifacts"],
     package_dir={
         "tcbase": "python/tcbase",

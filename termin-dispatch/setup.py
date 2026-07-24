@@ -20,7 +20,7 @@ setup(
     description="Language-neutral caller-driven deferred dispatcher",
     author="mirmik",
     author_email="mirmikns@yandex.ru",
-    python_requires=">=3.8",
+    python_requires=">=3.14",
     packages=["termin.dispatch"],
     package_dir={"termin.dispatch": "python/termin/dispatch"},
     install_requires=["termin-nanobind", "tcbase"],

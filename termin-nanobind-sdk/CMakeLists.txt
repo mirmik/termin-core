@@ -4,7 +4,9 @@ project(termin_nanobind_sdk VERSION 0.1.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-find_package(Python 3.10 COMPONENTS Interpreter Development.Module REQUIRED)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
+include(TerminPython)
+termin_require_canonical_python(Interpreter Development.Module)
 
 execute_process(
     COMMAND ${Python_EXECUTABLE} -c
@@ -30,19 +32,18 @@ endif()
 set(nanobind_DIR "${NANOBIND_PY_ROOT}/cmake")
 find_package(nanobind CONFIG REQUIRED)
 
-if(NB_FREE_THREADED)
-    set(TERMIN_NANOBIND_RUNTIME_NAME "nanobind-ft")
-    set(TERMIN_NANOBIND_PROFILE_FREE_THREADED 1)
-else()
-    set(TERMIN_NANOBIND_RUNTIME_NAME "nanobind")
-    set(TERMIN_NANOBIND_PROFILE_FREE_THREADED 0)
+if(NOT NB_FREE_THREADED)
+    message(FATAL_ERROR
+        "Canonical CPython 3.14t was selected but nanobind did not enable "
+        "its free-threaded ABI")
 endif()
+set(TERMIN_NANOBIND_RUNTIME_NAME "nanobind-ft")
 
 nanobind_build_library("${TERMIN_NANOBIND_RUNTIME_NAME}")
 set_target_properties("${TERMIN_NANOBIND_RUNTIME_NAME}" PROPERTIES
     EXCLUDE_FROM_ALL FALSE
     TERMIN_NANOBIND_PYTHON_SOABI "${Python_SOABI}"
-    TERMIN_NANOBIND_FREE_THREADED "${TERMIN_NANOBIND_PROFILE_FREE_THREADED}"
+    TERMIN_NANOBIND_FREE_THREADED 1
     EXPORT_PROPERTIES
         "TERMIN_NANOBIND_PYTHON_SOABI;TERMIN_NANOBIND_FREE_THREADED"
 )
@@ -75,16 +76,11 @@ install(TARGETS "${TERMIN_NANOBIND_RUNTIME_NAME}"
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-if(TERMIN_NANOBIND_PROFILE_FREE_THREADED)
-    set(_termin_nanobind_obsolete_runtime "nanobind")
-else()
-    set(_termin_nanobind_obsolete_runtime "nanobind-ft")
-endif()
 install(CODE
     "file(REMOVE
-        \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${_termin_nanobind_obsolete_runtime}${CMAKE_SHARED_LIBRARY_SUFFIX}\"
-        \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/${_termin_nanobind_obsolete_runtime}${CMAKE_SHARED_LIBRARY_SUFFIX}\"
-        \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/${_termin_nanobind_obsolete_runtime}${CMAKE_IMPORT_LIBRARY_SUFFIX}\"
+        \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/${CMAKE_SHARED_LIBRARY_PREFIX}nanobind${CMAKE_SHARED_LIBRARY_SUFFIX}\"
+        \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/nanobind${CMAKE_SHARED_LIBRARY_SUFFIX}\"
+        \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/nanobind${CMAKE_IMPORT_LIBRARY_SUFFIX}\"
     )"
 )
 install(EXPORT terminNanobindTargets

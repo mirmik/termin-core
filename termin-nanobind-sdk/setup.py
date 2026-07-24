@@ -4,9 +4,9 @@
 #
 # Ships only the `termin_nanobind` Python helpers (__init__.py + runtime.py
 # for SDK discovery and library preloading). The ABI-specific nanobind shared
-# library is NOT shipped here — build-sdk-bindings installs libnanobind.so or
-# libnanobind-ft.so into $TERMIN_SDK/lib, and preload_sdk_libs resolves the
-# logical "nanobind" request against the active interpreter ABI.
+# library is NOT shipped here — build-sdk-bindings installs libnanobind-ft.so
+# into $TERMIN_SDK/lib, and preload_sdk_libs resolves the logical "nanobind"
+# request only for the canonical free-threaded runtime.
 
 from setuptools import setup
 
@@ -17,7 +17,7 @@ setup(
     description="Runtime helpers for termin pip packages (SDK discovery, library preloading)",
     author="mirmik",
     author_email="mirmikns@yandex.ru",
-    python_requires=">=3.8",
+    python_requires=">=3.14",
     packages=["termin_nanobind"],
     package_dir={"termin_nanobind": "python/termin_nanobind"},
     zip_safe=False,

@@ -21,7 +21,7 @@ setup(
     description="Inspect/Kind system with Python bindings",
     author="mirmik",
     author_email="mirmikns@yandex.ru",
-    python_requires=">=3.8",
+    python_requires=">=3.14",
     packages=["termin.inspect"],
     package_dir={"termin.inspect": "python/termin/inspect"},
     install_requires=["tcbase", "termin-nanobind"],

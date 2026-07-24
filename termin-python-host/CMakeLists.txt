@@ -5,7 +5,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
+include(TerminPython)
+termin_require_canonical_python(Interpreter Development)
 
 add_library(termin_python_host SHARED
     src/python_host.cpp
@@ -23,7 +25,6 @@ target_include_directories(termin_python_host
 )
 target_link_libraries(termin_python_host PRIVATE Python::Python)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
 include(TerminRpath)
 termin_set_rpath_lib(termin_python_host)
 if(NOT WIN32)

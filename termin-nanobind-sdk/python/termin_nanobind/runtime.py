@@ -163,9 +163,12 @@ def _find_library(name, lib_dirs):
 def _abi_runtime_library_name(name):
     if name != "nanobind":
         return name
-    if sysconfig.get_config_var("Py_GIL_DISABLED"):
-        return "nanobind-ft"
-    return name
+    if not sysconfig.get_config_var("Py_GIL_DISABLED"):
+        raise ImportError(
+            "Termin native modules require the bundled free-threaded "
+            "CPython 3.14t runtime"
+        )
+    return "nanobind-ft"
 
 
 def preload_sdk_libs(*lib_names):

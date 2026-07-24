@@ -1726,6 +1726,7 @@ from .sdk_runtime_metadata import (
     write_python_runtime_manifest,
 )
 from .sdk_verification import (
+    verify_nanobind_extensions,
     verify_no_duplicate_libraries as verify_no_duplicate_libraries,
     verify_python_runtime_manifest as verify_python_runtime_manifest,
     verify_python_wheelhouse as verify_python_wheelhouse,
@@ -2078,6 +2079,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_parser.add_argument("--build-type", default="Release")
 
+    import_gate_parser = subparsers.add_parser(
+        "verify-python-import-graph",
+        help="Import the installed SDK graph and require the GIL to remain disabled.",
+    )
+    import_gate_parser.add_argument(
+        "--sdk-prefix",
+        type=Path,
+        default=None,
+        help="SDK install prefix. Defaults to SDK_PREFIX or ./sdk.",
+    )
+
     build_parser = subparsers.add_parser(
         "build",
         help="Build the full SDK through the existing stage scripts.",
@@ -2242,6 +2254,11 @@ def main(argv: list[str] | None = None) -> int:
         build_dir = _build_dir(repo_root, args.build_type)
         sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
         return verify_sdk(sdk_prefix=sdk_prefix, build_dir=build_dir)
+    if args.command == "verify-python-import-graph":
+        sdk_prefix = args.sdk_prefix or Path(
+            os.environ.get("SDK_PREFIX", str(repo_root / "sdk"))
+        )
+        return verify_nanobind_extensions(sdk_prefix.resolve())
     if args.command == "build":
         build_type = "Debug" if args.debug else "Release"
         stage_args = list(unknown_args)

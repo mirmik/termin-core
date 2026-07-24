@@ -45,26 +45,21 @@ list(GET _termin_nanobind_python_abi_fields 2
 set(_termin_nanobind_expected_python_version
     "@Python_VERSION_MAJOR@.@Python_VERSION_MINOR@")
 set(_termin_nanobind_expected_python_soabi "@Python_SOABI@")
-set(_termin_nanobind_expected_free_threaded
-    "@TERMIN_NANOBIND_PROFILE_FREE_THREADED@")
 if(NOT _termin_nanobind_python_version STREQUAL
        _termin_nanobind_expected_python_version
    OR NOT _termin_nanobind_python_soabi STREQUAL
        _termin_nanobind_expected_python_soabi
-   OR NOT _termin_nanobind_python_free_threaded STREQUAL
-       _termin_nanobind_expected_free_threaded)
+   OR NOT _termin_nanobind_python_free_threaded STREQUAL "1")
     message(FATAL_ERROR
         "termin-nanobind-sdk Python ABI mismatch: package expects "
         "${_termin_nanobind_expected_python_version}|"
         "${_termin_nanobind_expected_python_soabi}|"
-        "${_termin_nanobind_expected_free_threaded}, consumer selected "
+        "1, consumer selected "
         "${_termin_nanobind_python_abi}")
 endif()
 
 set(TERMIN_NANOBIND_RUNTIME_TARGET
     "nanobind::@TERMIN_NANOBIND_RUNTIME_NAME@")
-set(TERMIN_NANOBIND_PROFILE_FREE_THREADED
-    "@TERMIN_NANOBIND_PROFILE_FREE_THREADED@")
 include("${CMAKE_CURRENT_LIST_DIR}/termin-nanobind-profile.cmake")
 
 function(nanobind_build_library target_name)
