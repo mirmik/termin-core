@@ -11,7 +11,7 @@
 
 - Python package `termin_nanobind`.
 - Runtime SDK discovery and shared-library preload helpers in `python/termin_nanobind/`.
-- CMake package files for nanobind integration.
+- CMake package files for the canonical ordinary/free-threaded nanobind ABI.
 
 ## Публичный API
 
@@ -22,4 +22,5 @@ from termin_nanobind.runtime import preload_sdk_libs
 ```
 
 Most Termin packages call `preload_sdk_libs(...)` from their `__init__.py` to load SDK shared libraries before importing nanobind extensions.
-
+The logical library name `nanobind` resolves to `nanobind-ft` when the active
+interpreter reports `Py_GIL_DISABLED`.

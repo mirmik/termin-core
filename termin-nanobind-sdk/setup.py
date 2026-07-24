@@ -3,9 +3,10 @@
 # termin-nanobind-sdk: pure-Python pip package.
 #
 # Ships only the `termin_nanobind` Python helpers (__init__.py + runtime.py
-# for SDK discovery and library preloading). The libnanobind.so shared
-# library is NOT shipped here — it is built by build-sdk-bindings.sh into
-# $TERMIN_SDK/lib/libnanobind.so and resolved at runtime via preload_sdk_libs.
+# for SDK discovery and library preloading). The ABI-specific nanobind shared
+# library is NOT shipped here — build-sdk-bindings installs libnanobind.so or
+# libnanobind-ft.so into $TERMIN_SDK/lib, and preload_sdk_libs resolves the
+# logical "nanobind" request against the active interpreter ABI.
 
 from setuptools import setup
 

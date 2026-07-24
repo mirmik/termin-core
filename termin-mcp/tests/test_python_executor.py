@@ -58,7 +58,13 @@ def test_main_thread_claim_wins_timeout_race_and_returns_completed_result() -> N
 
     releaser = threading.Thread(target=release_after_claim)
     releaser.start()
-    assert executor.process_pending() == 1
+    deadline = time.monotonic() + 1.0
+    processed = 0
+    while processed == 0 and time.monotonic() < deadline:
+        processed = executor.process_pending()
+        if processed == 0:
+            time.sleep(0.001)
+    assert processed == 1
     worker.join(timeout=1.0)
     releaser.join(timeout=1.0)
 

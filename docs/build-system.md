@@ -407,7 +407,13 @@ C++ часть каждого модуля полностью самодоста
 
 Биндинги строятся через [nanobind](https://github.com/wjakob/nanobind). Каждый модуль может опционально собирать Python-расширение при `-DTERMIN_BUILD_PYTHON=ON`.
 
-В SDK build project-модули используют shared `libnanobind.so` (`NB_SHARED`), чтобы не собирать отдельный `nanobind-static` для каждого набора биндингов.
+В SDK build project-модули используют один shared nanobind runtime (`NB_SHARED`):
+`libnanobind.so` для обычного CPython или `libnanobind-ft.so` для
+free-threaded ABI. `termin-nanobind-sdk` определяет профиль по Python SOABI и
+централизованно добавляет `NB_FREE_THREADED` всем модулям. Установленный CMake
+package отвергает другой Python ABI и не позволяет собрать локальную вторую
+копию runtime. Финальная SDK verification импортирует весь manifest native
+extensions и проверяет, что ни один импорт не включил GIL.
 
 ```
 mylib/

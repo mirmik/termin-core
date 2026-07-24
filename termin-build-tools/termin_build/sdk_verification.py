@@ -191,7 +191,10 @@ def verify_sdk(
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result
-    return verify_sdk_python_launcher(sdk_prefix)
+    result = verify_sdk_python_launcher(sdk_prefix)
+    if result != 0:
+        return result
+    return verify_nanobind_extensions(sdk_prefix)
 
 
 def _hostile_python_environment(sdk_prefix: Path) -> dict[str, str]:
@@ -308,6 +311,161 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
         )
         return 1
     print("  OK: launcher ignores ambient Python paths and imports SDK packages")
+    return 0
+
+
+def verify_nanobind_extensions(sdk_prefix: Path) -> int:
+    print("Verifying: canonical nanobind ABI and native extension import graph")
+    try:
+        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+        artifact_manifest.require_kind(SDK_MANIFEST_KIND)
+        artifact_manifest.validate_all(
+            expected_python_abi=artifact_manifest.python_abi,
+        )
+    except (ArtifactManifestError, PythonAbiError) as error:
+        print(f"FAILED: cannot inspect nanobind artifacts: {error}", file=sys.stderr)
+        return 1
+
+    free_threaded = artifact_manifest.python_abi.free_threaded
+    runtime_stem = "nanobind-ft" if free_threaded else "nanobind"
+    obsolete_stem = "nanobind" if free_threaded else "nanobind-ft"
+    if _is_windows():
+        runtime_name = f"{runtime_stem}.dll"
+        obsolete_names = {
+            f"{obsolete_stem}.dll",
+            f"{obsolete_stem}.lib",
+        }
+    elif sys.platform == "darwin":
+        runtime_name = f"lib{runtime_stem}.dylib"
+        obsolete_names = {f"lib{obsolete_stem}.dylib"}
+    else:
+        runtime_name = f"lib{runtime_stem}.so"
+        obsolete_names = {f"lib{obsolete_stem}.so"}
+
+    runtime_candidates = [
+        sdk_prefix / "lib" / runtime_name,
+        sdk_prefix / "bin" / runtime_name,
+    ]
+    if not any(path.is_file() for path in runtime_candidates):
+        print(
+            f"FAILED: canonical nanobind runtime is missing: {runtime_name}",
+            file=sys.stderr,
+        )
+        return 1
+    obsolete = [
+        path
+        for directory in (sdk_prefix / "lib", sdk_prefix / "bin")
+        for name in obsolete_names
+        if (path := directory / name).is_file()
+    ]
+    if obsolete:
+        print(
+            "FAILED: incompatible nanobind runtime remains in SDK: "
+            + ", ".join(str(path) for path in obsolete),
+            file=sys.stderr,
+        )
+        return 1
+
+    extensions = []
+    runtime_paths = []
+    dependency_errors = []
+    for artifact in artifact_manifest.data["artifacts"]:
+        if artifact.get("kind") != "python-extension":
+            continue
+        extension = artifact.get("extension")
+        if not isinstance(extension, str) or not extension:
+            dependency_errors.append("python-extension artifact has no import name")
+            continue
+        dependencies = artifact.get("runtime_dependencies")
+        if not isinstance(dependencies, list):
+            dependency_errors.append(f"{extension} has invalid runtime dependencies")
+            continue
+        names = {
+            dependency.get("name")
+            for dependency in dependencies
+            if isinstance(dependency, dict)
+        }
+        if runtime_name not in names:
+            dependency_errors.append(
+                f"{extension} does not link the canonical {runtime_name}"
+            )
+        if names & obsolete_names:
+            dependency_errors.append(
+                f"{extension} links an incompatible nanobind runtime"
+            )
+        runtime_paths.extend(
+            str((sdk_prefix / str(dependency["path"])).resolve())
+            for dependency in dependencies
+            if isinstance(dependency, dict)
+            and isinstance(dependency.get("path"), str)
+        )
+        extensions.append(extension)
+    if dependency_errors:
+        for error in dependency_errors:
+            print(f"  {error}", file=sys.stderr)
+        print(
+            f"FAILED: {len(dependency_errors)} nanobind dependency error(s)",
+            file=sys.stderr,
+        )
+        return 1
+    if not extensions:
+        print("FAILED: SDK artifact manifest has no Python extensions", file=sys.stderr)
+        return 1
+
+    launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
+    launcher = sdk_prefix / "bin" / launcher_name
+    import_script = "\n".join(
+        (
+            "import ctypes, importlib, json, os, pathlib, sys",
+            f"names = {extensions!r}",
+            f"runtime_paths = {list(dict.fromkeys(runtime_paths))!r}",
+            f"free_threaded = {free_threaded!r}",
+            "loaded = []",
+            "gil_enablers = []",
+            "dll_handles = []",
+            "if sys.platform == 'win32':",
+            "    directories = {str(pathlib.Path(path).parent) for path in runtime_paths}",
+            "    dll_handles = [os.add_dll_directory(path) for path in directories]",
+            "else:",
+            "    pending = runtime_paths",
+            "    while pending:",
+            "        failed = []",
+            "        for path in pending:",
+            "            try:",
+            "                ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)",
+            "            except OSError as error:",
+            "                failed.append((path, str(error)))",
+            "        if len(failed) == len(pending):",
+            "            raise RuntimeError(f'cannot preload native dependencies: {failed}')",
+            "        pending = [path for path, _error in failed]",
+            "for name in names:",
+            "    importlib.import_module(name)",
+            "    loaded.append(name)",
+            "    if free_threaded and sys._is_gil_enabled():",
+            "        gil_enablers.append(name)",
+            "assert not gil_enablers, gil_enablers",
+            "print(json.dumps(loaded))",
+        )
+    )
+    result = subprocess.run(
+        [str(launcher), "-c", import_script],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=_hostile_python_environment(sdk_prefix),
+    )
+    if result.returncode != 0:
+        print(
+            "FAILED: native extension import graph smoke failed: "
+            + result.stderr.strip(),
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"  OK: {len(extensions)} native extensions use {runtime_name}; "
+        f"free-threaded={free_threaded}"
+    )
     return 0
 
 

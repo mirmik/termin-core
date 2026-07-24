@@ -134,9 +134,9 @@ if(TI_BUILD_PYTHON_BRIDGE)
         PUBLIC
             termin_inspect
         PRIVATE
-            nanobind
             Python::Python
     )
+    termin_nanobind_link_runtime(termin_inspect_python PUBLIC)
 endif()
 
 if(WIN32)
@@ -196,7 +196,10 @@ if(TI_BUILD_TESTS)
 
     if(TI_BUILD_PYTHON_BRIDGE)
         add_executable(termin_inspect_python_test tests/test_python_inspect.cpp)
-        target_link_libraries(termin_inspect_python_test PRIVATE termin_inspect_python Python::Python nanobind)
+        target_link_libraries(
+            termin_inspect_python_test
+            PRIVATE termin_inspect_python Python::Python
+        )
         target_include_directories(termin_inspect_python_test PRIVATE ${NB_DIR}/include)
         add_test(NAME termin_inspect_python_test COMMAND termin_inspect_python_test)
         termin_add_test_labels(termin_inspect_python_test

@@ -3,4 +3,8 @@
 include(CMakeFindDependencyMacro)
 find_dependency(termin_base REQUIRED)
 
+if("@TERMIN_BUILD_PYTHON@" STREQUAL "ON")
+    find_dependency(nanobind CONFIG REQUIRED)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/termin_inspectTargets.cmake")

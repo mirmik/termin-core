@@ -1,91 +1,79 @@
-include_guard(GLOBAL)
+if(NOT TARGET "nanobind::@TERMIN_NANOBIND_RUNTIME_NAME@")
+    include(
+        "${CMAKE_CURRENT_LIST_DIR}/../termin-nanobind/terminNanobindTargets.cmake"
+    )
+endif()
+
+# A native library may expose nanobind types in its public C++ API without
+# building a Python extension in the current CMake project. In that case the
+# imported runtime target is the complete dependency contract and requiring a
+# Python development installation would make unrelated C++ consumers fail.
+if(NOT TARGET Python::Interpreter OR NOT TARGET Python::Module)
+    return()
+endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../nanobind/cmake/nanobind-config.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/../termin-nanobind/terminNanobindTargets.cmake" OPTIONAL)
 
-if(NOT TARGET nanobind::nanobind)
-    set(_nanobind_root "${CMAKE_CURRENT_LIST_DIR}/../../nanobind")
-    set(_nanobind_lib_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
-
-    if(WIN32)
-        add_library(nanobind::nanobind SHARED IMPORTED GLOBAL)
-        set_target_properties(nanobind::nanobind PROPERTIES
-            IMPORTED_LOCATION "${_nanobind_lib_dir}/nanobind.dll"
-            IMPORTED_IMPLIB "${_nanobind_lib_dir}/nanobind.lib"
-            INTERFACE_COMPILE_DEFINITIONS "NB_SHARED"
-            INTERFACE_INCLUDE_DIRECTORIES "${_nanobind_root}/include;${_nanobind_root}/ext/robin_map/include"
-            INTERFACE_LINK_LIBRARIES "Python::Module"
-        )
-    else()
-        add_library(nanobind::nanobind SHARED IMPORTED GLOBAL)
-        set_target_properties(nanobind::nanobind PROPERTIES
-            IMPORTED_LOCATION "${_nanobind_lib_dir}/libnanobind.so"
-            INTERFACE_COMPILE_DEFINITIONS "NB_SHARED"
-            INTERFACE_INCLUDE_DIRECTORIES "${_nanobind_root}/include;${_nanobind_root}/ext/robin_map/include"
-            INTERFACE_LINK_LIBRARIES "Python::Module"
-        )
-    endif()
-endif()
-
-set_property(TARGET nanobind::nanobind APPEND PROPERTY
-    INTERFACE_LINK_LIBRARIES Python::Module
+execute_process(
+    COMMAND "${Python_EXECUTABLE}" -I -c
+        "import sys, sysconfig; print(f'{sys.version_info.major}.{sys.version_info.minor}|{sysconfig.get_config_var(\"SOABI\") or \"\"}|{int(bool(sysconfig.get_config_var(\"Py_GIL_DISABLED\") or 0))}')"
+    OUTPUT_VARIABLE _termin_nanobind_python_abi
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _termin_nanobind_python_abi_result
+    ERROR_VARIABLE _termin_nanobind_python_abi_error
 )
-
-if(NOT TARGET nanobind)
-    add_library(nanobind INTERFACE IMPORTED GLOBAL)
-    set_target_properties(nanobind PROPERTIES
-        INTERFACE_LINK_LIBRARIES nanobind::nanobind
-    )
+if(NOT _termin_nanobind_python_abi_result EQUAL 0)
+    message(FATAL_ERROR
+        "Failed to inspect consumer Python ABI for termin-nanobind-sdk: "
+        "${_termin_nanobind_python_abi_error}")
 endif()
+string(REPLACE "|" ";" _termin_nanobind_python_abi_fields
+    "${_termin_nanobind_python_abi}")
+list(LENGTH _termin_nanobind_python_abi_fields
+    _termin_nanobind_python_abi_field_count)
+if(NOT _termin_nanobind_python_abi_field_count EQUAL 3)
+    message(FATAL_ERROR
+        "Malformed consumer Python ABI probe: ${_termin_nanobind_python_abi}")
+endif()
+list(GET _termin_nanobind_python_abi_fields 0
+    _termin_nanobind_python_version)
+list(GET _termin_nanobind_python_abi_fields 1
+    _termin_nanobind_python_soabi)
+list(GET _termin_nanobind_python_abi_fields 2
+    _termin_nanobind_python_free_threaded)
+
+set(_termin_nanobind_expected_python_version
+    "@Python_VERSION_MAJOR@.@Python_VERSION_MINOR@")
+set(_termin_nanobind_expected_python_soabi "@Python_SOABI@")
+set(_termin_nanobind_expected_free_threaded
+    "@TERMIN_NANOBIND_PROFILE_FREE_THREADED@")
+if(NOT _termin_nanobind_python_version STREQUAL
+       _termin_nanobind_expected_python_version
+   OR NOT _termin_nanobind_python_soabi STREQUAL
+       _termin_nanobind_expected_python_soabi
+   OR NOT _termin_nanobind_python_free_threaded STREQUAL
+       _termin_nanobind_expected_free_threaded)
+    message(FATAL_ERROR
+        "termin-nanobind-sdk Python ABI mismatch: package expects "
+        "${_termin_nanobind_expected_python_version}|"
+        "${_termin_nanobind_expected_python_soabi}|"
+        "${_termin_nanobind_expected_free_threaded}, consumer selected "
+        "${_termin_nanobind_python_abi}")
+endif()
+
+set(TERMIN_NANOBIND_RUNTIME_TARGET
+    "nanobind::@TERMIN_NANOBIND_RUNTIME_NAME@")
+set(TERMIN_NANOBIND_PROFILE_FREE_THREADED
+    "@TERMIN_NANOBIND_PROFILE_FREE_THREADED@")
+include("${CMAKE_CURRENT_LIST_DIR}/termin-nanobind-profile.cmake")
 
 function(nanobind_build_library target_name)
-    if(TARGET ${target_name})
+    if(TARGET "${target_name}")
         return()
     endif()
-
-    if(NOT "${target_name}" STREQUAL "nanobind")
-        message(FATAL_ERROR
-            "termin-nanobind-sdk provides only the shared nanobind runtime "
-            "named 'nanobind'. Use nanobind_add_module(... NB_SHARED ...) "
-            "without NB_STATIC, STABLE_ABI, FREE_THREADED, or NB_DOMAIN.")
-    endif()
-
-    add_library(${target_name} INTERFACE IMPORTED GLOBAL)
-    set_target_properties(${target_name} PROPERTIES
-        INTERFACE_LINK_LIBRARIES nanobind::nanobind
-    )
-endfunction()
-
-function(nanobind_add_module name)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG
-        "STABLE_ABI;FREE_THREADED;NB_STATIC;NB_SHARED;PROTECT_STACK;LTO;NOMINSIZE;NOSTRIP;MUSL_DYNAMIC_LIBCPP;NB_SUPPRESS_WARNINGS"
-        "NB_DOMAIN" "")
-
-    if(ARG_NB_STATIC OR NOT ARG_NB_SHARED OR ARG_STABLE_ABI OR ARG_FREE_THREADED OR ARG_NB_DOMAIN)
-        message(FATAL_ERROR
-            "termin-nanobind-sdk supports only plain NB_SHARED modules. "
-            "Use nanobind_add_module(${name} NB_SHARED ...).")
-    endif()
-
-    add_library(${name} MODULE ${ARG_UNPARSED_ARGUMENTS})
-
-    nanobind_compile_options(${name})
-    nanobind_link_options(${name})
-    set_target_properties(${name} PROPERTIES LINKER_LANGUAGE CXX)
-    nanobind_extension(${name})
-    target_link_libraries(${name} PRIVATE nanobind::nanobind)
-
-    if(NOT ARG_PROTECT_STACK)
-        nanobind_disable_stack_protector(${name})
-    endif()
-    if(NOT ARG_NOMINSIZE)
-        nanobind_opt_size(${name})
-    endif()
-    if(NOT ARG_NOSTRIP)
-        nanobind_strip(${name})
-    endif()
-    if(ARG_LTO)
-        nanobind_lto(${name})
-    endif()
-    nanobind_set_visibility(${name})
+    message(FATAL_ERROR
+        "termin-nanobind-sdk owns the shared nanobind runtime "
+        "'${TERMIN_NANOBIND_RUNTIME_TARGET}'. Consumers must use "
+        "nanobind_add_module(... NB_SHARED ...) and cannot build "
+        "an additional runtime '${target_name}'.")
 endfunction()

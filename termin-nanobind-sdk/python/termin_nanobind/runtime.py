@@ -14,6 +14,7 @@ import ctypes
 import logging
 import os
 import sys
+import sysconfig
 from pathlib import Path
 
 _sdk_root = None
@@ -159,6 +160,14 @@ def _find_library(name, lib_dirs):
     return None
 
 
+def _abi_runtime_library_name(name):
+    if name != "nanobind":
+        return name
+    if sysconfig.get_config_var("Py_GIL_DISABLED"):
+        return "nanobind-ft"
+    return name
+
+
 def preload_sdk_libs(*lib_names):
     """Preload termin SDK shared libraries into the global symbol namespace.
 
@@ -188,15 +197,16 @@ def preload_sdk_libs(*lib_names):
         lib_dirs.append(sdk_lib_dir)
 
     for name in lib_names:
-        if name in _preloaded:
+        runtime_name = _abi_runtime_library_name(name)
+        if runtime_name in _preloaded:
             continue
-        found = _find_library(name, lib_dirs)
+        found = _find_library(runtime_name, lib_dirs)
         if found is None:
             searched = ", ".join(str(p) for p in lib_dirs) or "<none>"
             raise ImportError(
-                f"Cannot find lib{name}. Searched: {searched}. "
+                f"Cannot find lib{runtime_name}. Searched: {searched}. "
                 f"Install a package with bundled native libraries, rebuild the "
                 f"SDK, or check TERMIN_SDK points to a valid installation."
             )
         ctypes.CDLL(str(found), mode=ctypes.RTLD_GLOBAL)
-        _preloaded.add(name)
+        _preloaded.add(runtime_name)
