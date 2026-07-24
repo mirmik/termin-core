@@ -613,8 +613,12 @@ public:
             TC_RUNTIME_TYPE_FACET_INSPECT_FIELDS);
     }
 
+    const char* get_type_parent_symbol(const std::string& type_name) const {
+        return tc_runtime_type_registry_get_parent(type_name.c_str());
+    }
+
     std::string get_type_parent(const std::string& type_name) const {
-        const char* parent = tc_runtime_type_registry_get_parent(type_name.c_str());
+        const char* parent = get_type_parent_symbol(type_name);
         return parent ? std::string(parent) : std::string();
     }
 

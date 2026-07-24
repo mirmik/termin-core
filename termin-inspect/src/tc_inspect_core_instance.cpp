@@ -4,8 +4,6 @@
 #include "tc_inspect_cpp.hpp"
 #include "inspect/tc_kind_cpp.hpp"
 
-#include <string>
-
 #ifdef _WIN32
     #ifdef TERMIN_INSPECT_EXPORTS
         #define TC_INSPECT_INIT_API __declspec(dllexport)
@@ -32,9 +30,7 @@ static bool cpp_has_type(const char* type_name, void* ctx) {
 
 static const char* cpp_get_parent(const char* type_name, void* ctx) {
     (void)ctx;
-    static std::string parent;
-    parent = InspectRegistry::instance().get_type_parent(type_name);
-    return parent.empty() ? nullptr : parent.c_str();
+    return InspectRegistry::instance().get_type_parent_symbol(type_name);
 }
 
 static size_t cpp_field_count(const char* type_name, void* ctx) {

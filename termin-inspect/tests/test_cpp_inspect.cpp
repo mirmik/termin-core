@@ -1,5 +1,6 @@
 #include "tc_inspect_cpp.hpp"
 #include "inspect/tc_runtime_type_registry.h"
+#include <tcbase/tc_string.h>
 
 #include <algorithm>
 #include <any>
@@ -386,6 +387,11 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     CHECK_EQ(std::string(tc_runtime_type_registry_get_parent("RuntimeTypeDerivedProbe")), std::string("RuntimeTypeBaseProbe"));
     CHECK_EQ(inspect.owner_of("RuntimeTypeDerivedProbe"), std::string("runtime_type_probe_module"));
     CHECK_EQ(inspect.get_type_parent("RuntimeTypeDerivedProbe"), std::string("RuntimeTypeBaseProbe"));
+    const char* stable_parent = tc_inspect_get_base_type("RuntimeTypeDerivedProbe");
+    REQUIRE(stable_parent != nullptr);
+    CHECK(stable_parent == tc_intern_string("RuntimeTypeBaseProbe"));
+    CHECK(tc_inspect_get_base_type("RuntimeTypeBaseProbe") == nullptr);
+    CHECK_EQ(std::string(stable_parent), std::string("RuntimeTypeBaseProbe"));
     CHECK(inspect.find_field("RuntimeTypeDerivedProbe", "hp") != nullptr);
 
     CHECK_EQ(tc_runtime_type_registry_unregister_owner("runtime_type_probe_module"), 2u);

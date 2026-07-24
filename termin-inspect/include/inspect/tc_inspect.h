@@ -101,7 +101,8 @@ TC_API bool tc_inspect_has_type(const char* type_name);
 // Get which language owns this type (returns TC_INSPECT_LANG_COUNT if not found)
 TC_API tc_inspect_lang tc_inspect_type_lang(const char* type_name);
 
-// Get base type (returns NULL if no base)
+// Get the interned base type name (returns NULL if no base). The returned
+// pointer remains valid until the process-wide intern pool is cleaned up.
 TC_API const char* tc_inspect_get_base_type(const char* type_name);
 
 // ============================================================================

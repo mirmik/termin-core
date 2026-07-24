@@ -2,6 +2,7 @@
 
 #include <Python.h>
 #include <nanobind/nanobind.h>
+#include <tcbase/tc_string.h>
 
 #include <cstdio>
 #include <string>
@@ -174,6 +175,13 @@ obj = PyDerivedComponent()
                            "base component backend is Python")) return 1;
         if (!require_check(reg.get_type_backend("PyDerivedComponent") == tc::TypeBackend::Python,
                            "derived component backend is Python")) return 1;
+        const char* stable_parent = tc_inspect_get_base_type("PyDerivedComponent");
+        if (!require_check(stable_parent == tc_intern_string("PyBaseComponent"),
+                           "Python base type returns the interned parent symbol")) return 1;
+        if (!require_check(tc_inspect_get_base_type("PyBaseComponent") == nullptr,
+                           "Python root type has no parent")) return 1;
+        if (!require_check(std::string(stable_parent) == "PyBaseComponent",
+                           "Python parent symbol survives a subsequent query")) return 1;
         if (!require_check(reg.all_fields_count("PyDerivedComponent") == 4,
                            "derived component inherits and exposes all fields")) return 1;
         if (!require_check(reg.find_field("PyDerivedComponent", "base_value") != nullptr,
