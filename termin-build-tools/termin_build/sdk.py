@@ -1639,7 +1639,11 @@ def run_sdk_build(
     if dry_run:
         print("+ verify SDK duplicate libraries and stale artifacts")
     else:
-        result = verify_sdk(sdk_prefix, build_dir)
+        result = verify_sdk(
+            sdk_prefix,
+            build_dir,
+            wheelhouse_provenance=build_wheels,
+        )
         if result != 0:
             return result
 

@@ -162,7 +162,12 @@ def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
     return 0
 
 
-def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
+def verify_sdk(
+    sdk_prefix: Path,
+    build_dir: Path,
+    *,
+    wheelhouse_provenance: bool = True,
+) -> int:
     result = verify_no_duplicate_libraries(sdk_prefix)
     if result != 0:
         return result
@@ -172,9 +177,16 @@ def verify_sdk(sdk_prefix: Path, build_dir: Path) -> int:
     result = verify_python_runtime_manifest(sdk_prefix)
     if result != 0:
         return result
-    result = verify_python_wheelhouse(sdk_prefix)
-    if result != 0:
-        return result
+    if wheelhouse_provenance:
+        result = verify_python_wheelhouse(sdk_prefix)
+        if result != 0:
+            return result
+    else:
+        print("Verifying: SDK Python wheelhouse provenance")
+        print(
+            "  SKIP: build used --no-wheels; existing wheelhouse was not rebuilt "
+            "and remains unverified"
+        )
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result

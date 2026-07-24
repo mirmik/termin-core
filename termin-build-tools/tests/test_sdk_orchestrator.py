@@ -193,6 +193,44 @@ def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
     assert "build-sdk-csharp.sh" in output
 
 
+@pytest.mark.parametrize(
+    ("build_wheels", "expected_wheelhouse_provenance"),
+    [(False, False), (True, True)],
+)
+def test_sdk_build_verification_policy_follows_wheelhouse_stage(
+    tmp_path,
+    monkeypatch,
+    build_wheels,
+    expected_wheelhouse_provenance,
+):
+    interpreter = tmp_path / "python"
+    interpreter.write_text("", encoding="utf-8")
+    verification_policies = []
+
+    monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
+    monkeypatch.setattr(sdk, "_run", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(sdk, "install_python_packages", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(sdk, "build_wheelhouse", lambda *args, **kwargs: 0)
+
+    def verify_sdk(_sdk_prefix, _build_dir, *, wheelhouse_provenance):
+        verification_policies.append(wheelhouse_provenance)
+        return 0
+
+    monkeypatch.setattr(sdk, "verify_sdk", verify_sdk)
+
+    result = sdk.run_sdk_build(
+        repo_root=tmp_path,
+        build_type="Release",
+        stage_args=[],
+        build_wheels=build_wheels,
+        build_csharp=False,
+        dry_run=False,
+    )
+
+    assert result == 0
+    assert verification_policies == [expected_wheelhouse_provenance]
+
+
 def test_wheelhouse_arg_parser_keeps_stage_args_but_extracts_wheel_options(tmp_path):
     sdk_prefix = tmp_path / "sdk"
     build_dir = tmp_path / "build" / "Release"
