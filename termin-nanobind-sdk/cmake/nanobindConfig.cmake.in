@@ -12,6 +12,26 @@ if(NOT TARGET Python::Interpreter OR NOT TARGET Python::Module)
     return()
 endif()
 
+# nanobind persists interpreter-derived ABI values in the consumer's CMake
+# cache. Invalidate values left by an older SDK before loading upstream
+# nanobind, otherwise it can keep producing (for example) cp312-named
+# extensions while the selected runtime is already cp314t.
+set(_termin_nanobind_expected_python_version
+    "@Python_VERSION_MAJOR@.@Python_VERSION_MINOR@")
+set(_termin_nanobind_expected_python_soabi "@Python_SOABI@")
+if(DEFINED NB_SUFFIX)
+    string(FIND "${NB_SUFFIX}"
+        ".${_termin_nanobind_expected_python_soabi}"
+        _termin_nanobind_expected_suffix_index)
+    if(NOT _termin_nanobind_expected_suffix_index EQUAL 0)
+        unset(NB_SOABI CACHE)
+        unset(NB_SUFFIX CACHE)
+        unset(NB_SUFFIX_S CACHE)
+        unset(NB_ABI CACHE)
+        unset(NB_FREE_THREADED CACHE)
+    endif()
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/../../nanobind/cmake/nanobind-config.cmake")
 
 execute_process(
@@ -42,9 +62,6 @@ list(GET _termin_nanobind_python_abi_fields 1
 list(GET _termin_nanobind_python_abi_fields 2
     _termin_nanobind_python_free_threaded)
 
-set(_termin_nanobind_expected_python_version
-    "@Python_VERSION_MAJOR@.@Python_VERSION_MINOR@")
-set(_termin_nanobind_expected_python_soabi "@Python_SOABI@")
 if(NOT _termin_nanobind_python_version STREQUAL
        _termin_nanobind_expected_python_version
    OR NOT _termin_nanobind_python_soabi STREQUAL

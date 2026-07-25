@@ -40,10 +40,8 @@ def _copy_windows_python_runtime_executables(
     bin_dir.mkdir(parents=True, exist_ok=True)
 
     executable = Path(str(info.get("base_executable") or info.get("executable") or ""))
-    if executable.is_file():
-        shutil.copy2(executable, python_home / "python.exe")
 
-    runtime_roots = []
+    runtime_roots: list[Path] = []
     for key in ("base_prefix", "prefix"):
         value = str(info.get(key) or "")
         if value:
@@ -51,19 +49,89 @@ def _copy_windows_python_runtime_executables(
     if executable.is_file():
         runtime_roots.append(executable.parent)
 
-    seen: set[Path] = set()
+    launchers: dict[str, Path] = {}
+    runtime_libraries: dict[str, Path] = {}
     for root in runtime_roots:
         if not root.is_dir():
             continue
         for launcher in root.glob("python*.exe"):
-            shutil.copy2(launcher, python_home / launcher.name)
+            launchers.setdefault(launcher.name.lower(), launcher)
         for dll in root.glob("python*.dll"):
-            source = dll.resolve()
-            if source in seen:
-                continue
-            seen.add(source)
-            shutil.copy2(dll, bin_dir / dll.name)
-            shutil.copy2(dll, python_home / dll.name)
+            runtime_libraries.setdefault(dll.name.lower(), dll)
+
+    # Replace the runtime as one coherent ABI payload. Leaving python312.dll
+    # next to python314t.dll makes FindPython retain the obsolete runtime in an
+    # existing consumer cache even though the interpreter and import library
+    # have already moved to 3.14t.
+    desired_launcher_names = set(launchers)
+    if executable.is_file():
+        desired_launcher_names.add("python.exe")
+    desired_runtime_library_names = set(runtime_libraries)
+    for stale in python_home.glob("python*.exe"):
+        if stale.name.lower() not in desired_launcher_names:
+            stale.unlink()
+    for directory in (bin_dir, python_home):
+        for stale in directory.glob("python*.dll"):
+            if stale.name.lower() not in desired_runtime_library_names:
+                stale.unlink()
+
+    if executable.is_file():
+        shutil.copy2(executable, python_home / "python.exe")
+    for launcher in launchers.values():
+        shutil.copy2(launcher, python_home / launcher.name)
+    for dll in runtime_libraries.values():
+        shutil.copy2(dll, bin_dir / dll.name)
+        shutil.copy2(dll, python_home / dll.name)
+
+
+def _copy_windows_python_development_library(
+    sdk_prefix: Path,
+    info: dict[str, object],
+) -> Path | None:
+    if not _is_windows():
+        return None
+
+    runtime_library = Path(str(info.get("ldlibrary") or "")).name
+    if not runtime_library.lower().endswith(".dll"):
+        raise RuntimeError(
+            "bundled Windows Python does not report its runtime DLL; "
+            f"LDLIBRARY={runtime_library!r}"
+        )
+    import_library_name = f"{Path(runtime_library).stem}.lib"
+
+    source_dirs: list[Path] = []
+    for key in ("libdir", "base_prefix", "prefix"):
+        value = str(info.get(key) or "")
+        if not value:
+            continue
+        root = Path(value)
+        source_dirs.append(root if key == "libdir" else root / "libs")
+
+    source = next(
+        (
+            candidate
+            for source_dir in source_dirs
+            if source_dir.is_dir()
+            for candidate in (source_dir / import_library_name,)
+            if candidate.is_file()
+        ),
+        None,
+    )
+    if source is None:
+        rendered = ", ".join(str(path) for path in source_dirs) or "(none)"
+        raise RuntimeError(
+            f"Python development import library {import_library_name} was not "
+            f"found in the pinned Windows runtime; searched: {rendered}"
+        )
+
+    destination_dir = sdk_prefix / "lib"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / import_library_name
+    for stale in destination_dir.glob("python*.lib"):
+        if stale != destination:
+            stale.unlink()
+    shutil.copy2(source, destination)
+    return destination
 
 
 def _copy_linux_python_shared_library(
@@ -218,6 +286,7 @@ def ensure_bundled_python_runtime(
 
     if _is_windows():
         _copy_windows_python_runtime_executables(sdk_prefix, info)
+        _copy_windows_python_development_library(sdk_prefix, info)
         python_prefix = Path(str(info.get("base_prefix") or info.get("prefix", "")))
         for runtime_dir in ("DLLs", "tcl"):
             source = python_prefix / runtime_dir

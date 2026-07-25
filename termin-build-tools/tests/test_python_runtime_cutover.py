@@ -44,6 +44,14 @@ def test_toolchain_lock_is_the_only_runtime_identity() -> None:
     assert "^(cpython-|cp)314t" in cmake_contract
     assert "unset(NB_SUFFIX CACHE)" in cmake_contract
 
+    installed_nanobind_contract = (
+        REPO_ROOT / "termin-nanobind-sdk/cmake/nanobindConfig.cmake.in"
+    ).read_text(encoding="utf-8")
+    assert '".${_termin_nanobind_expected_python_soabi}"' in (
+        installed_nanobind_contract
+    )
+    assert "unset(NB_SUFFIX CACHE)" in installed_nanobind_contract
+
 
 def test_production_configuration_has_no_legacy_python_runtime() -> None:
     roots = [

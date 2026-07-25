@@ -39,6 +39,12 @@ free-threaded marker `t` в SOABI и изначально выключенный
 Root CMake build дополнительно требует ABI 3.14t и останавливается, если ему
 передан обычный cp314 либо старый Python.
 
+Установленный SDK содержит development artifacts того же ABI: заголовки в
+`sdk/include/python3.14t`, а на Windows — точную import library
+`sdk/lib/python314t.lib`. Поэтому standalone CMake-модули могут требовать
+компоненты FindPython `Development`, `Development.Module` и
+`Development.Embed`, не подмешивая host Python.
+
 CPython 3.14t является единственным Python runtime contract проекта. CMake не
 предоставляет переключатель на GIL-enabled профиль, все first-party Python
 packages объявляют `Requires-Python >=3.14`, а standalone editor build получает

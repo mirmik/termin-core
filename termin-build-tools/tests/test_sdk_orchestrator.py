@@ -801,6 +801,52 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
     assert preserved_package.read_text(encoding="utf-8") == "installed\n"
 
 
+def test_windows_bundled_python_runtime_copies_exact_development_import_library(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    (sdk_prefix / "lib").mkdir(parents=True)
+    (sdk_prefix / "lib" / "python312.lib").write_bytes(b"stale")
+    runtime_root = tmp_path / "runtime"
+    stdlib = runtime_root / "Lib"
+    include = runtime_root / "include"
+    libs = runtime_root / "libs"
+    stdlib.mkdir(parents=True)
+    include.mkdir()
+    libs.mkdir()
+    (stdlib / "os.py").write_text("", encoding="utf-8")
+    (include / "Python.h").write_text("/* fixture */\n", encoding="utf-8")
+    (libs / "python314t.lib").write_bytes(b"canonical")
+    (libs / "python3t.lib").write_bytes(b"stable-abi")
+
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_bundled_python, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk_bundled_python,
+        "_python_version_and_paths",
+        lambda _py_exec: {
+            "version": "3.14",
+            "stdlib": str(stdlib),
+            "include": str(include),
+            "platinclude": str(include),
+            "libdir": str(libs),
+            "base_prefix": str(runtime_root),
+            "prefix": str(runtime_root),
+            "ldlibrary": "python314t.dll",
+            "free_threaded": True,
+            "sitepackages": [],
+        },
+    )
+
+    bundled_py_dir = sdk.ensure_bundled_python_runtime(sdk_prefix)
+
+    assert bundled_py_dir == sdk_prefix / "python" / "Lib"
+    assert (sdk_prefix / "lib" / "python314t.lib").read_bytes() == b"canonical"
+    assert not (sdk_prefix / "lib" / "python312.lib").exists()
+    assert not (sdk_prefix / "lib" / "python3t.lib").exists()
+
+
 def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
     tmp_path,
     monkeypatch,
@@ -1366,7 +1412,10 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     installed_artifact.write_bytes(b"installed")
     (sdk_prefix / "lib").mkdir(exist_ok=True)
     (build_dir / "bin").mkdir(parents=True)
-    if not is_windows:
+    if is_windows:
+        (tmp_path / "unused").mkdir()
+        (tmp_path / "unused" / "python310.lib").write_bytes(b"import")
+    else:
         (sdk_prefix / "lib" / "libpython3.10.so").write_bytes(b"shared")
 
     calls = []
@@ -1385,6 +1434,7 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
             "py_gil_disabled": False,
             "stdlib": str(source_stdlib),
             "libdir": str(tmp_path / "unused"),
+            "ldlibrary": "python310.dll" if is_windows else "libpython3.10.so",
             "sitepackages": [],
         },
     )
@@ -2007,11 +2057,17 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     sdk_prefix = tmp_path / "sdk"
     host_python = tmp_path / "host-python"
     host_python.mkdir()
+    (sdk_prefix / "bin").mkdir(parents=True)
+    (sdk_prefix / "python").mkdir()
+    (sdk_prefix / "bin" / "python312.dll").write_text("stale", encoding="utf-8")
+    (sdk_prefix / "python" / "python312.dll").write_text("stale", encoding="utf-8")
+    (sdk_prefix / "python" / "python3.12.exe").write_text("stale", encoding="utf-8")
     (host_python / "python.exe").write_text("exe", encoding="utf-8")
     (host_python / "python3.14t.exe").write_text("exe", encoding="utf-8")
     (host_python / "pythonw.exe").write_text("exe", encoding="utf-8")
     (host_python / "pythonw3.14t.exe").write_text("exe", encoding="utf-8")
-    (host_python / "python312.dll").write_text("dll", encoding="utf-8")
+    (host_python / "python314t.dll").write_text("dll", encoding="utf-8")
+    (host_python / "python3t.dll").write_text("stable ABI", encoding="utf-8")
 
     monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: True)
     monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
@@ -2026,12 +2082,17 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
         },
     )
 
-    assert (sdk_prefix / "bin" / "python312.dll").is_file()
+    assert not (sdk_prefix / "bin" / "python312.dll").exists()
+    assert not (sdk_prefix / "python" / "python312.dll").exists()
+    assert not (sdk_prefix / "python" / "python3.12.exe").exists()
+    assert (sdk_prefix / "bin" / "python314t.dll").is_file()
+    assert (sdk_prefix / "bin" / "python3t.dll").is_file()
     assert (sdk_prefix / "python" / "python.exe").is_file()
     assert (sdk_prefix / "python" / "python3.14t.exe").is_file()
     assert (sdk_prefix / "python" / "pythonw.exe").is_file()
     assert (sdk_prefix / "python" / "pythonw3.14t.exe").is_file()
-    assert (sdk_prefix / "python" / "python312.dll").is_file()
+    assert (sdk_prefix / "python" / "python314t.dll").is_file()
+    assert (sdk_prefix / "python" / "python3t.dll").is_file()
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 
 
