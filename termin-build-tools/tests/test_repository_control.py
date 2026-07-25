@@ -850,6 +850,8 @@ def test_run_schedules_longest_historical_pytest_suite_first(
             "pr",
             "--platform",
             "linux",
+            "--pytest-jobs",
+            "1",
         ]
     )
 
