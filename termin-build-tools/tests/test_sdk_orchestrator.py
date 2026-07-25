@@ -11,6 +11,7 @@ from setuptools.config.pyprojecttoml import apply_configuration
 from termin_build import (
     artifact_manifest,
     sdk,
+    sdk_bundled_python,
     sdk_python_layout,
     sdk_runtime_metadata,
     sdk_verification,
@@ -680,10 +681,10 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
     (include / "Python.h").write_text("/* fixture */\n", encoding="utf-8")
     (libdir / "libpython3.10.so.1.0").write_bytes(b"shared")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
-    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_bundled_python, "_python_executable", lambda: "python")
     monkeypatch.setattr(
-        sdk,
+        sdk_bundled_python,
         "_python_version_and_paths",
         lambda _py_exec: {
             "version": "3.10",
@@ -726,6 +727,7 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
     (build_dir / "bin").mkdir(parents=True)
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk_runtime_metadata, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
@@ -791,7 +793,9 @@ def test_prepare_build_python_runtime_sanitizes_sdk_before_cmake(
     (host_libdir / "libpython3.10.so").write_bytes(b"shared")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_bundled_python, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
         "_python_version_and_paths",
@@ -801,6 +805,11 @@ def test_prepare_build_python_runtime_sanitizes_sdk_before_cmake(
             "libdir": str(host_libdir),
             "sitepackages": [],
         },
+    )
+    monkeypatch.setattr(
+        sdk_bundled_python,
+        "_python_version_and_paths",
+        sdk._python_version_and_paths,
     )
 
     result = sdk.prepare_build_python_runtime(sdk_prefix)
@@ -822,7 +831,9 @@ def test_prepare_build_python_runtime_creates_runtime_for_clean_sdk(
     (host_libdir / "libpython3.10.so").write_bytes(b"shared")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_bundled_python, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
         "_python_version_and_paths",
@@ -832,6 +843,11 @@ def test_prepare_build_python_runtime_creates_runtime_for_clean_sdk(
             "libdir": str(host_libdir),
             "sitepackages": [],
         },
+    )
+    monkeypatch.setattr(
+        sdk_bundled_python,
+        "_python_version_and_paths",
+        sdk._python_version_and_paths,
     )
 
     result = sdk.prepare_build_python_runtime(sdk_prefix)
@@ -856,7 +872,9 @@ def test_prepare_build_python_runtime_migrates_to_free_threaded_layout(
     (host_libdir / "libpython3.14t.so").write_bytes(b"shared")
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: False)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(sdk_bundled_python, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
         "_python_version_and_paths",
@@ -869,6 +887,11 @@ def test_prepare_build_python_runtime_migrates_to_free_threaded_layout(
             "libdir": str(host_libdir),
             "sitepackages": [],
         },
+    )
+    monkeypatch.setattr(
+        sdk_bundled_python,
+        "_python_version_and_paths",
+        sdk._python_version_and_paths,
     )
 
     result = sdk.prepare_build_python_runtime(sdk_prefix)
@@ -1244,6 +1267,7 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     calls = []
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: is_windows)
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: is_windows)
     monkeypatch.setattr(sdk_python_layout, "_is_windows", lambda: is_windows)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
     monkeypatch.setattr(
@@ -1835,7 +1859,7 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     (host_python / "pythonw.exe").write_text("exe", encoding="utf-8")
     (host_python / "python312.dll").write_text("dll", encoding="utf-8")
 
-    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: True)
     monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
 
     sdk._copy_windows_python_runtime_executables(

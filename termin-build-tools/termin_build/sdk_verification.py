@@ -179,10 +179,23 @@ def verify_sdk(
     *,
     wheelhouse_provenance: bool = True,
 ) -> int:
-    result = verify_no_duplicate_libraries(sdk_prefix)
+    result = verify_sdk_artifacts(sdk_prefix, build_dir)
     if result != 0:
         return result
-    result = verify_sdk_artifacts(sdk_prefix, build_dir)
+    return verify_relocated_sdk(
+        sdk_prefix,
+        wheelhouse_provenance=wheelhouse_provenance,
+    )
+
+
+def verify_relocated_sdk(
+    sdk_prefix: Path,
+    *,
+    wheelhouse_provenance: bool = True,
+) -> int:
+    """Verify a self-contained SDK tree without consulting its build tree."""
+
+    result = verify_no_duplicate_libraries(sdk_prefix)
     if result != 0:
         return result
     result = verify_python_runtime_manifest(sdk_prefix)
@@ -259,6 +272,7 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=hostile_env,
+        cwd=sdk_prefix,
     )
     if info_result.returncode != 0:
         print(
@@ -315,6 +329,7 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=hostile_env,
+        cwd=sdk_prefix,
     )
     if smoke_result.returncode != 0:
         print(
@@ -572,6 +587,7 @@ def _run_python_import_graph_probe(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=environment,
+        cwd=launcher.parent.parent,
     )
 
 
@@ -682,6 +698,7 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=_hostile_python_environment(sdk_root),
+        cwd=sdk_root,
     )
     if import_result.returncode != 0:
         print(
@@ -704,6 +721,7 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=_hostile_python_environment(sdk_root),
+            cwd=sdk_root,
         )
         if result.returncode != 0:
             print(
@@ -733,6 +751,7 @@ def verify_embedded_python_hosts(sdk_prefix: Path) -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=_hostile_python_environment(sdk_prefix),
+        cwd=sdk_prefix,
     )
     if result.returncode != 0:
         print(

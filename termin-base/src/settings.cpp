@@ -35,6 +35,20 @@ namespace
         return path;
     }
 
+    std::string app_settings_path(const std::string &app_name)
+    {
+#ifdef _WIN32
+        const char *config_root = std::getenv("APPDATA");
+        if (config_root && config_root[0])
+            return std::string(config_root) + "/" + app_name + "/settings.json";
+#else
+        const char *config_root = std::getenv("XDG_CONFIG_HOME");
+        if (config_root && config_root[0])
+            return std::string(config_root) + "/" + app_name + "/settings.json";
+#endif
+        return expand_home("~/.config/" + app_name + "/settings.json");
+    }
+
     void mkdir_p(const std::string &dir)
     {
         std::string accum;
@@ -94,7 +108,7 @@ namespace
 namespace tc
 {
     Settings::Settings(const std::string &app_name)
-        : _path(expand_home("~/.config/" + app_name + "/settings.json"))
+        : _path(app_settings_path(app_name))
     {
         _data.init(nos::trent_type::dict);
         load();

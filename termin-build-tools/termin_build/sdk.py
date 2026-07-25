@@ -10,9 +10,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from .artifact_manifest import (
     BUILD_MANIFEST_KIND,
@@ -30,9 +28,23 @@ from .application_payload import (
 from .package_manifest import PackageEntry, load_manifest, repo_root_from
 from .python_abi import PythonAbiError, PythonAbiIdentity
 from .python_toolchain import PythonToolchainError, ensure_python_toolchain
+from .sdk_bundled_python import (
+    _copy_python_development_headers,
+    _copy_windows_python_runtime_executables as _copy_windows_python_runtime_executables,
+    _ensure_linux_python_shared_library,
+    _remove_incompatible_bundled_python_runtimes,
+    _remove_linux_python_config_artifacts,
+    ensure_bundled_python_cli,
+    ensure_bundled_python_runtime,
+)
+from .sdk_doctor import (
+    PROFILES,
+    DoctorProfile as DoctorProfile,
+    ensure_submodules,
+    missing_submodules,
+    profile_submodules,
+)
 from .sdk_python_layout import (
-    _bundled_python_dir_name,
-    _copy_tree_contents,
     _find_bundled_python_dir,
     _is_windows,
     _python_executable,
@@ -51,106 +63,6 @@ from .wheelhouse import (
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
 SDK_BUILD_REQUIREMENTS_RELATIVE = Path("build-system/python-sdk-build-requirements.txt")
 
-
-EXPECTED_SUBMODULE_FILES = {
-    "termin-thirdparty/manifold": ("CMakeLists.txt",),
-    "termin-thirdparty/clipper2": ("CPP/CMakeLists.txt",),
-    "termin-thirdparty/guard": ("guard_c.h", "guard_main.h"),
-    "termin-thirdparty/zlib": ("CMakeLists.txt", "zlib.h"),
-    "termin-thirdparty/libpng": ("CMakeLists.txt", "png.h"),
-    "termin-thirdparty/libjpeg-turbo": ("CMakeLists.txt", "src/jpeglib.h"),
-    "termin-thirdparty/libwebp": ("CMakeLists.txt", "src/webp/decode.h"),
-    "termin-thirdparty/libogg": ("CMakeLists.txt", "include/ogg/ogg.h"),
-    "termin-thirdparty/libvorbis": ("CMakeLists.txt", "include/vorbis/vorbisfile.h"),
-    "termin-thirdparty/vulkan-memory-allocator": ("include/vk_mem_alloc.h",),
-    "termin-thirdparty/openxr-sdk": ("include/openxr/openxr.h",),
-    "termin-thirdparty/recastnavigation": (
-        "Recast/CMakeLists.txt",
-        "Detour/CMakeLists.txt",
-    ),
-}
-
-
-@dataclass(frozen=True)
-class DoctorProfile:
-    name: str
-    submodules: tuple[str, ...]
-    needs_cmake: bool = True
-    needs_git: bool = True
-    needs_nanobind: bool = False
-    needs_pip: bool = False
-    needs_copy_backend: bool = False
-    needs_sdk_writable: bool = False
-
-
-PROFILES = {
-    "sdk": DoctorProfile(
-        name="sdk",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
-        needs_nanobind=True,
-        needs_pip=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "sdk-cpp": DoctorProfile(
-        name="sdk-cpp",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
-        needs_sdk_writable=True,
-    ),
-    "sdk-bindings": DoctorProfile(
-        name="sdk-bindings",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
-        needs_nanobind=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "cpp-tests": DoctorProfile(
-        name="cpp-tests",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/guard",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
-    ),
-}
-
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
     # Pillow used to be a runtime image dependency. termin-image now owns image
     # decoding, but existing SDK trees may still contain the old package.
@@ -163,66 +75,6 @@ LEGACY_SOURCE_NATIVE_ARTIFACTS = {
     # removed after the binding was split into package-owned modules.
     "termin-app": ("termin/_native",),
 }
-
-
-def _normalize_path(path: str) -> str:
-    return path.replace("\\", "/")
-
-
-def _submodule_ready(repo_root: Path, relative_path: str) -> bool:
-    full_path = repo_root / relative_path
-    if not full_path.is_dir():
-        return False
-    expected_files = EXPECTED_SUBMODULE_FILES.get(relative_path)
-    if expected_files:
-        return all((full_path / expected).exists() for expected in expected_files)
-    try:
-        next(full_path.iterdir())
-    except StopIteration:
-        return False
-    return True
-
-
-def missing_submodules(repo_root: Path, paths: list[str]) -> list[str]:
-    normalized = []
-    seen = set()
-    for path in paths:
-        normalized_path = _normalize_path(path)
-        if normalized_path in seen:
-            continue
-        seen.add(normalized_path)
-        normalized.append(normalized_path)
-    return [
-        path for path in normalized
-        if not _submodule_ready(repo_root, path)
-    ]
-
-
-def ensure_submodules(repo_root: Path, paths: list[str]) -> int:
-    missing = missing_submodules(repo_root, paths)
-    if not missing:
-        return 0
-    if shutil.which("git") is None:
-        print("ERROR: required git submodules are missing and git was not found:", file=sys.stderr)
-        for path in missing:
-            print(f"  - {path}", file=sys.stderr)
-        return 1
-    print("Initializing missing third-party submodules:")
-    for path in missing:
-        print(f"  - {path}")
-    result = subprocess.run(
-        ["git", "-C", str(repo_root), "submodule", "update", "--init", "--recursive", "--", *missing],
-        check=False,
-    )
-    if result.returncode != 0:
-        return result.returncode
-    still_missing = missing_submodules(repo_root, missing)
-    if still_missing:
-        print("ERROR: required git submodules are still missing after initialization:", file=sys.stderr)
-        for path in still_missing:
-            print(f"  - {path}", file=sys.stderr)
-        return 1
-    return 0
 
 
 def _tool_error(tool: str) -> str | None:
@@ -300,218 +152,6 @@ def _stage_script(repo_root: Path, basename: str) -> list[str]:
     return [str(repo_root / f"{basename}.sh")]
 
 
-def _copy_windows_python_runtime_executables(sdk_prefix: Path, info: dict[str, object]) -> None:
-    if not _is_windows():
-        return
-
-    python_home = sdk_prefix / "python"
-    bin_dir = sdk_prefix / "bin"
-    python_home.mkdir(parents=True, exist_ok=True)
-    bin_dir.mkdir(parents=True, exist_ok=True)
-
-    executable = Path(str(info.get("base_executable") or info.get("executable") or ""))
-    if executable.is_file():
-        shutil.copy2(executable, python_home / "python.exe")
-        pythonw = executable.with_name("pythonw.exe")
-        if pythonw.is_file():
-            shutil.copy2(pythonw, python_home / "pythonw.exe")
-
-    dll_roots = []
-    for key in ("base_prefix", "prefix"):
-        value = str(info.get(key) or "")
-        if value:
-            dll_roots.append(Path(value))
-    if executable.is_file():
-        dll_roots.append(executable.parent)
-
-    seen: set[Path] = set()
-    for root in dll_roots:
-        if not root.is_dir():
-            continue
-        for dll in root.glob("python*.dll"):
-            source = dll.resolve()
-            if source in seen:
-                continue
-            seen.add(source)
-            # sdk/bin keeps embedded hosts linked to Python::Python working.
-            # sdk/python keeps the bundled command-line python.exe self-contained.
-            shutil.copy2(dll, bin_dir / dll.name)
-            shutil.copy2(dll, python_home / dll.name)
-
-
-def _copy_linux_python_shared_library(sdk_prefix: Path, info: dict[str, object]) -> list[Path]:
-    if _is_windows():
-        return []
-
-    version = str(info["version"])
-    libdir = Path(str(info["libdir"])) if info.get("libdir") else None
-    if libdir is None:
-        return []
-
-    copied: list[Path] = []
-    target_dir = sdk_prefix / "lib"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    for libpython in libdir.glob(f"libpython{version}*.so*"):
-        target = target_dir / libpython.name
-        shutil.copy2(libpython, target)
-        copied.append(target)
-    return copied
-
-
-def _remove_linux_python_config_artifacts(bundled_py_dir: Path) -> None:
-    if _is_windows():
-        return
-
-    for config_dir in bundled_py_dir.glob("config-*"):
-        if config_dir.is_dir():
-            shutil.rmtree(config_dir)
-
-
-def _ensure_linux_python_shared_library(sdk_prefix: Path, info: dict[str, object]) -> None:
-    if _is_windows():
-        return
-
-    version = str(info["version"])
-    lib_dir = sdk_prefix / "lib"
-    if list(lib_dir.glob(f"libpython{version}*.so*")):
-        return
-
-    copied = _copy_linux_python_shared_library(sdk_prefix, info)
-    if copied:
-        return
-
-    raise RuntimeError(
-        f"shared libpython{version} was not found for bundled SDK Python; "
-        "native stdlib modules such as _ctypes require a shared libpython in sdk/lib"
-    )
-
-
-def _copy_python_development_headers(
-    sdk_prefix: Path,
-    info: dict[str, object],
-) -> Path | None:
-    source_values = {
-        str(info.get("include") or ""),
-        str(info.get("platinclude") or ""),
-    }
-    sources = [Path(value) for value in source_values if value]
-    sources = [source for source in sources if source.is_dir()]
-    if not sources:
-        return None
-
-    version = str(info["version"])
-    suffix = "t" if bool(info.get("free_threaded", False)) else ""
-    destination = sdk_prefix / "include" / f"python{version}{suffix}"
-    destination.mkdir(parents=True, exist_ok=True)
-    for source in sources:
-        shutil.copytree(source, destination, dirs_exist_ok=True)
-    return destination
-
-
-def ensure_bundled_python_cli(
-    sdk_prefix: Path,
-    *,
-    python_executable: Path | None = None,
-) -> None:
-    if not _is_windows():
-        return
-    py_exec = (
-        str(python_executable)
-        if python_executable is not None
-        else _python_executable()
-    )
-    _copy_windows_python_runtime_executables(
-        sdk_prefix,
-        _python_version_and_paths(py_exec),
-    )
-
-
-def _remove_incompatible_bundled_python_runtimes(
-    sdk_prefix: Path,
-    info: Mapping[str, object],
-) -> None:
-    if _is_windows():
-        return
-    lib_dir = sdk_prefix / "lib"
-    expected_name = _bundled_python_dir_name(
-        str(info["version"]),
-        free_threaded=bool(info.get("free_threaded", False)),
-    )
-    for candidate in sorted(lib_dir.glob("python3.*")):
-        if not candidate.is_dir() or candidate.name == expected_name:
-            continue
-        print(
-            "Removing incompatible bundled Python runtime during ABI migration: "
-            f"{candidate}"
-        )
-        shutil.rmtree(candidate)
-
-
-def ensure_bundled_python_runtime(
-    sdk_prefix: Path,
-    *,
-    python_executable: Path | None = None,
-) -> Path:
-    py_exec = (
-        str(python_executable)
-        if python_executable is not None
-        else _python_executable()
-    )
-    info = _python_version_and_paths(py_exec)
-    version = str(info["version"])
-    stdlib = Path(str(info["stdlib"]))
-
-    if not stdlib.is_dir():
-        raise RuntimeError(f"Python stdlib not found: {stdlib}")
-
-    if _is_windows():
-        bundled_py_dir = sdk_prefix / "python" / "Lib"
-    else:
-        bundled_py_dir = sdk_prefix / "lib" / _bundled_python_dir_name(
-            version,
-            free_threaded=bool(info.get("free_threaded", False)),
-        )
-    bundled_site_packages = bundled_py_dir / "site-packages"
-    if _is_windows():
-        (sdk_prefix / "bin").mkdir(parents=True, exist_ok=True)
-        (sdk_prefix / "python").mkdir(parents=True, exist_ok=True)
-    else:
-        (sdk_prefix / "lib").mkdir(parents=True, exist_ok=True)
-    bundled_site_packages.mkdir(parents=True, exist_ok=True)
-
-    if _is_windows():
-        _copy_windows_python_runtime_executables(sdk_prefix, info)
-        python_prefix = Path(str(info.get("base_prefix") or info.get("prefix", "")))
-        for runtime_dir in ("DLLs", "tcl"):
-            source = python_prefix / runtime_dir
-            if source.is_dir():
-                shutil.copytree(
-                    source,
-                    sdk_prefix / "python" / runtime_dir,
-                    dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-                )
-    else:
-        _ensure_linux_python_shared_library(sdk_prefix, info)
-    _copy_python_development_headers(sdk_prefix, info)
-
-    _copy_tree_contents(
-        stdlib,
-        bundled_py_dir,
-        {
-            "test",
-            "tests",
-            "idle_test",
-            "turtledemo",
-            "lib2to3",
-            "site-packages",
-        },
-    )
-    _remove_linux_python_config_artifacts(bundled_py_dir)
-
-    return bundled_py_dir
-
-
 def _nanobind_error() -> str | None:
     try:
         import nanobind  # noqa: F401
@@ -528,13 +168,6 @@ def _pip_cache_warning() -> str | None:
     if parent.exists() and not os.access(parent, os.W_OK):
         return f"pip cache parent is not writable and pip may disable cache: {parent}"
     return None
-
-
-def _profile_submodules(profile: DoctorProfile, vulkan: str) -> list[str]:
-    paths = list(profile.submodules)
-    if vulkan == "ON":
-        paths.append("termin-thirdparty/vulkan-memory-allocator")
-    return paths
 
 
 def _artifact_roots(build_dir: Path) -> list[Path]:
@@ -1970,7 +1603,7 @@ def doctor(
     if warning:
         warnings.append(warning)
 
-    required_submodules = _profile_submodules(profile, vulkan)
+    required_submodules = profile_submodules(profile, vulkan)
     missing = missing_submodules(repo_root, required_submodules)
     if missing and init_submodules:
         result = ensure_submodules(repo_root, required_submodules)

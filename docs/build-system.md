@@ -462,11 +462,12 @@ mylib/
 
 > Проверенное SDK install tree является единственным editor/launcher runtime
 > artifact. `termin-app` — application product с внутренним Python payload, а
-> не самостоятельный library wheel. Wheel и distribution metadata удалены;
-> оставшийся host-derived standalone packager вынесен в последующую #681. См.
+> не самостоятельный library wheel. Wheel, distribution metadata и отдельный
+> host-derived standalone packager удалены в #680/#681. См.
 > [протокол совета](architecture-council/2026-07-19-termin-app-product-boundary.md).
 
-Launcher и editor — это C++ исполняемые файлы, которые встраивают Python-интерпретатор. При сборке с `BUNDLE_PYTHON=ON` в SDK копируется:
+Launcher и editor — это C++ исполняемые файлы, которые встраивают
+Python-интерпретатор. SDK orchestration устанавливает в единое SDK tree:
 - Python stdlib (`python/Lib/` на Windows, `lib/python3.14t/` на Linux)
 - Внешние pip-пакеты в `python/Lib/site-packages/` на Windows или
   `lib/pythonX.Y/site-packages/` на Linux
@@ -483,8 +484,13 @@ wheelhouse, затем устанавливает editor payload по отдел
 Library distributions проверяются через `python-runtime-manifest.json`, а
 editor payload — через `application-python-payloads.json`. Копирование из
 ambient host `site-packages` запрещено. Отдельный top-level `termin-app`
-standalone path пока всё ещё читает host `sys.prefix`; этот legacy path
-подлежит удалению в #681.
+Отдельного `termin-app` install tree больше нет. Cross-platform
+`scripts/smoke-relocated-sdk` и `scripts/smoke-relocated-sdk.ps1` копируют SDK
+в новый root и запускают общую manifest/runtime verification. Bundled
+`termin_python`, `termin_player`, `termin_editor` и `termin_launcher`
+проверяются из relocated tree с hostile `PYTHONHOME`, `PYTHONPATH`, user site и
+рабочей директорией вне checkout. Это editor SDK smoke; desktop project bundle
+остаётся отдельным product contract.
 
 Нижележащие library packages продолжают собираться отдельными wheels. В
 частности, graphics/display/GUI subset должен устанавливаться из `sdk/wheels`

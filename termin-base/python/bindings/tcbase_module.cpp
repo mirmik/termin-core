@@ -255,7 +255,7 @@ NB_MODULE(_tcbase_native, m) {
     // Settings
     nb::class_<tc::Settings>(m, "Settings", "Persistent JSON-based settings")
         .def(nb::init<const std::string &>(), nb::arg("app_name"),
-             "Create settings for app (~/.config/{app_name}/settings.json)")
+             "Create settings in the platform user configuration root")
         .def("__init__", [](tc::Settings *self, const std::string &path, bool explicit_path) {
             new (self) tc::Settings(path, explicit_path);
         }, nb::arg("path"), nb::arg("explicit_path"),

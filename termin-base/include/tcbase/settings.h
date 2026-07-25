@@ -16,7 +16,7 @@ namespace tc
         std::vector<std::string> _group_stack;
 
     public:
-        /// Construct with app name -> ~/.config/{app_name}/settings.json
+        /// Construct with app name in the platform user configuration root.
         explicit Settings(const std::string &app_name);
 
         /// Construct with explicit file path
