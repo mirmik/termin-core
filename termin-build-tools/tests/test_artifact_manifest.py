@@ -10,6 +10,7 @@ from termin_build import artifact_manifest
 from termin_build.artifact_manifest import ArtifactManifestError
 from termin_build.cmake_ext import TerminCMakeBuildExt
 from termin_build import sdk_verification
+from termin_build.local_wheel_artifacts import write_local_wheel_manifest
 from termin_build.python_abi import PythonAbiIdentity
 
 
@@ -290,6 +291,11 @@ def test_wheelhouse_verification_rejects_stale_version_and_payload(
         version=version,
         payload_name=binary.name,
         payload=b"native",
+    )
+    write_local_wheel_manifest(
+        wheel_dir,
+        sdk_prefix=sdk_root,
+        expected_wheel_count=1,
     )
     assert sdk_verification.verify_python_wheelhouse(sdk_root) == 0
 

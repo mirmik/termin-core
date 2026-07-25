@@ -10,7 +10,8 @@
 1. **C/C++ библиотеки + Python bindings** — shared libraries, заголовки, CMake config, nanobind-модули и Python-исходники
 2. **C# bindings** — на Windows включены по умолчанию, на Linux включаются флагом `--csharp` и требуют SWIG и `dotnet`; Linux-сборка содержит только `Termin.Native`, без WPF
 3. **Bundled Python site-packages** — установка Python-пакетов в bundled runtime SDK
-4. **SDK Python wheelhouse** — сборка `sdk/wheels` (отключается через `--no-wheels`)
+4. **SDK Python wheelhouse** — атомарная публикация в `sdk/wheels` того же
+   проверенного набора wheels, из которого Stage 3 установила bundled runtime
 
 Внутри root build зависимости между модулями выражены CMake targets. Для standalone-сборок модулей остаётся путь через `find_package()` и `CMAKE_PREFIX_PATH=sdk/`.
 
@@ -71,30 +72,22 @@ TERMIN_PYTHON_TOOLCHAIN_OFFLINE=1 \
 ./build-sdk.sh --sdl
 ```
 
-Если wheelhouse `sdk/wheels` не нужен для текущей итерации, его сборку можно
-отключить:
-
-```bash
-./build-sdk.sh --sdl --no-wheels
-```
-
-В этом режиме существующий `sdk/wheels` остаётся нетронутым, но его provenance
-явно исключается из финальной проверки, поскольку wheelhouse не был продуктом
-текущей сборки. В логе verification это отмечается как `SKIP` и wheelhouse
-считается непроверенным. Все остальные проверки SDK выполняются как обычно.
-Обычная сборка без `--no-wheels` и отдельная команда `verify-sdk` продолжают
-строго отвергать stale или смешанный wheelhouse.
+First-party wheels собираются ровно один раз за полный проход. Результат
+снабжается manifest с `native_build_id`, Python ABI и SHA-256 каждого wheel,
+устанавливается в bundled runtime, а затем без повторного PEP 517 build
+публикуется в `sdk/wheels`. Финальная проверка отвергает отсутствующий,
+устаревший, повреждённый или смешанный набор.
 
 Чтобы дополнительно собрать cross-platform C# bindings на Linux:
 
 ```bash
-./build-sdk.sh --sdl --no-wheels --csharp
+./build-sdk.sh --sdl --csharp
 ```
 
 Для WPF/C# D3D11-профиля SDK собирается без SDL, Vulkan и legacy OpenGL. После C++ SDK стадии C# слой нужно собрать в Windows-only plot profile, чтобы в `sdk/csharp` попали только tcplot/WPF runtime DLL и D3D11 shader artifacts:
 
 ```powershell
-.\build-sdk.ps1 --no-sdl --no-vulkan --no-opengl --no-wheels
+.\build-sdk.ps1 --no-sdl --no-vulkan --no-opengl
 .\build-sdk-csharp.ps1 --plot-d3d11 --no-sdl --no-vulkan --no-opengl
 ```
 

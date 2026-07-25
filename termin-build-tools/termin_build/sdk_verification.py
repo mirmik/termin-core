@@ -21,6 +21,10 @@ from .application_payload import (
     INSTALLED_MANIFEST_NAME as APPLICATION_PAYLOAD_MANIFEST_NAME,
     INSTALLED_SCHEMA as APPLICATION_PAYLOAD_MANIFEST_SCHEMA,
 )
+from .local_wheel_artifacts import (
+    LocalWheelArtifactError,
+    validate_local_wheel_artifact_set,
+)
 from .sdk_runtime_metadata import (
     RUNTIME_MANIFEST_NAME,
     RUNTIME_MANIFEST_SCHEMA,
@@ -176,22 +180,15 @@ def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
 def verify_sdk(
     sdk_prefix: Path,
     build_dir: Path,
-    *,
-    wheelhouse_provenance: bool = True,
 ) -> int:
     result = verify_sdk_artifacts(sdk_prefix, build_dir)
     if result != 0:
         return result
-    return verify_relocated_sdk(
-        sdk_prefix,
-        wheelhouse_provenance=wheelhouse_provenance,
-    )
+    return verify_relocated_sdk(sdk_prefix)
 
 
 def verify_relocated_sdk(
     sdk_prefix: Path,
-    *,
-    wheelhouse_provenance: bool = True,
 ) -> int:
     """Verify a self-contained SDK tree without consulting its build tree."""
 
@@ -201,16 +198,9 @@ def verify_relocated_sdk(
     result = verify_python_runtime_manifest(sdk_prefix)
     if result != 0:
         return result
-    if wheelhouse_provenance:
-        result = verify_python_wheelhouse(sdk_prefix)
-        if result != 0:
-            return result
-    else:
-        print("Verifying: SDK Python wheelhouse provenance")
-        print(
-            "  SKIP: build used --no-wheels; existing wheelhouse was not rebuilt "
-            "and remains unverified"
-        )
+    result = verify_python_wheelhouse(sdk_prefix)
+    if result != 0:
+        return result
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result
@@ -966,9 +956,13 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
     wheel_dir = sdk_prefix / "wheels"
     print("Verifying: SDK Python wheelhouse provenance")
     if not wheel_dir.is_dir():
-        print("  SKIP: public SDK wheelhouse is not present")
-        return 0
+        print("FAILED: public SDK wheelhouse is not present", file=sys.stderr)
+        return 1
     try:
+        validate_local_wheel_artifact_set(
+            wheel_dir,
+            sdk_prefix=sdk_prefix,
+        )
         runtime_manifest = json.loads(
             (sdk_prefix / RUNTIME_MANIFEST_NAME).read_text(encoding="utf-8")
         )
@@ -987,6 +981,7 @@ def verify_python_wheelhouse(sdk_prefix: Path) -> int:
         )
     except (
         ArtifactManifestError,
+        LocalWheelArtifactError,
         PythonAbiError,
         OSError,
         RuntimeError,

@@ -26,6 +26,12 @@ from .application_payload import (
     load_application_payloads,
 )
 from .package_manifest import PackageEntry, load_manifest, repo_root_from
+from .local_wheel_artifacts import (
+    LocalWheelArtifactError,
+    build_local_wheel_artifact_set,
+    publish_local_wheel_artifact_set,
+    validate_local_wheel_artifact_set,
+)
 from .python_abi import PythonAbiError, PythonAbiIdentity
 from .python_toolchain import PythonToolchainError, ensure_python_toolchain
 from .sdk_bundled_python import (
@@ -530,7 +536,6 @@ def install_python_packages(
         termin_sdk=termin_sdk,
         bindings_dir=bindings_dir,
         wheel_dir=local_wheels,
-        force=True,
         build_python=build_python,
     )
     if result != 0:
@@ -541,6 +546,7 @@ def install_python_packages(
         external_wheels=external_wheels,
         local_wheels=local_wheels,
         build_python=build_python,
+        sdk_prefix=sdk_prefix,
     )
     if result != 0:
         return result
@@ -790,6 +796,7 @@ def _install_prepared_runtime_wheels(
     external_wheels: Path,
     local_wheels: Path,
     build_python: Path,
+    sdk_prefix: Path,
 ) -> int:
     try:
         runtime_lock = _load_runtime_lock(repo_root)
@@ -803,18 +810,16 @@ def _install_prepared_runtime_wheels(
             python_abi=python_abi,
             supported_tags=supported_wheel_tags(build_python),
         )
-    except RuntimeError as error:
+        expected_local_count = len(load_manifest(repo_root))
+        validate_local_wheel_artifact_set(
+            local_wheels,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=expected_local_count,
+        )
+    except (LocalWheelArtifactError, RuntimeError) as error:
         print(f"ERROR: cannot install SDK Python runtime: {error}", file=sys.stderr)
         return 1
     wheels = sorted(local_wheels.glob("*.whl"))
-    expected_local_count = len(load_manifest(repo_root))
-    if len(wheels) != expected_local_count:
-        print(
-            f"ERROR: expected {expected_local_count} Termin wheels, found {len(wheels)} "
-            f"under {local_wheels}",
-            file=sys.stderr,
-        )
-        return 1
     try:
         if site_packages.exists():
             shutil.rmtree(site_packages)
@@ -1210,18 +1215,15 @@ def _parse_wheelhouse_args(
     sdk_prefix: Path,
     build_dir: Path,
     stage_args: list[str],
-) -> tuple[Path, Path, bool]:
+) -> tuple[Path, Path]:
     wheel_dir_env = os.environ.get("WHEEL_DIR")
     wheel_dir = Path(wheel_dir_env) if wheel_dir_env else sdk_prefix / "wheels"
-    force = False
     effective_build_dir = build_dir
 
     index = 0
     while index < len(stage_args):
         arg = stage_args[index]
-        if arg in ("--force", "-f"):
-            force = True
-        elif arg in ("--debug", "-d"):
+        if arg in ("--debug", "-d"):
             if "BUILD_DIR" not in os.environ:
                 effective_build_dir = build_dir.parent / "Debug"
         elif arg == "--wheel-dir":
@@ -1233,7 +1235,7 @@ def _parse_wheelhouse_args(
             wheel_dir = Path(arg.split("=", 1)[1])
         index += 1
 
-    return wheel_dir, effective_build_dir, force
+    return wheel_dir, effective_build_dir
 
 
 def build_wheelhouse(
@@ -1245,7 +1247,7 @@ def build_wheelhouse(
     python_executable: Path | None = None,
 ) -> int:
     try:
-        wheel_dir, effective_build_dir, force = _parse_wheelhouse_args(
+        wheel_dir, effective_build_dir = _parse_wheelhouse_args(
             sdk_prefix,
             build_dir,
             stage_args,
@@ -1272,7 +1274,6 @@ def build_wheelhouse(
         termin_sdk=termin_sdk,
         bindings_dir=bindings_dir,
         wheel_dir=wheel_dir,
-        force=force,
         build_python=build_python,
     )
     if result != 0:
@@ -1351,51 +1352,35 @@ def _build_local_package_wheels(
     termin_sdk: Path,
     bindings_dir: Path,
     wheel_dir: Path,
-    force: bool,
     build_python: Path,
 ) -> int:
-    wheel_dir.mkdir(parents=True, exist_ok=True)
-    wheel_dir = wheel_dir.resolve()
-    env = os.environ.copy()
-    env.update(
-        {
-            "TERMIN_SDK": str(termin_sdk),
-            "TERMIN_BINDINGS_DIR": str(bindings_dir),
-            "TERMIN_PIP_BUNDLE_LIBS": "0",
-            "TERMIN_PIP_COPY_TO_SOURCE": "0",
-        }
+    return build_local_wheel_artifact_set(
+        repo_root=repo_root,
+        sdk_prefix=termin_sdk,
+        bindings_dir=bindings_dir,
+        wheel_dir=wheel_dir.resolve(),
+        build_python=build_python,
+        packages=load_manifest(repo_root),
+        run=_run,
+        clear_build_caches=_clear_python_package_build_caches,
     )
-    _add_build_tools_pythonpath(env, repo_root)
-    pip_cmd = [str(build_python), "-m", "pip"]
-    print("Using pip: " + " ".join(pip_cmd))
-    print("TERMIN_PIP_BUNDLE_LIBS=0")
-    print("TERMIN_PIP_COPY_TO_SOURCE=0")
-    if force:
-        print("--force: clearing wheelhouse and per-package pip build caches")
-        for wheel in wheel_dir.glob("*.whl"):
-            wheel.unlink()
-        _clear_python_package_build_caches(repo_root)
 
-    packages = load_manifest(repo_root)
-    print("")
-    print("========================================")
-    print(f"  Building {len(packages)} Termin wheels")
-    print("========================================")
-    print("")
-    return _run(
-        [
-            *pip_cmd,
-            "wheel",
-            "--no-build-isolation",
-            "--no-deps",
-            "--no-cache-dir",
-            "--wheel-dir",
-            str(wheel_dir),
-            *(str(repo_root / package.path) for package in packages),
-        ],
-        cwd=repo_root,
-        env=env,
-    )
+
+def _publish_runtime_wheelhouse(repo_root: Path, sdk_prefix: Path) -> int:
+    _, local_wheels = _runtime_wheel_dirs(repo_root)
+    wheel_dir = sdk_prefix / "wheels"
+    try:
+        publish_local_wheel_artifact_set(
+            local_wheels,
+            wheel_dir,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=len(load_manifest(repo_root)),
+        )
+    except (LocalWheelArtifactError, OSError) as error:
+        print(f"ERROR: failed to publish SDK wheelhouse: {error}", file=sys.stderr)
+        return 1
+    print(f"Published canonical SDK wheelhouse: {wheel_dir}")
+    return 0
 
 
 # Runtime package metadata and final verification have independent lifecycles,
@@ -1439,7 +1424,6 @@ def run_sdk_build(
     repo_root: Path,
     build_type: str,
     stage_args: list[str],
-    build_wheels: bool,
     build_csharp: bool,
     dry_run: bool,
 ) -> int:
@@ -1517,27 +1501,21 @@ def run_sdk_build(
 
     print("")
     print("========================================")
-    print("  Stage 4/4: Build SDK Python wheelhouse")
+    print("  Stage 4/4: Publish SDK Python wheelhouse")
     print("========================================")
     print("")
-    if build_wheels:
-        if dry_run:
-            print("+ build SDK Python wheelhouse")
-        else:
-            wheel_args = list(stage_args)
-            if "--force" not in wheel_args and "-f" not in wheel_args:
-                wheel_args.insert(0, "--force")
-            result = build_wheelhouse(
-                repo_root,
-                sdk_prefix,
-                build_dir,
-                wheel_args,
-                python_executable=build_python,
-            )
-            if result != 0:
-                return result
+    if dry_run:
+        print("+ publish Stage 3 wheel artifacts into SDK wheelhouse")
     else:
-        print("Skipping SDK Python wheelhouse build (--no-wheels).")
+        result = _publish_runtime_wheelhouse(repo_root, sdk_prefix)
+        if result != 0:
+            return result
+        result = _verify_library_wheel_subset_install(
+            sdk_prefix / "wheels",
+            build_python,
+        )
+        if result != 0:
+            return result
 
     print("")
     print("========================================")
@@ -1547,11 +1525,7 @@ def run_sdk_build(
     if dry_run:
         print("+ verify SDK duplicate libraries and stale artifacts")
     else:
-        result = verify_sdk(
-            sdk_prefix,
-            build_dir,
-            wheelhouse_provenance=build_wheels,
-        )
+        result = verify_sdk(sdk_prefix, build_dir)
         if result != 0:
             return result
 
@@ -1775,16 +1749,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Build the full SDK through the existing stage scripts.",
     )
     build_parser.add_argument("--debug", "-d", action="store_true")
-    build_parser.add_argument("--no-wheels", action="store_true")
     build_parser.add_argument(
         "--csharp",
         action="store_true",
         help="Build C# bindings on Linux (enabled by default on Windows).",
-    )
-    build_parser.add_argument(
-        "--wheels",
-        action="store_true",
-        help="Build the SDK Python wheelhouse explicitly.",
     )
     build_parser.add_argument(
         "--dry-run",
@@ -1908,8 +1876,6 @@ def main(argv: list[str] | None = None) -> int:
         build_dir = _build_dir(repo_root, args.build_type)
         sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
         wheel_args = list(unknown_args)
-        if "--force" not in wheel_args and "-f" not in wheel_args:
-            wheel_args.insert(0, "--force")
         try:
             python_executable = prepare_pinned_python_build_environment(repo_root)
         except (
@@ -1940,6 +1906,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         return verify_nanobind_extensions(sdk_prefix.resolve())
     if args.command == "build":
+        obsolete_wheel_flags = {"--no-wheels", "--wheels"} & set(unknown_args)
+        if obsolete_wheel_flags:
+            obsolete = sorted(obsolete_wheel_flags)[0]
+            print(
+                f"ERROR: {obsolete} was removed; full SDK builds always publish "
+                "the canonical wheel artifact set",
+                file=sys.stderr,
+            )
+            return 2
         build_type = "Debug" if args.debug else "Release"
         stage_args = list(unknown_args)
         if args.debug and "--debug" not in stage_args and "-d" not in stage_args:
@@ -1948,7 +1923,6 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=repo_root,
             build_type=build_type,
             stage_args=stage_args,
-            build_wheels=not args.no_wheels,
             build_csharp=_is_windows() or args.csharp,
             dry_run=args.dry_run,
         )

@@ -108,7 +108,6 @@ def test_sdk_build_propagates_one_absolute_python_to_child_stages(
         repo_root=tmp_path,
         build_type="Release",
         stage_args=[],
-        build_wheels=False,
         build_csharp=False,
         dry_run=False,
     )
@@ -143,7 +142,6 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
         repo_root=repo_root,
         build_type="Release",
         stage_args=["--no-parallel"],
-        build_wheels=False,
         build_csharp=True,
         dry_run=True,
     )
@@ -171,7 +169,6 @@ def test_linux_sdk_build_skips_csharp_unless_requested(tmp_path, monkeypatch, ca
         repo_root=tmp_path,
         build_type="Release",
         stage_args=[],
-        build_wheels=False,
         build_csharp=False,
         dry_run=True,
     )
@@ -203,7 +200,6 @@ def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
         repo_root=tmp_path,
         build_type="Release",
         stage_args=[],
-        build_wheels=False,
         build_csharp=True,
         dry_run=True,
     )
@@ -213,19 +209,13 @@ def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
     assert "build-sdk-csharp.sh" in output
 
 
-@pytest.mark.parametrize(
-    ("build_wheels", "expected_wheelhouse_provenance"),
-    [(False, False), (True, True)],
-)
-def test_sdk_build_verification_policy_follows_wheelhouse_stage(
+def test_sdk_build_publishes_and_verifies_canonical_wheelhouse(
     tmp_path,
     monkeypatch,
-    build_wheels,
-    expected_wheelhouse_provenance,
 ):
     interpreter = tmp_path / "python"
     interpreter.write_text("", encoding="utf-8")
-    verification_policies = []
+    calls = []
 
     monkeypatch.setattr(sdk, "_python_executable", lambda: str(interpreter))
     monkeypatch.setattr(
@@ -234,11 +224,24 @@ def test_sdk_build_verification_policy_follows_wheelhouse_stage(
         lambda _root: interpreter,
     )
     monkeypatch.setattr(sdk, "_run", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(sdk, "install_python_packages", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(sdk, "build_wheelhouse", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(
+        sdk,
+        "install_python_packages",
+        lambda *args, **kwargs: calls.append("install") or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_publish_runtime_wheelhouse",
+        lambda *args, **kwargs: calls.append("publish") or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_verify_library_wheel_subset_install",
+        lambda *args, **kwargs: calls.append("subset") or 0,
+    )
 
-    def verify_sdk(_sdk_prefix, _build_dir, *, wheelhouse_provenance):
-        verification_policies.append(wheelhouse_provenance)
+    def verify_sdk(_sdk_prefix, _build_dir):
+        calls.append("verify")
         return 0
 
     monkeypatch.setattr(sdk, "verify_sdk", verify_sdk)
@@ -247,20 +250,19 @@ def test_sdk_build_verification_policy_follows_wheelhouse_stage(
         repo_root=tmp_path,
         build_type="Release",
         stage_args=[],
-        build_wheels=build_wheels,
         build_csharp=False,
         dry_run=False,
     )
 
     assert result == 0
-    assert verification_policies == [expected_wheelhouse_provenance]
+    assert calls == ["install", "publish", "subset", "verify"]
 
 
 def test_wheelhouse_arg_parser_keeps_stage_args_but_extracts_wheel_options(tmp_path):
     sdk_prefix = tmp_path / "sdk"
     build_dir = tmp_path / "build" / "Release"
 
-    wheel_dir, effective_build_dir, force = sdk._parse_wheelhouse_args(
+    wheel_dir, effective_build_dir = sdk._parse_wheelhouse_args(
         sdk_prefix,
         build_dir,
         ["--no-parallel", "--wheel-dir", str(tmp_path / "wheels"), "--force"],
@@ -268,7 +270,6 @@ def test_wheelhouse_arg_parser_keeps_stage_args_but_extracts_wheel_options(tmp_p
 
     assert wheel_dir == tmp_path / "wheels"
     assert effective_build_dir == build_dir
-    assert force is True
 
 
 def test_native_extensions_for_source_reads_manifest():
@@ -1354,6 +1355,15 @@ def test_install_packages_rejects_unknown_options(capsys):
     captured = capsys.readouterr()
     assert result == 1
     assert "unknown install-packages option" in captured.err
+
+
+@pytest.mark.parametrize("obsolete_flag", ["--no-wheels", "--wheels"])
+def test_sdk_build_rejects_removed_wheel_flags(obsolete_flag, capsys):
+    result = sdk.main(["build", obsolete_flag, "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert f"{obsolete_flag} was removed" in captured.err
 
 
 def test_runtime_manifest_records_declared_distributions_and_verifies_hashes(
