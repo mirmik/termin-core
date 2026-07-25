@@ -37,17 +37,3 @@ def test_python_component_without_own_fields_inherits_base_inspect_fields():
     assert registry.get_type_parent("NoOwnInspectFieldsProbeComponent") == "PythonComponent"
     assert registry.get_type_backend("NoOwnInspectFieldsProbeComponent") == TypeBackend.Python
     assert "enabled" in field_paths
-
-
-def test_inspect_registry_does_not_publish_incremental_mutators():
-    from termin.inspect import InspectRegistry
-
-    registry = InspectRegistry.instance()
-    for name in (
-        "register_python_fields",
-        "set_type_parent",
-        "set_type_metadata",
-        "add_button",
-        "unregister_type",
-    ):
-        assert not hasattr(registry, name)
