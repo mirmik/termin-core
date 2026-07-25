@@ -19,6 +19,7 @@ class _EditorEndpoint:
         self.requests: list[dict[str, object]] = []
         self._server = self._create_server()
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._started = False
 
     @property
     def url(self) -> str:
@@ -26,12 +27,15 @@ class _EditorEndpoint:
         return f"http://{host}:{port}/mcp"
 
     def start(self) -> None:
+        self._started = True
         self._thread.start()
 
     def stop(self) -> None:
-        self._server.shutdown()
+        if self._started:
+            self._server.shutdown()
         self._server.server_close()
-        self._thread.join(timeout=2.0)
+        if self._started:
+            self._thread.join(timeout=2.0)
 
     def _create_server(self) -> ThreadingHTTPServer:
         endpoint = self

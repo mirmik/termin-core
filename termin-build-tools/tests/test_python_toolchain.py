@@ -107,32 +107,37 @@ def test_zip_extraction_rejects_parent_traversal(tmp_path):
 
 
 def test_probe_identity_reads_free_threaded_runtime(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        python_toolchain.subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
                 {
                     "version": "3.14",
-                    "soabi": "cpython-314t-x86_64-linux-gnu",
+                    "soabi": "cp314t-win_amd64",
                     "free_threaded": True,
                     "py_gil_disabled": True,
                     "gil_enabled": False,
-                    "abiflags": "t",
                 }
             ),
             stderr="",
-        ),
+        )
+
+    monkeypatch.setattr(
+        python_toolchain.subprocess,
+        "run",
+        run,
     )
 
-    identity, gil_enabled, abiflags = python_toolchain._probe_identity(
+    identity, gil_enabled = python_toolchain._probe_identity(
         tmp_path / "python3.14t"
     )
 
     assert identity.wheel_abi_tag == "cp314t"
     assert gil_enabled is False
-    assert abiflags == "t"
+    assert "abiflags" not in commands[0][-1]
 
 
 def test_ensure_toolchain_rejects_runtime_that_starts_with_gil(
@@ -169,7 +174,7 @@ def test_ensure_toolchain_rejects_runtime_that_starts_with_gil(
     monkeypatch.setattr(
         python_toolchain,
         "_probe_identity",
-        lambda _python: (identity, True, "t"),
+        lambda _python: (identity, True),
     )
 
     with pytest.raises(
@@ -213,7 +218,7 @@ def test_ensure_toolchain_writes_reproducibility_manifest(
     monkeypatch.setattr(
         python_toolchain,
         "_probe_identity",
-        lambda _python: (identity, False, "t"),
+        lambda _python: (identity, False),
     )
 
     toolchain = python_toolchain.ensure_python_toolchain(tmp_path)

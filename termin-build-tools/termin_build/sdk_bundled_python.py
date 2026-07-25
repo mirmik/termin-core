@@ -15,6 +15,18 @@ from .sdk_python_layout import (
 )
 
 
+def _clear_directory_except(directory: Path, preserved_names: set[str]) -> None:
+    if not directory.is_dir():
+        return
+    for child in directory.iterdir():
+        if child.name in preserved_names:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def _copy_windows_python_runtime_executables(
     sdk_prefix: Path,
     info: dict[str, object],
@@ -30,22 +42,21 @@ def _copy_windows_python_runtime_executables(
     executable = Path(str(info.get("base_executable") or info.get("executable") or ""))
     if executable.is_file():
         shutil.copy2(executable, python_home / "python.exe")
-        pythonw = executable.with_name("pythonw.exe")
-        if pythonw.is_file():
-            shutil.copy2(pythonw, python_home / "pythonw.exe")
 
-    dll_roots = []
+    runtime_roots = []
     for key in ("base_prefix", "prefix"):
         value = str(info.get(key) or "")
         if value:
-            dll_roots.append(Path(value))
+            runtime_roots.append(Path(value))
     if executable.is_file():
-        dll_roots.append(executable.parent)
+        runtime_roots.append(executable.parent)
 
     seen: set[Path] = set()
-    for root in dll_roots:
+    for root in runtime_roots:
         if not root.is_dir():
             continue
+        for launcher in root.glob("python*.exe"):
+            shutil.copy2(launcher, python_home / launcher.name)
         for dll in root.glob("python*.dll"):
             source = dll.resolve()
             if source in seen:
@@ -198,16 +209,25 @@ def ensure_bundled_python_runtime(
         (sdk_prefix / "lib").mkdir(parents=True, exist_ok=True)
     bundled_site_packages.mkdir(parents=True, exist_ok=True)
 
+    # The SDK path is stable across Python patch-level upgrades. Merge-copying a
+    # new stdlib over it leaves modules removed or renamed by CPython behind and
+    # can combine Python sources from one release with the DLL from another.
+    # Preserve installed distributions, but replace the stdlib as one coherent
+    # payload from the pinned interpreter on every SDK population.
+    _clear_directory_except(bundled_py_dir, {"site-packages"})
+
     if _is_windows():
         _copy_windows_python_runtime_executables(sdk_prefix, info)
         python_prefix = Path(str(info.get("base_prefix") or info.get("prefix", "")))
         for runtime_dir in ("DLLs", "tcl"):
             source = python_prefix / runtime_dir
             if source.is_dir():
+                destination = sdk_prefix / "python" / runtime_dir
+                if destination.is_dir():
+                    shutil.rmtree(destination)
                 shutil.copytree(
                     source,
-                    sdk_prefix / "python" / runtime_dir,
-                    dirs_exist_ok=True,
+                    destination,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
                 )
     else:

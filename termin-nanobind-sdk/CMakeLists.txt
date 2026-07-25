@@ -40,6 +40,22 @@ endif()
 set(TERMIN_NANOBIND_RUNTIME_NAME "nanobind-ft")
 
 nanobind_build_library("${TERMIN_NANOBIND_RUNTIME_NAME}")
+# Python::Module is a build-time link dependency of the shared runtime, not a
+# usage requirement of the installed DLL. Extension targets attach
+# Python::Module explicitly in TerminNanobindProfile.cmake. Keeping it in the
+# exported interface makes non-Python SDK consumers fail while merely loading
+# an otherwise unrelated package configuration.
+get_target_property(
+    _nanobind_runtime_interface_links
+    "${TERMIN_NANOBIND_RUNTIME_NAME}"
+    INTERFACE_LINK_LIBRARIES
+)
+if(_nanobind_runtime_interface_links)
+    list(REMOVE_ITEM _nanobind_runtime_interface_links Python::Module)
+    set_target_properties("${TERMIN_NANOBIND_RUNTIME_NAME}" PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${_nanobind_runtime_interface_links}"
+    )
+endif()
 set_target_properties("${TERMIN_NANOBIND_RUNTIME_NAME}" PROPERTIES
     EXCLUDE_FROM_ALL FALSE
     TERMIN_NANOBIND_PYTHON_SOABI "${Python_SOABI}"

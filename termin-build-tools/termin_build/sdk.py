@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -208,7 +209,7 @@ def _find_native_artifact(
 
 def _native_runtime_dependencies(binary: Path) -> list[str]:
     if _is_windows():
-        return []
+        return _pe_import_dependencies(binary)
     env = os.environ.copy()
     env["LC_ALL"] = "C"
     env["LANGUAGE"] = "C"
@@ -246,19 +247,88 @@ def _native_runtime_dependencies(binary: Path) -> list[str]:
     return dependencies
 
 
+def _pe_import_dependencies(binary: Path) -> list[str]:
+    try:
+        image = binary.read_bytes()
+        if len(image) < 0x40 or image[:2] != b"MZ":
+            raise ValueError("missing DOS header")
+        pe_offset = struct.unpack_from("<I", image, 0x3C)[0]
+        if pe_offset + 24 > len(image) or image[pe_offset : pe_offset + 4] != b"PE\0\0":
+            raise ValueError("missing PE header")
+
+        file_header = pe_offset + 4
+        section_count = struct.unpack_from("<H", image, file_header + 2)[0]
+        optional_size = struct.unpack_from("<H", image, file_header + 16)[0]
+        optional = file_header + 20
+        if optional + optional_size > len(image):
+            raise ValueError("truncated optional header")
+        magic = struct.unpack_from("<H", image, optional)[0]
+        if magic == 0x10B:
+            data_directories = optional + 96
+        elif magic == 0x20B:
+            data_directories = optional + 112
+        else:
+            raise ValueError(f"unsupported optional-header magic 0x{magic:04x}")
+        if data_directories + 16 > optional + optional_size:
+            raise ValueError("missing import directory")
+        import_rva, import_size = struct.unpack_from(
+            "<II", image, data_directories + 8
+        )
+        if import_rva == 0 or import_size == 0:
+            return []
+
+        sections = []
+        section_offset = optional + optional_size
+        for index in range(section_count):
+            entry = section_offset + index * 40
+            if entry + 40 > len(image):
+                raise ValueError("truncated section table")
+            virtual_size, virtual_address, raw_size, raw_offset = struct.unpack_from(
+                "<IIII", image, entry + 8
+            )
+            sections.append(
+                (virtual_address, max(virtual_size, raw_size), raw_offset, raw_size)
+            )
+
+        def file_offset(rva: int) -> int:
+            for virtual_address, span, raw_offset, raw_size in sections:
+                delta = rva - virtual_address
+                if 0 <= delta < span and delta < raw_size:
+                    offset = raw_offset + delta
+                    if offset < len(image):
+                        return offset
+            raise ValueError(f"RVA 0x{rva:x} is outside file-backed sections")
+
+        dependencies = []
+        descriptor = file_offset(import_rva)
+        while True:
+            if descriptor + 20 > len(image):
+                raise ValueError("truncated import descriptor table")
+            fields = struct.unpack_from("<IIIII", image, descriptor)
+            if fields == (0, 0, 0, 0, 0):
+                break
+            name_offset = file_offset(fields[3])
+            name_end = image.find(b"\0", name_offset)
+            if name_end < 0:
+                raise ValueError("unterminated import name")
+            dependencies.append(image[name_offset:name_end].decode("ascii"))
+            descriptor += 20
+        return dependencies
+    except (OSError, UnicodeDecodeError, ValueError, struct.error) as error:
+        raise RuntimeError(f"failed to inspect PE imports for {binary}: {error}") from error
+
+
 def _find_installed_artifact(
     install_dir: Path,
     extension_name: str,
     target: str,
+    *,
+    python_abi: PythonAbiIdentity,
 ) -> Path | None:
     package_path = extension_name.rsplit(".", 1)[0].replace(".", "/")
     patterns = (
-        f"{target}.*.so",
-        f"{target}.so",
-        f"{target}.*.pyd",
-        f"{target}.pyd",
-        f"{target}.*.dylib",
-        f"{target}.dylib",
+        f"{target}.{python_abi.soabi}.so",
+        f"{target}.{python_abi.soabi}.pyd",
     )
     candidate_dirs = [
         install_dir / "lib" / "python" / package_path,
@@ -365,6 +435,7 @@ def write_artifacts(
             artifact_install_dir,
             native_extension.extension,
             native_extension.target,
+            python_abi=python_abi,
         )
         if installed_path is None:
             missing_required.append(
@@ -484,16 +555,18 @@ def install_python_packages(
     except RuntimeError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    if bundled_py_dir is None or not (bundled_py_dir / "ensurepip").is_dir():
-        reason = "not found" if bundled_py_dir is None else "missing ensurepip"
-        print(
-            f"Bundled Python stdlib {reason}; "
-            "syncing it from the selected target Python."
-        )
+    if bundled_py_dir is None:
+        print("Bundled Python stdlib not found; creating it from the selected target Python.")
+    else:
+        print("Synchronizing bundled Python stdlib from the selected target Python.")
+    try:
         bundled_py_dir = ensure_bundled_python_runtime(
             sdk_prefix,
             python_executable=Path(py_exec),
         )
+    except RuntimeError as error:
+        print(f"ERROR: failed to synchronize bundled Python stdlib: {error}", file=sys.stderr)
+        return 1
     if bundled_py_dir is None:
         print(
             f"ERROR: failed to create bundled Python stdlib under {sdk_prefix / 'lib'}/python3.*",
@@ -648,8 +721,14 @@ def _ensure_sdk_python_build_environment(
     build_python = _build_environment_python(environment_root)
     stamp = environment_root / "python-sdk-build-requirements.txt"
     selected_base = base_python or Path(_python_executable())
+    selected_info = _python_version_and_paths(str(selected_base))
+    canonical_base = selected_info.get("base_executable")
+    if isinstance(canonical_base, str) and canonical_base:
+        canonical_base_path = Path(canonical_base)
+        if canonical_base_path.is_file():
+            selected_base = canonical_base_path
     expected_abi = PythonAbiIdentity.from_runtime_probe(
-        _python_version_and_paths(str(selected_base)),
+        selected_info,
         context="SDK Python build environment base",
     )
     if build_python.is_file():

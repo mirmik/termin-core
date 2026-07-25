@@ -449,7 +449,7 @@ def _python_executable(
     )
 
 
-def _probe_identity(python_executable: Path) -> tuple[PythonAbiIdentity, bool, str]:
+def _probe_identity(python_executable: Path) -> tuple[PythonAbiIdentity, bool]:
     script = (
         "import json, sys, sysconfig; "
         "print(json.dumps({"
@@ -457,8 +457,7 @@ def _probe_identity(python_executable: Path) -> tuple[PythonAbiIdentity, bool, s
         "'soabi': sysconfig.get_config_var('SOABI') or '', "
         "'free_threaded': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0), "
         "'py_gil_disabled': bool(sysconfig.get_config_var('Py_GIL_DISABLED') or 0), "
-        "'gil_enabled': sys._is_gil_enabled(), "
-        "'abiflags': sys.abiflags"
+        "'gil_enabled': sys._is_gil_enabled()"
         "}))"
     )
     environment = os.environ.copy()
@@ -489,7 +488,7 @@ def _probe_identity(python_executable: Path) -> tuple[PythonAbiIdentity, bool, s
         raise PythonToolchainError(
             f"invalid pinned Python identity from {python_executable}: {error}"
         ) from error
-    return identity, bool(value.get("gil_enabled")), str(value.get("abiflags", ""))
+    return identity, bool(value.get("gil_enabled"))
 
 
 def ensure_python_toolchain(repo_root: Path) -> PythonToolchain:
@@ -520,7 +519,7 @@ def ensure_python_toolchain(repo_root: Path) -> PythonToolchain:
             cache_root,
         )
     python_executable = _python_executable(runtime_root, artifact)
-    identity, gil_enabled, abiflags = _probe_identity(python_executable)
+    identity, gil_enabled = _probe_identity(python_executable)
     if identity.version != lock.abi_version:
         raise PythonToolchainError(
             f"pinned Python version mismatch: expected {lock.abi_version}, "
@@ -534,17 +533,13 @@ def ensure_python_toolchain(repo_root: Path) -> PythonToolchain:
         raise PythonToolchainError(
             "pinned Python started with the GIL enabled"
         )
-    if "t" not in abiflags:
-        raise PythonToolchainError(
-            f"pinned Python abiflags do not contain 't': {abiflags!r}"
-        )
     manifest = {
         "schema": SCHEMA_VERSION,
         "version": lock.version,
         "platform": key,
         "artifact": artifact.to_dict(),
         "python_abi": identity.to_dict(),
-        "python_executable": str(python_executable.relative_to(runtime_root)),
+        "python_executable": python_executable.relative_to(runtime_root).as_posix(),
     }
     (runtime_root / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",

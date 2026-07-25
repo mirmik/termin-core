@@ -33,7 +33,9 @@ SDK не использует системный Python как целевой ru
   SOABI недостаточно: смена точного base interpreter пересоздаёт environment.
 
 Перед использованием toolchain проверяются Python 3.14, `Py_GIL_DISABLED`,
-`cpython-314t` SOABI, `t` в `sys.abiflags` и изначально выключенный GIL.
+free-threaded marker `t` в SOABI и изначально выключенный GIL. Проверка
+опирается на кроссплатформенный SOABI, поскольку `sys.abiflags` отсутствует
+в Windows CPython.
 Root CMake build дополнительно требует ABI 3.14t и останавливается, если ему
 передан обычный cp314 либо старый Python.
 

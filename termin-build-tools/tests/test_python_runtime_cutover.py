@@ -41,7 +41,8 @@ def test_toolchain_lock_is_the_only_runtime_identity() -> None:
     assert "include_guard(DIRECTORY)" in cmake_contract
     assert 'TERMIN_CANONICAL_PYTHON_VERSION "3.14"' in cmake_contract
     assert "Py_GIL_DISABLED" in cmake_contract
-    assert "^cpython-314t" in cmake_contract
+    assert "^(cpython-|cp)314t" in cmake_contract
+    assert "unset(NB_SUFFIX CACHE)" in cmake_contract
 
 
 def test_production_configuration_has_no_legacy_python_runtime() -> None:
@@ -85,3 +86,10 @@ def test_production_configuration_has_no_legacy_python_runtime() -> None:
             if any(marker in text for marker in legacy_markers):
                 offenders.append(str(path.relative_to(REPO_ROOT)))
     assert offenders == []
+
+
+def test_test_builds_cannot_overwrite_the_installed_sdk() -> None:
+    render_cmake = (REPO_ROOT / "termin-render/CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "${CMAKE_CURRENT_SOURCE_DIR}/../sdk/" not in render_cmake

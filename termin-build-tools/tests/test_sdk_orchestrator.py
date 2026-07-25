@@ -2,6 +2,8 @@ import base64
 import hashlib
 import importlib.metadata
 import json
+import struct
+import sys
 from pathlib import Path
 
 import pytest
@@ -664,11 +666,100 @@ def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
     )
 
 
+def test_windows_build_environment_accepts_versioned_base_executable_alias(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    requirements = repo_root / sdk.SDK_BUILD_REQUIREMENTS_RELATIVE
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("pip==26.1.2\n", encoding="utf-8")
+    environment_root = repo_root / "build" / "python-runtime" / "build-env"
+    build_python = environment_root / "Scripts" / "python.exe"
+    build_python.parent.mkdir(parents=True)
+    build_python.touch()
+    (environment_root / "python-sdk-build-requirements.txt").write_bytes(
+        requirements.read_bytes()
+    )
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    python_alias = runtime_root / "python.exe"
+    canonical_python = runtime_root / "python3.14t.exe"
+    python_alias.touch()
+    canonical_python.touch()
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _python: {
+            "version": "3.14",
+            "soabi": "cp314t-win_amd64",
+            "free_threaded": True,
+            "py_gil_disabled": True,
+            "base_executable": str(canonical_python),
+        },
+    )
+    commands = []
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+
+    result = sdk._ensure_sdk_python_build_environment(
+        repo_root,
+        base_python=python_alias,
+    )
+
+    assert result == build_python
+    assert commands == []
+
+
+def test_installed_artifact_selection_rejects_stale_python_abi(tmp_path):
+    package_dir = (
+        tmp_path
+        / "python"
+        / "Lib"
+        / "site-packages"
+        / "termin"
+        / "sample"
+    )
+    package_dir.mkdir(parents=True)
+    stale = package_dir / "_sample_native.cp312-win_amd64.pyd"
+    expected = package_dir / "_sample_native.cp314t-win_amd64.pyd"
+    stale.touch()
+    expected.touch()
+    python_abi = sdk.PythonAbiIdentity(
+        version="3.14",
+        soabi="cp314t-win_amd64",
+        free_threaded=True,
+        py_gil_disabled=True,
+    )
+
+    result = sdk._find_installed_artifact(
+        tmp_path,
+        "termin.sample._sample_native",
+        "_sample_native",
+        python_abi=python_abi,
+    )
+
+    assert result == expected
+
+
 def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifacts(
     tmp_path,
     monkeypatch,
 ):
     sdk_prefix = tmp_path / "sdk"
+    stale_stdlib = sdk_prefix / "lib" / "python3.10" / "removed_in_new_runtime.py"
+    stale_stdlib.parent.mkdir(parents=True)
+    stale_stdlib.write_text("stale\n", encoding="utf-8")
+    preserved_package = (
+        sdk_prefix / "lib" / "python3.10" / "site-packages" / "preserved.py"
+    )
+    preserved_package.parent.mkdir(parents=True)
+    preserved_package.write_text("installed\n", encoding="utf-8")
     stdlib = tmp_path / "host" / "lib" / "python3.10"
     include = tmp_path / "host" / "include" / "python3.10"
     libdir = tmp_path / "host" / "lib"
@@ -706,6 +797,8 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
     ).read_text(encoding="utf-8") == "/* fixture */\n"
     assert not (bundled_py_dir / "config-3.10-x86_64-linux-gnu").exists()
     assert (bundled_py_dir / "ctypes" / "__init__.py").is_file()
+    assert not stale_stdlib.exists()
+    assert preserved_package.read_text(encoding="utf-8") == "installed\n"
 
 
 def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
@@ -716,6 +809,9 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
     sdk_prefix = repo_root / "sdk"
     build_dir = repo_root / "build" / "Release"
     bundled_py_dir = sdk_prefix / "lib" / "python3.10"
+    source_stdlib = tmp_path / "host" / "stdlib"
+    (source_stdlib / "ensurepip").mkdir(parents=True)
+    (source_stdlib / "os.py").write_text("", encoding="utf-8")
     site_packages = bundled_py_dir / "site-packages"
     host_libdir = tmp_path / "host" / "lib"
     config_dir = bundled_py_dir / "config-3.10-x86_64-linux-gnu"
@@ -738,7 +834,7 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
             "soabi": "cpython-310-x86_64-linux-gnu",
             "free_threaded": False,
             "py_gil_disabled": False,
-            "stdlib": str(tmp_path / "unused"),
+            "stdlib": str(source_stdlib),
             "libdir": str(host_libdir),
             "sitepackages": [],
         },
@@ -747,6 +843,11 @@ def test_sdk_python_install_repairs_existing_runtime_shared_libpython(
         sdk,
         "ensure_bundled_python_cli",
         lambda _sdk_prefix, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        sdk_bundled_python,
+        "_python_version_and_paths",
+        sdk._python_version_and_paths,
     )
     monkeypatch.setattr(
         sdk,
@@ -1255,6 +1356,9 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     sdk_prefix = repo_root / "sdk"
     build_dir = repo_root / "build" / "Release"
     bundled_py_dir = sdk_prefix.joinpath(*bundled_python_parts)
+    source_stdlib = tmp_path / "host" / "stdlib"
+    (source_stdlib / "ensurepip").mkdir(parents=True)
+    (source_stdlib / "os.py").write_text("", encoding="utf-8")
     site_packages = bundled_py_dir / "site-packages"
     (bundled_py_dir / "ensurepip").mkdir(parents=True)
     installed_artifact = site_packages / "example" / "_example_native.pyd"
@@ -1279,7 +1383,7 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
             "soabi": "cpython-310-x86_64-linux-gnu",
             "free_threaded": False,
             "py_gil_disabled": False,
-            "stdlib": str(tmp_path / "unused"),
+            "stdlib": str(source_stdlib),
             "libdir": str(tmp_path / "unused"),
             "sitepackages": [],
         },
@@ -1288,6 +1392,11 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
         sdk,
         "ensure_bundled_python_cli",
         lambda _sdk_prefix, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        sdk_bundled_python,
+        "_python_version_and_paths",
+        sdk._python_version_and_paths,
     )
     monkeypatch.setattr(
         sdk,
@@ -1570,7 +1679,9 @@ def test_write_artifacts_records_install_path_and_runtime_dependencies(
     capabilities = json.loads(
         (sdk_prefix / "termin-sdk-capabilities.json").read_text(encoding="utf-8")
     )
-    assert capabilities["platforms"]["desktop"]["os"] == "linux"
+    assert capabilities["platforms"]["desktop"]["os"] == (
+        "windows" if sys.platform == "win32" else "linux"
+    )
     assert capabilities["platforms"]["desktop"]["arch"] == "x86_64"
     build_data = json.loads(
         (build_dir / "termin-build-artifacts.json").read_text()
@@ -1604,6 +1715,35 @@ def test_native_runtime_dependencies_are_locale_independent(monkeypatch):
     assert dependencies == ["libnanobind-ft.so", "libc.so.6"]
     assert captured_env["LC_ALL"] == "C"
     assert captured_env["LANGUAGE"] == "C"
+
+
+def test_pe_import_dependencies_reads_windows_import_table(tmp_path):
+    image = bytearray(0x400)
+    image[:2] = b"MZ"
+    struct.pack_into("<I", image, 0x3C, 0x80)
+    image[0x80:0x84] = b"PE\0\0"
+    file_header = 0x84
+    struct.pack_into("<H", image, file_header + 2, 1)
+    struct.pack_into("<H", image, file_header + 16, 240)
+    optional = file_header + 20
+    struct.pack_into("<H", image, optional, 0x20B)
+    struct.pack_into("<II", image, optional + 112 + 8, 0x1000, 40)
+    section = optional + 240
+    struct.pack_into("<IIII", image, section + 8, 0x200, 0x1000, 0x200, 0x200)
+    struct.pack_into("<IIIII", image, 0x200, 0, 0, 0, 0x1080, 0)
+    image[0x280:0x290] = b"nanobind-ft.dll\0"
+    binary = tmp_path / "extension.pyd"
+    binary.write_bytes(image)
+
+    assert sdk._pe_import_dependencies(binary) == ["nanobind-ft.dll"]
+
+
+def test_pe_import_dependencies_rejects_non_pe_file(tmp_path):
+    binary = tmp_path / "extension.pyd"
+    binary.write_bytes(b"not a PE image")
+
+    with pytest.raises(RuntimeError, match="missing DOS header"):
+        sdk._pe_import_dependencies(binary)
 
 
 def test_native_runtime_dependencies_reports_readelf_failure(monkeypatch):
@@ -1687,6 +1827,7 @@ def test_write_artifacts_supports_windows_pyd_layout(tmp_path, monkeypatch):
     ]
     monkeypatch.setattr(sdk, "load_manifest", lambda _repo_root: packages)
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk, "_native_runtime_dependencies", lambda _path: [])
     monkeypatch.setattr(
         sdk.PythonAbiIdentity,
         "current",
@@ -1748,6 +1889,7 @@ def test_write_artifacts_prefers_windows_config_pyd_over_stale_bin_copy(
     ]
     monkeypatch.setattr(sdk, "load_manifest", lambda _repo_root: packages)
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk, "_native_runtime_dependencies", lambda _path: [])
     monkeypatch.setattr(
         sdk.PythonAbiIdentity,
         "current",
@@ -1866,7 +2008,9 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     host_python = tmp_path / "host-python"
     host_python.mkdir()
     (host_python / "python.exe").write_text("exe", encoding="utf-8")
+    (host_python / "python3.14t.exe").write_text("exe", encoding="utf-8")
     (host_python / "pythonw.exe").write_text("exe", encoding="utf-8")
+    (host_python / "pythonw3.14t.exe").write_text("exe", encoding="utf-8")
     (host_python / "python312.dll").write_text("dll", encoding="utf-8")
 
     monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: True)
@@ -1884,7 +2028,9 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
 
     assert (sdk_prefix / "bin" / "python312.dll").is_file()
     assert (sdk_prefix / "python" / "python.exe").is_file()
+    assert (sdk_prefix / "python" / "python3.14t.exe").is_file()
     assert (sdk_prefix / "python" / "pythonw.exe").is_file()
+    assert (sdk_prefix / "python" / "pythonw3.14t.exe").is_file()
     assert (sdk_prefix / "python" / "python312.dll").is_file()
     assert sdk.verify_no_duplicate_libraries(sdk_prefix) == 0
 

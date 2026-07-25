@@ -159,7 +159,7 @@ def test_installed_c_and_cpp_consumers(tmp_path):
     assert configure.returncode == 0, configure.stderr
 
     build = subprocess.run(
-        ["cmake", "--build", str(build_root), "--parallel", "2"],
+        ["cmake", "--build", str(build_root), "--config", "Release", "--parallel", "2"],
         check=False,
         capture_output=True,
         text=True,
@@ -168,11 +168,17 @@ def test_installed_c_and_cpp_consumers(tmp_path):
 
     executable_dir = build_root / ("Release" if os.name == "nt" else "")
     executable_suffix = ".exe" if os.name == "nt" else ""
+    run_environment = os.environ.copy()
+    if os.name == "nt":
+        run_environment["PATH"] = (
+            str(sdk_root / "bin") + os.pathsep + run_environment.get("PATH", "")
+        )
     for name in ("termin_dispatch_installed_c", "termin_dispatch_installed_cpp"):
         run = subprocess.run(
             [str(executable_dir / f"{name}{executable_suffix}")],
             check=False,
             capture_output=True,
             text=True,
+            env=run_environment,
         )
         assert run.returncode == 0, run.stderr

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -220,12 +221,21 @@ def test_application_native_extension_is_not_attributed_to_a_distribution(
         ),
         encoding="utf-8",
     )
-    build_artifact = repo_root / "build/bin/_editor_native.so"
+    abi = sdk.PythonAbiIdentity.current()
+    extension_suffix = ".pyd" if sys.platform == "win32" else ".so"
+    build_artifact = (
+        repo_root / "build/bin" / f"_editor_native.{abi.soabi}{extension_suffix}"
+    )
     build_artifact.parent.mkdir(parents=True)
     build_artifact.write_bytes(b"native")
     sdk_root = repo_root / "sdk"
+    installed_root = (
+        sdk_root / "python/Lib/site-packages"
+        if sys.platform == "win32"
+        else sdk_root / "lib/python3.10/site-packages"
+    )
     installed_artifact = (
-        sdk_root / "lib/python3.10/site-packages/termin/editor/_editor_native.so"
+        installed_root / "termin/editor" / f"_editor_native.{abi.soabi}{extension_suffix}"
     )
     installed_artifact.parent.mkdir(parents=True)
     installed_artifact.write_bytes(b"native")
