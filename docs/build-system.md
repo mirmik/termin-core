@@ -289,6 +289,15 @@ Termin из checkout, но ищет native extensions прежде всего в
 SDK. Overlay привязан к hash `sdk/termin-artifacts.json` и Python ABI; устаревший
 overlay завершается ошибкой вместо неявного смешивания сборок.
 
+Test-only `site-packages` также является exact производным артефактом:
+`test-environment.json` фиксирует полный test lock, ABI, free-threaded marker,
+платформу и архитектуру. SDK Python и isolated build frontend обязаны иметь
+одинаковую runtime identity. При изменении lock, ABI или состава установленного
+каталога окружение собирается в чистом staging-каталоге и заменяется только
+после успешной установки; удалённые зависимости не остаются затенять SDK.
+`run-tests-python.*` проверяет этот manifest до запуска pytest и при устаревшем
+окружении требует явно повторить `setup-sdk-python-env.*`.
+
 Прямые режимы запуска:
 
 ```bash
@@ -301,7 +310,8 @@ sdk/bin/termin_python -c "import tcbase, termin.engine"
 
 Старые `setup-test-venv.*` и корневой `.venv` workflow удалены. Новый workflow
 не копирует `.so`/`.pyd` в source tree и не требует `--force` после пересборки
-bindings; после изменения SDK нужно лишь перегенерировать overlay.
+bindings; обычный вызов `setup-sdk-python-env.*` сам определяет, нужно ли
+пересобрать test-only слой или достаточно перегенерировать overlay.
 
 ---
 
