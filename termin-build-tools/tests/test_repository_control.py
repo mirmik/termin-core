@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from io import StringIO
 from pathlib import Path
 
@@ -146,6 +147,22 @@ def _add_ctest_suite(repo: Path) -> None:
             "module": "alpha",
             "executor": "ctest",
             "roots": ["alpha/tests"],
+        }
+    )
+    _write_json(manifest, data)
+
+
+def _add_pytest_suite(repo: Path, suite_id: str, root: str) -> None:
+    suite_root = repo / root
+    suite_root.mkdir(parents=True)
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suites"].append(
+        {
+            "id": suite_id,
+            "module": "alpha",
+            "executor": "pytest",
+            "roots": [root],
         }
     )
     _write_json(manifest, data)
@@ -737,6 +754,161 @@ def test_run_accumulates_suite_failures(tmp_path: Path, monkeypatch, capsys) -> 
 
     assert result == 1
     assert "  - alpha-python" in capsys.readouterr().err
+
+
+def test_run_executes_pytest_suites_concurrently_with_isolated_output(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    _add_pytest_suite(repo, "beta-python", "alpha/beta-tests")
+    barrier = threading.Barrier(2)
+    state_lock = threading.Lock()
+    active = 0
+    maximum_active = 0
+
+    def fake_run(command, repo_root, environment, *, stream_output):
+        nonlocal active, maximum_active
+        assert repo_root == repo
+        assert stream_output is False
+        with state_lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        barrier.wait(timeout=2)
+        suite_root = next(
+            argument for argument in command if argument.endswith(("tests", "beta-tests"))
+        )
+        with state_lock:
+            active -= 1
+        return 3, f"{suite_root}: first\n{suite_root}: second\n"
+
+    monkeypatch.setattr(repository_control, "_run_pytest_command", fake_run)
+
+    result = repository_control.main(
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "pr",
+            "--platform",
+            "linux",
+            "--pytest-jobs",
+            "2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    output = captured.out
+    assert result == 1
+    assert maximum_active == 2
+    assert "Pytest workers: 2" in output
+    assert "alpha/tests: first\nalpha/tests: second\n" in output
+    assert "alpha/beta-tests: first\nalpha/beta-tests: second\n" in output
+    assert captured.err.index("  - alpha-python") < captured.err.index(
+        "  - beta-python"
+    )
+
+
+def test_run_schedules_longest_historical_pytest_suite_first(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    _add_pytest_suite(repo, "beta-python", "alpha/beta-tests")
+    duration_cache = repo / "build" / "pytest-cache" / "suite-durations.json"
+    _write_json(
+        duration_cache,
+        {
+            "schema": 1,
+            "profiles": {
+                "pr/linux": {
+                    "alpha-python": 1.0,
+                    "beta-python": 20.0,
+                }
+            },
+        },
+    )
+    executed_roots = []
+
+    def fake_run(command, repo_root, environment, *, stream_output):
+        assert repo_root == repo
+        assert stream_output is True
+        executed_roots.append(
+            next(
+                argument
+                for argument in command
+                if argument.endswith(("tests", "beta-tests"))
+            )
+        )
+        return 0, "passed\n"
+
+    monkeypatch.setattr(repository_control, "_run_pytest_command", fake_run)
+
+    result = repository_control.main(
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "pr",
+            "--platform",
+            "linux",
+        ]
+    )
+
+    assert result == 0
+    assert executed_roots == ["alpha/beta-tests", "alpha/tests"]
+    assert "Pytest timing history: 2/2 suites" in capsys.readouterr().out
+
+
+def test_run_logs_and_replaces_invalid_pytest_duration_cache(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    duration_cache = repo / "build" / "pytest-cache" / "suite-durations.json"
+    duration_cache.parent.mkdir(parents=True)
+    duration_cache.write_text("{invalid", encoding="utf-8")
+
+    monkeypatch.setattr(
+        repository_control,
+        "_run_pytest_command",
+        lambda command, repo_root, environment, *, stream_output: (0, "passed\n"),
+    )
+
+    result = repository_control.main(
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "pr",
+            "--platform",
+            "linux",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert "ignoring invalid pytest duration cache" in captured.err
+    cache = json.loads(duration_cache.read_text(encoding="utf-8"))
+    assert cache["schema"] == 1
+    assert cache["profiles"]["pr/linux"]["alpha-python"] >= 0
+
+
+def test_run_rejects_non_positive_pytest_jobs(tmp_path: Path, capsys) -> None:
+    repo = _repository(tmp_path)
+
+    result = repository_control.main(
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "pr",
+            "--platform",
+            "linux",
+            "--pytest-jobs",
+            "0",
+        ]
+    )
+
+    assert result == 1
+    assert "pytest jobs must be greater than zero" in capsys.readouterr().err
 
 
 def test_run_fails_when_pytest_emits_nanobind_shutdown_diagnostic(
