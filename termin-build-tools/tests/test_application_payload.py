@@ -53,7 +53,6 @@ def test_termin_app_is_an_explicit_application_payload_not_a_distribution() -> N
         "editor",
         "editor_core",
         "editor_native",
-        "editor_tcgui",
         "launcher",
         "resources",
     )
