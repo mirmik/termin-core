@@ -866,6 +866,9 @@ Module-reload и shader smoke на headless Linux используют
 `scripts/termin-editor-virtual-display`, если display не настроен. Wrapper
 проверяет Xvfb, Mesa llvmpipe, OpenGL/GLSL и SDK shader compiler до запуска
 редактора; каждый процесс получает отдельные display, MCP port и session file.
+Shader smoke запускает два полных кадра на OpenGL 4.5 / GLSL 450 с пустыми
+project- и XDG-cache, ждёт штатного завершения редактора и сохраняет временный
+каталог с полным editor log при ошибке.
 `scripts/smoke-editor-mcp-offscreen` отдельно проверяет production
 `--headless` composition без Xvfb/SDL: два параллельных редактора получают
 разные agent-owned MCP sessions, исполняют команду, отдают непустой Vulkan PNG
