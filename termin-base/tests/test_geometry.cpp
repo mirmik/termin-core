@@ -164,4 +164,49 @@ TEST_CASE("world2d float helpers preserve the canonical basis and depth") {
     CHECK(round_trip == position_2d);
 }
 
+TEST_CASE("world2d canonical camera and sprite face each other along world Y") {
+    constexpr termin::Vec3 camera_forward =
+        termin::world2d::canonical_camera_forward_axis();
+    constexpr termin::Vec3 sprite_front =
+        termin::world2d::canonical_sprite_front_axis();
+
+    static_assert(camera_forward.x == 0.0);
+    static_assert(camera_forward.y == 1.0);
+    static_assert(camera_forward.z == 0.0);
+    static_assert(sprite_front.x == 0.0);
+    static_assert(sprite_front.y == -1.0);
+    static_assert(sprite_front.z == 0.0);
+    static_assert(
+        termin::world2d::positive_rotation_axis().y == sprite_front.y);
+
+    CHECK(camera_forward.dot(sprite_front) == -1.0);
+}
+
+TEST_CASE("world2d positive angle is counter-clockwise in the visible XZ plane") {
+    constexpr double half_pi = 1.57079632679489661923;
+    const termin::Quat rotation =
+        termin::world2d::rotation_to_world(half_pi);
+    const termin::Vec3 rotated_horizontal =
+        rotation.rotate(termin::world2d::world_horizontal_axis());
+
+    CHECK(std::abs(rotated_horizontal.x) < 1.0e-12);
+    CHECK(std::abs(rotated_horizontal.y) < 1.0e-12);
+    CHECK(std::abs(rotated_horizontal.z - 1.0) < 1.0e-12);
+}
+
+TEST_CASE("world2d canonical quad has logical CCW winding toward the camera") {
+    constexpr termin::Vec3 bottom_left{-1.0, 0.0, -1.0};
+    constexpr termin::Vec3 bottom_right{1.0, 0.0, -1.0};
+    constexpr termin::Vec3 top_right{1.0, 0.0, 1.0};
+
+    const termin::Vec3 normal =
+        (bottom_right - bottom_left).cross(top_right - bottom_left).normalized();
+    const termin::Vec3 sprite_front =
+        termin::world2d::canonical_sprite_front_axis();
+
+    CHECK(std::abs(normal.x - sprite_front.x) < 1.0e-12);
+    CHECK(std::abs(normal.y - sprite_front.y) < 1.0e-12);
+    CHECK(std::abs(normal.z - sprite_front.z) < 1.0e-12);
+}
+
 GUARD_TEST_MAIN();

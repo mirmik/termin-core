@@ -1,5 +1,6 @@
 #pragma once
 
+#include "quat.hpp"
 #include "vec2.hpp"
 #include "vec3.hpp"
 
@@ -10,8 +11,9 @@ namespace termin::world2d {
 //   depth  -> world Y
 //   Vec2.y -> world Z (vertical, Z-up)
 //
-// Camera-facing direction and positive rotation are intentionally not encoded
-// here. They belong to the separate 2D viewing/orientation contract.
+// The canonical camera is on the negative-Y side and looks along +Y. Thus a
+// sprite faces -Y, and a positive 2D angle (counter-clockwise in the visible
+// X-right/Z-up plane) is a right-handed world rotation around -Y.
 
 constexpr Vec3 world_horizontal_axis() noexcept {
     return {1.0, 0.0, 0.0};
@@ -23,6 +25,22 @@ constexpr Vec3 world_depth_axis() noexcept {
 
 constexpr Vec3 world_vertical_axis() noexcept {
     return {0.0, 0.0, 1.0};
+}
+
+constexpr Vec3 canonical_camera_forward_axis() noexcept {
+    return world_depth_axis();
+}
+
+constexpr Vec3 canonical_sprite_front_axis() noexcept {
+    return {0.0, -1.0, 0.0};
+}
+
+constexpr Vec3 positive_rotation_axis() noexcept {
+    return canonical_sprite_front_axis();
+}
+
+inline Quat rotation_to_world(double angle) noexcept {
+    return Quat::from_axis_angle(positive_rotation_axis(), angle);
 }
 
 constexpr Vec3 position_to_world(const Vec2& position, double depth = 0.0) noexcept {
