@@ -7,6 +7,7 @@
 #include <termin/geom/bounds2.hpp>
 #include <termin/geom/rect2.hpp>
 #include <termin/geom/size2.hpp>
+#include <termin/geom/world2d.hpp>
 
 #include "guard_main.h"
 
@@ -80,6 +81,87 @@ TEST_CASE("base geometry value types preserve simple construction semantics") {
     CHECK(bounds_f.y1 == 6.5f);
     CHECK(bounds_f.width() == 3.25f);
     CHECK(bounds_f.height() == 4.5f);
+}
+
+TEST_CASE("world2d maps double positions between Vec2 and the canonical XZ plane") {
+    constexpr termin::Vec2 position_2d{2.5, -4.0};
+    constexpr termin::Vec3 position_world =
+        termin::world2d::position_to_world(position_2d, 7.25);
+
+    static_assert(position_world.x == 2.5);
+    static_assert(position_world.y == 7.25);
+    static_assert(position_world.z == -4.0);
+
+    constexpr termin::Vec2 round_trip =
+        termin::world2d::position_from_world(position_world);
+    static_assert(round_trip.x == position_2d.x);
+    static_assert(round_trip.y == position_2d.y);
+    static_assert(termin::world2d::depth_from_world(position_world) == 7.25);
+
+    constexpr termin::Vec3 moved_in_depth =
+        termin::world2d::with_world_depth(position_world, -3.0);
+    static_assert(moved_in_depth.x == position_world.x);
+    static_assert(moved_in_depth.y == -3.0);
+    static_assert(moved_in_depth.z == position_world.z);
+
+    CHECK(round_trip == position_2d);
+}
+
+TEST_CASE("world2d maps vectors without injecting world depth") {
+    constexpr termin::Vec2 vector_2d{-1.5, 3.0};
+    constexpr termin::Vec3 vector_world =
+        termin::world2d::vector_to_world(vector_2d);
+
+    static_assert(vector_world.x == -1.5);
+    static_assert(vector_world.y == 0.0);
+    static_assert(vector_world.z == 3.0);
+
+    constexpr termin::Vec2 round_trip =
+        termin::world2d::vector_from_world(vector_world);
+    static_assert(round_trip.x == vector_2d.x);
+    static_assert(round_trip.y == vector_2d.y);
+
+    CHECK(round_trip == vector_2d);
+}
+
+TEST_CASE("world2d float helpers preserve the canonical basis and depth") {
+    constexpr termin::Vec3 horizontal =
+        termin::world2d::world_horizontal_axis();
+    constexpr termin::Vec3 depth = termin::world2d::world_depth_axis();
+    constexpr termin::Vec3 vertical =
+        termin::world2d::world_vertical_axis();
+
+    static_assert(horizontal.x == 1.0 && horizontal.y == 0.0 && horizontal.z == 0.0);
+    static_assert(depth.x == 0.0 && depth.y == 1.0 && depth.z == 0.0);
+    static_assert(vertical.x == 0.0 && vertical.y == 0.0 && vertical.z == 1.0);
+
+    const termin::Vec2f position_2d{12.5f, -8.25f};
+    const termin::Vec3f position_world =
+        termin::world2d::position_to_world(position_2d, 4.5f);
+    const termin::Vec2f round_trip =
+        termin::world2d::position_from_world(position_world);
+    const termin::Vec3f moved_in_depth =
+        termin::world2d::with_world_depth(position_world, -2.0f);
+
+    CHECK(position_world.x == 12.5f);
+    CHECK(position_world.y == 4.5f);
+    CHECK(position_world.z == -8.25f);
+    CHECK(round_trip.x == position_2d.x);
+    CHECK(round_trip.y == position_2d.y);
+    CHECK(termin::world2d::depth_from_world(position_world) == 4.5f);
+    CHECK(moved_in_depth.x == position_world.x);
+    CHECK(moved_in_depth.y == -2.0f);
+    CHECK(moved_in_depth.z == position_world.z);
+
+    const termin::Vec3f vector_world =
+        termin::world2d::vector_to_world(termin::Vec2f{2.0f, 6.0f});
+    const termin::Vec2f vector_round_trip =
+        termin::world2d::vector_from_world(vector_world);
+    CHECK(vector_world.y == 0.0f);
+    CHECK(vector_round_trip.x == 2.0f);
+    CHECK(vector_round_trip.y == 6.0f);
+
+    CHECK(round_trip == position_2d);
 }
 
 GUARD_TEST_MAIN();
