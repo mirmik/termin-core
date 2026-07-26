@@ -28,7 +28,12 @@ state, но не callbacks или Python objects.
 ## Основные области
 
 - `tc_log` - общий C/C++ logging API.
-- `tc_pool` - handle/generation pool primitive.
+- `tc_pool` - единый handle/generation pool primitive. Обычный
+  `tc_pool_init()` сохраняет неограниченный growable contract; владельцы с
+  жёстким лимитом или fault-injection используют `tc_pool_init_ex()` с
+  `max_capacity`, начальным generation, порядком выдачи индексов и парой
+  allocator/deallocator. Инициализация и рост транзакционны: ошибка одной из
+  storage-аллокаций не публикует частично заменённые массивы.
 - `tc_resource_map` - generic resource map.
 - `tc_tensor` - ABI-friendly typed strided memory descriptor для bulk buffers.
 - `tc_value` - C tagged-union value type для сериализации и межмодульных данных.

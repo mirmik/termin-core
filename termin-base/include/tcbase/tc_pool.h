@@ -30,7 +30,27 @@ typedef struct tc_pool {
     uint32_t count;          // Occupied slots
     uint32_t free_count;     // Free slots in free_list
     size_t item_size;        // Size of each item
+    uint32_t max_capacity;   // Hard slot limit (UINT32_MAX when unbounded)
+    uint32_t initial_generation;
+    bool allocate_low_indices_first;
+    const char* name;
+    void* (*allocate)(size_t size, void* user_data);
+    void (*deallocate)(void* ptr, void* user_data);
+    void* allocator_user_data;
 } tc_pool;
+
+typedef void* (*tc_pool_allocate_fn)(size_t size, void* user_data);
+typedef void (*tc_pool_deallocate_fn)(void* ptr, void* user_data);
+
+typedef struct tc_pool_config {
+    uint32_t max_capacity;  // 0 means UINT32_MAX.
+    uint32_t initial_generation;
+    bool allocate_low_indices_first;
+    const char* name;
+    tc_pool_allocate_fn allocate;
+    tc_pool_deallocate_fn deallocate;
+    void* allocator_user_data;
+} tc_pool_config;
 
 // ============================================================================
 // Pool lifecycle
@@ -38,6 +58,15 @@ typedef struct tc_pool {
 
 // Initialize pool with given item size and initial capacity
 TCBASE_API bool tc_pool_init(tc_pool* pool, size_t item_size, uint32_t initial_capacity);
+
+// Initialize a configured pool. Custom allocation is transactional: init/grow
+// either publishes all replacement arrays or leaves the pool unchanged.
+TCBASE_API bool tc_pool_init_ex(
+    tc_pool* pool,
+    size_t item_size,
+    uint32_t initial_capacity,
+    const tc_pool_config* config
+);
 
 // Free pool resources
 TCBASE_API void tc_pool_free(tc_pool* pool);

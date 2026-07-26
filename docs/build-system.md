@@ -853,16 +853,23 @@ registration-level JUnit outcomes в suite-level `termin-test-execution`, сох
 Focused-вызов `run-tests-python.* <pytest-target ...>` остаётся прямым pytest
 запуском и не меняет repository inventory.
 
-Полный набор дополнительно запускает editor-process smoke tests для hot reload
-модулей:
+Полный набор дополнительно запускает editor-process smoke tests:
 
 - `scripts/smoke-python-module-hot-reload`
 - `scripts/smoke-cpp-module-cascade-hot-reload`
+- `scripts/smoke-sdk-editor-shaders`
+- `scripts/smoke-editor-mcp-offscreen`
+- `scripts/smoke-editor-virtual-display`, когда доступен capability
+  `virtual-display`.
 
-На headless Linux smoke-скрипты используют
+Module-reload и shader smoke на headless Linux используют
 `scripts/termin-editor-virtual-display`, если display не настроен. Wrapper
 проверяет Xvfb, Mesa llvmpipe, OpenGL/GLSL и SDK shader compiler до запуска
 редактора; каждый процесс получает отдельные display, MCP port и session file.
+`scripts/smoke-editor-mcp-offscreen` отдельно проверяет production
+`--headless` composition без Xvfb/SDL: два параллельных редактора получают
+разные agent-owned MCP sessions, исполняют команду, отдают непустой Vulkan PNG
+и штатно удаляют descriptors при shutdown.
 Для полного прогона без editor MCP стадии:
 
 ```bash

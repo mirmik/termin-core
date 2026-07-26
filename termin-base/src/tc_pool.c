@@ -1,66 +1,158 @@
 // tc_pool.c - Generic object pool implementation
 #include <tcbase/tc_pool.h>
 #include <tcbase/tc_log.h>
+#include <stdint.h>
 #include <string.h>
 
 // ============================================================================
 // Internal helpers
 // ============================================================================
 
-static bool pool_grow(tc_pool* pool) {
-    uint32_t new_capacity = pool->capacity == 0 ? 16 : pool->capacity * 2;
+static void* system_allocate(size_t size, void* user_data) {
+    (void)user_data;
+    return malloc(size);
+}
 
-    // Reallocate data array
-    void* new_data = realloc(pool->data, new_capacity * pool->item_size);
-    if (!new_data) {
-        tc_log(TC_LOG_ERROR, "tc_pool: failed to grow data array");
+static void system_deallocate(void* ptr, void* user_data) {
+    (void)user_data;
+    free(ptr);
+}
+
+static const char* pool_name(const tc_pool* pool) {
+    return pool && pool->name && pool->name[0] ? pool->name : "tc_pool";
+}
+
+static bool allocation_size_valid(uint32_t capacity, size_t item_size) {
+    return item_size != 0 && capacity <= SIZE_MAX / item_size;
+}
+
+static void pool_release_arrays(
+    tc_pool_deallocate_fn deallocate,
+    void* user_data,
+    void* data,
+    uint32_t* generations,
+    uint8_t* states,
+    uint32_t* free_list
+) {
+    if (data) deallocate(data, user_data);
+    if (generations) deallocate(generations, user_data);
+    if (states) deallocate(states, user_data);
+    if (free_list) deallocate(free_list, user_data);
+}
+
+static void pool_append_free_range(
+    tc_pool* pool,
+    uint32_t* free_list,
+    uint32_t first,
+    uint32_t end,
+    uint32_t* free_count
+) {
+    for (uint32_t i = first; i < end; ++i) {
+        const uint32_t index = pool->allocate_low_indices_first
+            ? end - 1u - (i - first)
+            : i;
+        free_list[(*free_count)++] = index;
+    }
+}
+
+static bool pool_grow(tc_pool* pool, uint32_t requested_capacity) {
+    const uint32_t old_capacity = pool->capacity;
+    if (old_capacity >= pool->max_capacity) {
+        tc_log_error("[%s] max capacity reached (%u)", pool_name(pool), pool->max_capacity);
         return false;
     }
-    pool->data = new_data;
 
-    // Zero-init new slots
-    memset((char*)pool->data + pool->capacity * pool->item_size,
-           0,
-           (new_capacity - pool->capacity) * pool->item_size);
-
-    // Reallocate generations
-    uint32_t* new_gens = (uint32_t*)realloc(pool->generations, new_capacity * sizeof(uint32_t));
-    if (!new_gens) {
-        tc_log(TC_LOG_ERROR, "tc_pool: failed to grow generations array");
+    uint32_t new_capacity = requested_capacity;
+    if (new_capacity == 0) {
+        new_capacity = old_capacity == 0 ? 16u : old_capacity;
+        if (new_capacity > UINT32_MAX / 2u) {
+            new_capacity = UINT32_MAX;
+        } else {
+            new_capacity *= 2u;
+        }
+    }
+    if (new_capacity > pool->max_capacity) new_capacity = pool->max_capacity;
+    if (new_capacity <= old_capacity ||
+        !allocation_size_valid(new_capacity, pool->item_size)) {
+        tc_log_error("[%s] invalid pool growth capacity", pool_name(pool));
         return false;
     }
-    pool->generations = new_gens;
 
-    // Init new generations to 1
-    for (uint32_t i = pool->capacity; i < new_capacity; i++) {
-        pool->generations[i] = 1;
-    }
-
-    // Reallocate states
-    uint8_t* new_states = (uint8_t*)realloc(pool->states, new_capacity * sizeof(uint8_t));
-    if (!new_states) {
-        tc_log(TC_LOG_ERROR, "tc_pool: failed to grow states array");
+    void* data = pool->allocate(
+        (size_t)new_capacity * pool->item_size,
+        pool->allocator_user_data
+    );
+    uint32_t* generations = (uint32_t*)pool->allocate(
+        (size_t)new_capacity * sizeof(uint32_t),
+        pool->allocator_user_data
+    );
+    uint8_t* states = (uint8_t*)pool->allocate(
+        (size_t)new_capacity * sizeof(uint8_t),
+        pool->allocator_user_data
+    );
+    uint32_t* free_list = (uint32_t*)pool->allocate(
+        (size_t)new_capacity * sizeof(uint32_t),
+        pool->allocator_user_data
+    );
+    if (!data || !generations || !states || !free_list) {
+        tc_log_error("[%s] grow allocation failed", pool_name(pool));
+        pool_release_arrays(
+            pool->deallocate,
+            pool->allocator_user_data,
+            data,
+            generations,
+            states,
+            free_list
+        );
         return false;
     }
-    pool->states = new_states;
 
-    // Init new states to free
-    memset(pool->states + pool->capacity, TC_SLOT_FREE, new_capacity - pool->capacity);
-
-    // Reallocate free list
-    uint32_t* new_free = (uint32_t*)realloc(pool->free_list, new_capacity * sizeof(uint32_t));
-    if (!new_free) {
-        tc_log(TC_LOG_ERROR, "tc_pool: failed to grow free list");
-        return false;
+    if (old_capacity != 0) {
+        memcpy(data, pool->data, (size_t)old_capacity * pool->item_size);
+        memcpy(
+            generations,
+            pool->generations,
+            (size_t)old_capacity * sizeof(uint32_t)
+        );
+        memcpy(states, pool->states, (size_t)old_capacity * sizeof(uint8_t));
+        memcpy(
+            free_list,
+            pool->free_list,
+            (size_t)pool->free_count * sizeof(uint32_t)
+        );
     }
-    pool->free_list = new_free;
-
-    // Add new slots to free list
-    for (uint32_t i = pool->capacity; i < new_capacity; i++) {
-        pool->free_list[pool->free_count++] = i;
+    memset(
+        (char*)data + (size_t)old_capacity * pool->item_size,
+        0,
+        (size_t)(new_capacity - old_capacity) * pool->item_size
+    );
+    memset(states + old_capacity, TC_SLOT_FREE, new_capacity - old_capacity);
+    for (uint32_t i = old_capacity; i < new_capacity; ++i) {
+        generations[i] = pool->initial_generation;
     }
+    uint32_t free_count = pool->free_count;
+    pool_append_free_range(
+        pool,
+        free_list,
+        old_capacity,
+        new_capacity,
+        &free_count
+    );
 
+    pool_release_arrays(
+        pool->deallocate,
+        pool->allocator_user_data,
+        pool->data,
+        pool->generations,
+        pool->states,
+        pool->free_list
+    );
+    pool->data = data;
+    pool->generations = generations;
+    pool->states = states;
+    pool->free_list = free_list;
     pool->capacity = new_capacity;
+    pool->free_count = free_count;
     return true;
 }
 
@@ -69,42 +161,73 @@ static bool pool_grow(tc_pool* pool) {
 // ============================================================================
 
 bool tc_pool_init(tc_pool* pool, size_t item_size, uint32_t initial_capacity) {
+    const tc_pool_config config = {
+        .max_capacity = UINT32_MAX,
+        .initial_generation = 1u,
+        .allocate_low_indices_first = false,
+        .name = "tc_pool",
+        .allocate = NULL,
+        .deallocate = NULL,
+        .allocator_user_data = NULL,
+    };
+    return tc_pool_init_ex(pool, item_size, initial_capacity, &config);
+}
+
+bool tc_pool_init_ex(
+    tc_pool* pool,
+    size_t item_size,
+    uint32_t initial_capacity,
+    const tc_pool_config* config
+) {
     if (!pool || item_size == 0) return false;
 
-    memset(pool, 0, sizeof(tc_pool));
-    pool->item_size = item_size;
-
-    if (initial_capacity > 0) {
-        pool->data = calloc(initial_capacity, item_size);
-        pool->generations = (uint32_t*)malloc(initial_capacity * sizeof(uint32_t));
-        pool->states = (uint8_t*)calloc(initial_capacity, sizeof(uint8_t));
-        pool->free_list = (uint32_t*)malloc(initial_capacity * sizeof(uint32_t));
-
-        if (!pool->data || !pool->generations || !pool->states || !pool->free_list) {
-            tc_pool_free(pool);
-            return false;
-        }
-
-        // Init generations to 1
-        for (uint32_t i = 0; i < initial_capacity; i++) {
-            pool->generations[i] = 1;
-            pool->free_list[i] = i;
-        }
-
-        pool->capacity = initial_capacity;
-        pool->free_count = initial_capacity;
+    const uint32_t max_capacity =
+        config && config->max_capacity ? config->max_capacity : UINT32_MAX;
+    if (initial_capacity > max_capacity ||
+        !allocation_size_valid(initial_capacity, item_size)) {
+        tc_log_error("[tc_pool] invalid initial or maximum capacity");
+        memset(pool, 0, sizeof(*pool));
+        return false;
+    }
+    if (config && ((config->allocate == NULL) != (config->deallocate == NULL))) {
+        tc_log_error("[tc_pool] allocator and deallocator must be provided together");
+        memset(pool, 0, sizeof(*pool));
+        return false;
     }
 
+    memset(pool, 0, sizeof(*pool));
+    pool->item_size = item_size;
+    pool->max_capacity = max_capacity;
+    pool->initial_generation = config ? config->initial_generation : 1u;
+    pool->allocate_low_indices_first =
+        config ? config->allocate_low_indices_first : false;
+    pool->name = config ? config->name : "tc_pool";
+    pool->allocate = config && config->allocate ? config->allocate : system_allocate;
+    pool->deallocate =
+        config && config->deallocate ? config->deallocate : system_deallocate;
+    pool->allocator_user_data = config ? config->allocator_user_data : NULL;
+
+    if (initial_capacity == 0) return true;
+    if (!pool_grow(pool, initial_capacity)) {
+        tc_pool_free(pool);
+        return false;
+    }
     return true;
 }
 
 void tc_pool_free(tc_pool* pool) {
     if (!pool) return;
 
-    free(pool->data);
-    free(pool->generations);
-    free(pool->states);
-    free(pool->free_list);
+    tc_pool_deallocate_fn deallocate =
+        pool->deallocate ? pool->deallocate : system_deallocate;
+    pool_release_arrays(
+        deallocate,
+        pool->allocator_user_data,
+        pool->data,
+        pool->generations,
+        pool->states,
+        pool->free_list
+    );
 
     memset(pool, 0, sizeof(tc_pool));
 }
@@ -138,7 +261,7 @@ tc_handle tc_pool_alloc(tc_pool* pool) {
 
     // Grow if no free slots
     if (pool->free_count == 0) {
-        if (!pool_grow(pool)) {
+        if (!pool_grow(pool, 0)) {
             return TC_HANDLE_INVALID;
         }
     }
