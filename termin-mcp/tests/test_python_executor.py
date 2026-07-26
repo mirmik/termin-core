@@ -71,3 +71,39 @@ def test_main_thread_claim_wins_timeout_race_and_returns_completed_result() -> N
     assert not worker.is_alive()
     assert result_holder[0].ok
     assert result_holder[0].output == "completed\n"
+
+
+def test_close_cancels_queued_work_and_rejects_new_requests() -> None:
+    executor = PythonScriptExecutor(lambda: {})
+    result_holder = []
+
+    worker = threading.Thread(
+        target=lambda: result_holder.append(
+            executor.execute_script_from_any_thread("print('never runs')", timeout=None)
+        )
+    )
+    worker.start()
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        with executor._pending_lock:
+            if executor._pending:
+                break
+        time.sleep(0.001)
+
+    executor.close()
+    worker.join(timeout=1.0)
+
+    assert not worker.is_alive()
+    assert result_holder[0].error == "Python executor closed before execution"
+    assert executor.process_pending() == 0
+
+    rejected = threading.Thread(
+        target=lambda: result_holder.append(
+            executor.execute_script_from_any_thread("print('rejected')", timeout=None)
+        )
+    )
+    rejected.start()
+    rejected.join(timeout=1.0)
+    assert not rejected.is_alive()
+    assert result_holder[1].error == "Python executor is closed"

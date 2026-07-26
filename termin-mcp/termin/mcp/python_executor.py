@@ -52,6 +52,7 @@ class PythonScriptExecutor:
         self._main_thread_id = threading.get_ident()
         self._pending: deque[_ExecutionRequest] = deque()
         self._pending_lock = threading.Lock()
+        self._closed = False
 
     def execute_repl_line(self, text: str) -> PythonExecutionResult:
         if not text.strip() and not self._console.buffer:
@@ -111,6 +112,12 @@ class PythonScriptExecutor:
 
         request = _ExecutionRequest(script=script, done=threading.Event())
         with self._pending_lock:
+            if self._closed:
+                return PythonExecutionResult(
+                    ok=False,
+                    output="",
+                    error="Python executor is closed",
+                )
             self._pending.append(request)
 
         if request.done.wait(timeout=timeout):
@@ -163,6 +170,28 @@ class PythonScriptExecutor:
                 request.done.set()
             processed += 1
         return processed
+
+    def close(self) -> None:
+        """Reject new work and cancel requests not yet claimed by the owner thread."""
+        with self._pending_lock:
+            if self._closed:
+                return
+            self._closed = True
+            while self._pending:
+                request = self._pending.popleft()
+                if request.state != "queued":
+                    log.error(
+                        f"[{self._log_prefix}] close encountered invalid pending "
+                        f"request state {request.state}"
+                    )
+                    continue
+                request.state = "cancelled"
+                request.result = PythonExecutionResult(
+                    ok=False,
+                    output="",
+                    error="Python executor closed before execution",
+                )
+                request.done.set()
 
     def _request_result(self, request: _ExecutionRequest) -> PythonExecutionResult:
         if request.result is None:
