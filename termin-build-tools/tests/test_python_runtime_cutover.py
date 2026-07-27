@@ -42,6 +42,13 @@ def test_toolchain_lock_is_the_only_runtime_identity() -> None:
     assert 'TERMIN_CANONICAL_PYTHON_VERSION "3.14"' in cmake_contract
     assert "Py_GIL_DISABLED" in cmake_contract
     assert "^(cpython-|cp)314t" in cmake_contract
+    assert "sysconfig.get_path" in cmake_contract
+    assert 'set(Python_INCLUDE_DIR "${TERMIN_PYTHON_INCLUDE_DIR}"' in (
+        cmake_contract
+    )
+    assert 'set(Python_LIBRARY "${TERMIN_PYTHON_LIBRARY}"' in cmake_contract
+    assert "Py_GIL_DISABLED=1" in cmake_contract
+    assert "Py_NO_LINK_LIB" in cmake_contract
     assert "unset(NB_SUFFIX CACHE)" in cmake_contract
 
     installed_nanobind_contract = (

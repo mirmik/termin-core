@@ -539,6 +539,20 @@ def install_python_packages(
 
 def prepare_build_python_runtime(sdk_prefix: Path) -> int:
     if _is_windows():
+        py_exec = _python_executable()
+        info = _python_version_and_paths(py_exec)
+        try:
+            _copy_windows_python_runtime_executables(sdk_prefix, info)
+        except (OSError, RuntimeError) as error:
+            print(
+                f"ERROR: failed to prepare Windows Python runtime: {error}",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "Prepared bundled Windows Python runtime for native SDK consumers: "
+            f"{sdk_prefix / 'bin'}"
+        )
         return 0
 
     py_exec = _python_executable()
@@ -608,6 +622,10 @@ def _ensure_sdk_python_build_environment(
     stamp = environment_root / "python-sdk-build-requirements.txt"
     selected_base = base_python or Path(_python_executable())
     selected_info = _python_version_and_paths(str(selected_base))
+    selected_base_root: Path | None = None
+    selected_base_prefix = selected_info.get("base_prefix")
+    if isinstance(selected_base_prefix, str) and selected_base_prefix:
+        selected_base_root = Path(selected_base_prefix).resolve()
     canonical_base = selected_info.get("base_executable")
     if isinstance(canonical_base, str) and canonical_base:
         canonical_base_path = Path(canonical_base)
@@ -619,6 +637,7 @@ def _ensure_sdk_python_build_environment(
     )
     if build_python.is_file():
         actual_base: Path | None = None
+        actual_base_root: Path | None = None
         try:
             existing_info = _python_version_and_paths(str(build_python))
             actual_abi = PythonAbiIdentity.from_runtime_probe(
@@ -628,12 +647,18 @@ def _ensure_sdk_python_build_environment(
             base_value = existing_info.get("base_executable")
             if isinstance(base_value, str) and base_value:
                 actual_base = Path(base_value).resolve()
+            base_prefix_value = existing_info.get("base_prefix")
+            if isinstance(base_prefix_value, str) and base_prefix_value:
+                actual_base_root = Path(base_prefix_value).resolve()
         except (PythonAbiError, OSError, RuntimeError):
             actual_abi = None
         selected_base = selected_base.resolve()
-        base_mismatch = (
-            actual_base is not None and actual_base != selected_base
-        )
+        if selected_base_root is not None and actual_base_root is not None:
+            base_mismatch = actual_base_root != selected_base_root
+        else:
+            base_mismatch = (
+                actual_base is not None and actual_base != selected_base
+            )
         if actual_abi != expected_abi or base_mismatch:
             rendered = (
                 actual_abi.canonical_json()

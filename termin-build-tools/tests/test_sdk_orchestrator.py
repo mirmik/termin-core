@@ -690,12 +690,17 @@ def test_windows_build_environment_accepts_versioned_base_executable_alias(
     monkeypatch.setattr(
         sdk,
         "_python_version_and_paths",
-        lambda _python: {
+        lambda python: {
             "version": "3.14",
             "soabi": "cp314t-win_amd64",
             "free_threaded": True,
             "py_gil_disabled": True,
-            "base_executable": str(canonical_python),
+            "base_prefix": str(runtime_root),
+            "base_executable": str(
+                canonical_python
+                if Path(python) == build_python
+                else python_alias
+            ),
         },
     )
     commands = []
@@ -963,6 +968,38 @@ def test_prepare_build_python_runtime_sanitizes_sdk_before_cmake(
     assert result == 0
     assert not config_dir.exists()
     assert (sdk_prefix / "lib" / "libpython3.10.so").read_bytes() == b"shared"
+
+
+def test_prepare_build_python_runtime_copies_windows_runtime_for_consumers(
+    tmp_path,
+    monkeypatch,
+):
+    sdk_prefix = tmp_path / "sdk"
+    runtime_info = {
+        "version": "3.14",
+        "soabi": "cp314t-win_amd64",
+        "free_threaded": True,
+        "py_gil_disabled": True,
+    }
+    calls = []
+
+    monkeypatch.setattr(sdk, "_is_windows", lambda: True)
+    monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _py_exec: runtime_info,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_copy_windows_python_runtime_executables",
+        lambda prefix, info: calls.append((prefix, info)),
+    )
+
+    result = sdk.prepare_build_python_runtime(sdk_prefix)
+
+    assert result == 0
+    assert calls == [(sdk_prefix, runtime_info)]
 
 
 def test_prepare_build_python_runtime_creates_runtime_for_clean_sdk(
