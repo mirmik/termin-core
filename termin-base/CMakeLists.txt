@@ -44,6 +44,11 @@ target_include_directories(termin_base PUBLIC
 )
 
 target_compile_definitions(termin_base PRIVATE TCBASE_EXPORTS TC_EXPORTS)
+if(MSVC)
+    set_source_files_properties(src/tc_log.c PROPERTIES
+        COMPILE_OPTIONS "/experimental:c11atomics"
+    )
+endif()
 
 # Python bindings
 option(TERMIN_BUILD_PYTHON "Build Python bindings" OFF)
