@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <type_traits>
 #include "bounds2.hpp"
 
 namespace termin {
@@ -15,17 +17,15 @@ struct Rect2i {
     Rect2i(int x, int y, int width, int height) : x(x), y(y), width(width), height(height) {}
 };
 
-// 2D rectangle with floating-point origin and extent.
-struct Rect2f {
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
+using Rect2f = ::tc_rect2f;
 
-    Rect2f() = default;
-    Rect2f(float x, float y, float width, float height) : x(x), y(y), width(width), height(height) {}
-
-    Bounds2f bounds() const { return {x, y, x + width, y + height}; }
-};
+static_assert(std::is_same<Rect2f, ::tc_rect2f>::value, "termin::Rect2f must alias tc_rect2f");
+static_assert(std::is_standard_layout<Rect2f>::value, "Rect2f must stay ABI-friendly");
+static_assert(std::is_trivially_copyable<Rect2f>::value, "Rect2f must stay trivially copyable");
+static_assert(sizeof(Rect2f) == sizeof(float) * 4, "Rect2f must stay a packed origin/extent tuple");
+static_assert(offsetof(Rect2f, x) == 0, "Rect2f.x offset changed");
+static_assert(offsetof(Rect2f, y) == sizeof(float), "Rect2f.y offset changed");
+static_assert(offsetof(Rect2f, width) == sizeof(float) * 2, "Rect2f.width offset changed");
+static_assert(offsetof(Rect2f, height) == sizeof(float) * 3, "Rect2f.height offset changed");
 
 } // namespace termin

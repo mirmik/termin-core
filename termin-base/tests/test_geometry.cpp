@@ -2,6 +2,7 @@
 #include <type_traits>
 
 #include <tcbase/tc_types.h>
+#include <termin/geom/affine2.hpp>
 #include <termin/geom/color.hpp>
 #include <termin/geom/mat44.hpp>
 #include <termin/geom/ray3.hpp>
@@ -45,7 +46,13 @@ TEST_CASE("Ray3 is tc_ray3 alias and normalizes direction") {
 
 TEST_CASE("base geometry value types preserve simple construction semantics") {
     static_assert(std::is_standard_layout_v<termin::Color4>);
+    static_assert(std::is_same_v<termin::Vec2f, tc_vec2f>);
+    static_assert(std::is_same_v<termin::Size2f, tc_size2f>);
+    static_assert(std::is_same_v<termin::Bounds2f, tc_bounds2f>);
+    static_assert(std::is_same_v<termin::Rect2f, tc_rect2f>);
+    static_assert(std::is_same_v<termin::Affine2f, tc_affine2f>);
     static_assert(std::is_standard_layout_v<termin::Size2i>);
+    static_assert(std::is_standard_layout_v<termin::Size2f>);
     static_assert(std::is_standard_layout_v<termin::Bounds2i>);
     static_assert(std::is_standard_layout_v<termin::Bounds2f>);
     static_assert(std::is_standard_layout_v<termin::Rect2i>);
@@ -82,6 +89,90 @@ TEST_CASE("base geometry value types preserve simple construction semantics") {
     CHECK(bounds_f.y1 == 6.5f);
     CHECK(bounds_f.width() == 3.25f);
     CHECK(bounds_f.height() == 4.5f);
+
+    termin::Size2f size_f{640.0f, 480.0f};
+    CHECK(size_f == termin::Size2f(640.0f, 480.0f));
+}
+
+TEST_CASE("Affine2f composes arbitrary affine transforms exactly") {
+    constexpr float half_pi = 1.57079632679489661923f;
+    const termin::Affine2f parent =
+        termin::Affine2f::translation(5.0f, -3.0f)
+        * termin::Affine2f::scaling(2.0f, 0.5f);
+    const termin::Affine2f child =
+        termin::Affine2f::rotation(half_pi / 2.0f)
+        * termin::Affine2f::shear(0.25f, -0.4f);
+    const termin::Vec2f point{3.0f, -2.0f};
+
+    const termin::Vec2f sequential =
+        parent.transform_point(child.transform_point(point));
+    const termin::Vec2f composed = (parent * child).transform_point(point);
+
+    CHECK(std::abs(composed.x - sequential.x) < 1.0e-5f);
+    CHECK(std::abs(composed.y - sequential.y) < 1.0e-5f);
+
+    const termin::Affine2f third =
+        termin::Affine2f::trs({-1.0f, 4.0f}, -0.3f, {-2.0f, 1.25f});
+    const termin::Vec2f left = ((parent * child) * third).transform_point(point);
+    const termin::Vec2f right = (parent * (child * third)).transform_point(point);
+    CHECK(std::abs(left.x - right.x) < 1.0e-5f);
+    CHECK(std::abs(left.y - right.y) < 1.0e-5f);
+}
+
+TEST_CASE("Affine2f inverse is explicit and round trips reflections") {
+    const termin::Affine2f affine =
+        termin::Affine2f::translation(7.0f, -5.0f)
+        * termin::Affine2f::rotation(0.37f)
+        * termin::Affine2f::scaling(-2.0f, 0.75f)
+        * termin::Affine2f::shear(0.3f, -0.2f);
+    termin::Affine2f inverse;
+    CHECK(affine.try_inverse(inverse));
+
+    const termin::Vec2f point{8.0f, -1.5f};
+    const termin::Vec2f round_trip =
+        inverse.transform_point(affine.transform_point(point));
+    CHECK(std::abs(round_trip.x - point.x) < 1.0e-4f);
+    CHECK(std::abs(round_trip.y - point.y) < 1.0e-4f);
+
+    termin::Affine2f unchanged = termin::Affine2f::translation(9.0f, 11.0f);
+    const termin::Affine2f singular = termin::Affine2f::scaling(0.0f, 2.0f);
+    CHECK(!singular.try_inverse(unchanged));
+    CHECK(unchanged.tx == 9.0f);
+    CHECK(unchanged.ty == 11.0f);
+}
+
+TEST_CASE("Affine2f transforms all bounds corners") {
+    const termin::Affine2f affine =
+        termin::Affine2f::rotation(0.5f)
+        * termin::Affine2f::shear(0.6f, -0.25f);
+    const termin::Bounds2f bounds{-2.0f, -1.0f, 3.0f, 4.0f};
+    const termin::Bounds2f transformed = affine.transform_bounds(bounds);
+
+    const termin::Vec2f corners[] = {
+        {-2.0f, -1.0f},
+        {3.0f, -1.0f},
+        {-2.0f, 4.0f},
+        {3.0f, 4.0f},
+    };
+    for (const termin::Vec2f& corner : corners) {
+        const termin::Vec2f p = affine.transform_point(corner);
+        CHECK(p.x >= transformed.x0 - 1.0e-5f);
+        CHECK(p.x <= transformed.x1 + 1.0e-5f);
+        CHECK(p.y >= transformed.y0 - 1.0e-5f);
+        CHECK(p.y <= transformed.y1 + 1.0e-5f);
+    }
+}
+
+TEST_CASE("Affine2f conversion preserves the rigid Pose2 contract") {
+    const termin::Pose2 pose{0.75, {4.0, -6.0}};
+    const termin::Affine2f affine = termin::Affine2f::from_pose2(pose);
+    const termin::Vec2f point{2.0f, 3.0f};
+    const termin::Vec2 pose_result =
+        pose.transform_point(point.to_double());
+    const termin::Vec2f affine_result = affine.transform_point(point);
+
+    CHECK(std::abs(affine_result.x - static_cast<float>(pose_result.x)) < 1.0e-5f);
+    CHECK(std::abs(affine_result.y - static_cast<float>(pose_result.y)) < 1.0e-5f);
 }
 
 TEST_CASE("world2d maps double positions between Vec2 and the canonical XZ plane") {

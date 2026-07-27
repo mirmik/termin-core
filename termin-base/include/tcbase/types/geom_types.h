@@ -59,6 +59,98 @@ extern "C++" {
 inline tc_vec2 operator*(double s, const tc_vec2& v) { return v * s; }
 }
 
+struct tc_vec2f {
+    float x = 0.0f;
+    float y = 0.0f;
+
+    constexpr tc_vec2f() noexcept = default;
+    constexpr tc_vec2f(float x, float y) noexcept : x(x), y(y) {}
+    explicit tc_vec2f(const tc_vec2& v)
+        : x(static_cast<float>(v.x))
+        , y(static_cast<float>(v.y)) {}
+
+    float& operator[](int i) { return (&x)[i]; }
+    float operator[](int i) const { return (&x)[i]; }
+
+    tc_vec2f operator+(const tc_vec2f& v) const { return {x + v.x, y + v.y}; }
+    tc_vec2f operator-(const tc_vec2f& v) const { return {x - v.x, y - v.y}; }
+    tc_vec2f operator*(float s) const { return {x * s, y * s}; }
+    tc_vec2f operator/(float s) const { return {x / s, y / s}; }
+    tc_vec2f operator-() const { return {-x, -y}; }
+
+    tc_vec2f& operator+=(const tc_vec2f& v) { x += v.x; y += v.y; return *this; }
+    tc_vec2f& operator-=(const tc_vec2f& v) { x -= v.x; y -= v.y; return *this; }
+    tc_vec2f& operator*=(float s) { x *= s; y *= s; return *this; }
+    tc_vec2f& operator/=(float s) { x /= s; y /= s; return *this; }
+
+    bool operator==(const tc_vec2f& v) const { return x == v.x && y == v.y; }
+    bool operator!=(const tc_vec2f& v) const { return !(*this == v); }
+
+    float dot(const tc_vec2f& v) const { return x * v.x + y * v.y; }
+    float cross(const tc_vec2f& v) const { return x * v.y - y * v.x; }
+
+    float norm() const { return std::sqrt(x * x + y * y); }
+    float norm_squared() const { return x * x + y * y; }
+
+    tc_vec2f normalized() const {
+        float n = norm();
+        return n > 1e-6f ? *this / n : tc_vec2f{1.0f, 0.0f};
+    }
+
+    tc_vec2 to_double() const { return {x, y}; }
+
+    static tc_vec2f zero() { return {0.0f, 0.0f}; }
+    static tc_vec2f unit_x() { return {1.0f, 0.0f}; }
+    static tc_vec2f unit_y() { return {0.0f, 1.0f}; }
+};
+
+extern "C++" {
+inline tc_vec2f operator*(float s, const tc_vec2f& v) { return v * s; }
+}
+
+struct tc_size2f {
+    float width = 0.0f;
+    float height = 0.0f;
+
+    constexpr tc_size2f() noexcept = default;
+    constexpr tc_size2f(float width, float height) noexcept
+        : width(width), height(height) {}
+
+    bool operator==(const tc_size2f& other) const {
+        return width == other.width && height == other.height;
+    }
+    bool operator!=(const tc_size2f& other) const {
+        return !(*this == other);
+    }
+};
+
+struct tc_bounds2f {
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+
+    constexpr tc_bounds2f() noexcept = default;
+    constexpr tc_bounds2f(float x0, float y0, float x1, float y1) noexcept
+        : x0(x0), y0(y0), x1(x1), y1(y1) {}
+
+    float width() const { return x1 - x0; }
+    float height() const { return y1 - y0; }
+};
+
+struct tc_rect2f {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+
+    constexpr tc_rect2f() noexcept = default;
+    constexpr tc_rect2f(float x, float y, float width, float height) noexcept
+        : x(x), y(y), width(width), height(height) {}
+
+    tc_bounds2f bounds() const { return {x, y, x + width, y + height}; }
+};
+
 struct tc_vec3 {
     double x = 0.0;
     double y = 0.0;
@@ -397,6 +489,51 @@ struct tc_pose2 {
     static tc_pose2 lerp(const tc_pose2& a, const tc_pose2& b, double t);
 };
 
+struct tc_affine2f {
+    // Packed row coefficients for the documented column-vector equations:
+    // x' = m00*x + m01*y + tx
+    // y' = m10*x + m11*y + ty
+    float m00 = 1.0f;
+    float m01 = 0.0f;
+    float m10 = 0.0f;
+    float m11 = 1.0f;
+    float tx = 0.0f;
+    float ty = 0.0f;
+
+    constexpr tc_affine2f() noexcept = default;
+    constexpr tc_affine2f(
+        float m00,
+        float m01,
+        float m10,
+        float m11,
+        float tx,
+        float ty) noexcept
+        : m00(m00), m01(m01), m10(m10), m11(m11), tx(tx), ty(ty) {}
+    explicit tc_affine2f(const tc_pose2& pose) noexcept;
+
+    static tc_affine2f identity();
+    static tc_affine2f translation(float x, float y);
+    static tc_affine2f translation(const tc_vec2f& value);
+    static tc_affine2f rotation(float radians);
+    static tc_affine2f scaling(float sx, float sy);
+    static tc_affine2f scaling(const tc_vec2f& value);
+    static tc_affine2f scaling(float uniform);
+    static tc_affine2f shear(float x_by_y, float y_by_x);
+    static tc_affine2f trs(
+        const tc_vec2f& translation,
+        float radians,
+        const tc_vec2f& scale);
+    static tc_affine2f from_pose2(const tc_pose2& pose);
+
+    tc_affine2f operator*(const tc_affine2f& child) const;
+    tc_vec2f transform_point(const tc_vec2f& point) const;
+    tc_vec2f transform_vector(const tc_vec2f& vector) const;
+    tc_bounds2f transform_bounds(const tc_bounds2f& bounds) const;
+    float determinant() const;
+    bool is_finite() const;
+    bool try_inverse(tc_affine2f& out, float epsilon = 1.0e-8f) const;
+};
+
 struct tc_pose3 {
     tc_quat ang;
     tc_vec3 lin;
@@ -662,6 +799,22 @@ typedef struct tc_vec2 {
     double x, y;
 } tc_vec2;
 
+typedef struct tc_vec2f {
+    float x, y;
+} tc_vec2f;
+
+typedef struct tc_size2f {
+    float width, height;
+} tc_size2f;
+
+typedef struct tc_bounds2f {
+    float x0, y0, x1, y1;
+} tc_bounds2f;
+
+typedef struct tc_rect2f {
+    float x, y, width, height;
+} tc_rect2f;
+
 typedef struct tc_vec3 {
     double x, y, z;
 } tc_vec3;
@@ -687,6 +840,12 @@ typedef struct tc_pose2 {
     double ang;
     tc_vec2 lin;
 } tc_pose2;
+
+typedef struct tc_affine2f {
+    float m00, m01;
+    float m10, m11;
+    float tx, ty;
+} tc_affine2f;
 
 typedef struct tc_pose3 {
     tc_quat ang;

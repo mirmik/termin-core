@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <type_traits>
 #include "size2.hpp"
 
 namespace termin {
@@ -25,18 +27,15 @@ struct Bounds2i {
     }
 };
 
-// 2D bounds with floating-point min/max coordinates.
-struct Bounds2f {
-    float x0 = 0.0f;
-    float y0 = 0.0f;
-    float x1 = 0.0f;
-    float y1 = 0.0f;
+using Bounds2f = ::tc_bounds2f;
 
-    Bounds2f() = default;
-    Bounds2f(float x0, float y0, float x1, float y1) : x0(x0), y0(y0), x1(x1), y1(y1) {}
-
-    float width() const { return x1 - x0; }
-    float height() const { return y1 - y0; }
-};
+static_assert(std::is_same<Bounds2f, ::tc_bounds2f>::value, "termin::Bounds2f must alias tc_bounds2f");
+static_assert(std::is_standard_layout<Bounds2f>::value, "Bounds2f must stay ABI-friendly");
+static_assert(std::is_trivially_copyable<Bounds2f>::value, "Bounds2f must stay trivially copyable");
+static_assert(sizeof(Bounds2f) == sizeof(float) * 4, "Bounds2f must stay a packed min/max tuple");
+static_assert(offsetof(Bounds2f, x0) == 0, "Bounds2f.x0 offset changed");
+static_assert(offsetof(Bounds2f, y0) == sizeof(float), "Bounds2f.y0 offset changed");
+static_assert(offsetof(Bounds2f, x1) == sizeof(float) * 2, "Bounds2f.x1 offset changed");
+static_assert(offsetof(Bounds2f, y1) == sizeof(float) * 3, "Bounds2f.y1 offset changed");
 
 } // namespace termin
