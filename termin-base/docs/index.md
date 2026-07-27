@@ -27,7 +27,13 @@ state, но не callbacks или Python objects.
 
 ## Основные области
 
-- `tc_log` - общий C/C++ logging API.
+- `tc_log` - общий C/C++ logging API. Помимо stderr и опционального platform
+  callback, host может включить bounded capture queue через
+  `tc_log_capture_start()`, забирать целостные `tc_log_record` вызовом
+  `tc_log_capture_drain()` и завершить capture через
+  `tc_log_capture_stop()`. Producer threads не вызывают consumer language/UI
+  callbacks; при переполнении удаляются самые старые записи, а drain возвращает
+  наблюдаемый `dropped_count`.
 - `tc_pool` - единый handle/generation pool primitive. Обычный
   `tc_pool_init()` сохраняет неограниченный growable contract; владельцы с
   жёстким лимитом или fault-injection используют `tc_pool_init_ex()` с
@@ -79,10 +85,20 @@ Python API экспортируется из `tcbase`:
 import tcbase
 
 tcbase.log.info("hello")
+tcbase.log.capture_start(2048)
+records, dropped_count = tcbase.log.capture_drain(512)
+tcbase.log.capture_stop()
 settings = tcbase.Settings("settings.json", True)
 settings.set("ui/theme", "dark")
 settings.save()
 ```
+
+Native Editor владеет capture queue на протяжении editor session и является
+pull-consumer. Стандартный Python `logging` подключается в редакторе handler-ом,
+который переводит записи в `tc_log`; editor/build helpers также пишут через
+`tcbase.log`. Поэтому единственный путь в Editor Console — native drain, а
+stderr и platform callback остаются независимыми sinks. Перехват произвольных
+`stdout`/`stderr` в этот контракт не входит.
 
 ## Когда использовать
 

@@ -5,7 +5,9 @@
 #include <tcbase/tc_resource.h>
 #include <tcbase/tc_string.h>
 #include <tcbase/settings.h>
+#include <stdexcept>
 #include <utility>
+#include <vector>
 #include "trent_helpers.hpp"
 
 namespace nb = nanobind;
@@ -104,6 +106,38 @@ static void bind_log(nb::module_& m) {
         }
     }, nb::arg("callback"),
         "Set callback for log interception. Callback signature: (level: int, message: str)");
+
+    m.def("capture_start", [](size_t capacity) {
+        if (!tc_log_capture_start(capacity)) {
+            throw std::runtime_error("Failed to allocate native log capture queue");
+        }
+    }, nb::arg("capacity") = 2048,
+        "Start or reset the bounded native log capture queue");
+
+    m.def("capture_stop", &tc_log_capture_stop,
+        "Stop native log capture and discard queued records");
+
+    m.def("capture_drain", [](size_t max_records) {
+        if (max_records == 0) {
+            throw std::invalid_argument("max_records must be positive");
+        }
+        std::vector<tc_log_record> buffer(max_records);
+        uint64_t dropped_count = 0;
+        size_t count = tc_log_capture_drain(
+            buffer.data(),
+            buffer.size(),
+            &dropped_count
+        );
+        nb::list records;
+        for (size_t i = 0; i < count; ++i) {
+            records.append(nb::make_tuple(
+                buffer[i].level,
+                std::string(buffer[i].message)
+            ));
+        }
+        return nb::make_tuple(records, dropped_count);
+    }, nb::arg("max_records") = 512,
+        "Drain native log records and the overflow count since the previous drain");
 
     m.def("debug", [](const std::string& msg) {
         tc_log_debug("%s", msg.c_str());

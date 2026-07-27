@@ -469,7 +469,6 @@ def test_ctest_build_targets_are_resolved_from_cmake_file_api(
 ) -> None:
     reply = tmp_path / ".cmake" / "api" / "v1" / "reply"
     reply.mkdir(parents=True)
-    executable = tmp_path / "bin" / "Release" / "shared_test_name.exe"
     _write_json(
         reply / "index-1.json",
         {"reply": {"codemodel-v2": {"jsonFile": "codemodel.json"}}},
