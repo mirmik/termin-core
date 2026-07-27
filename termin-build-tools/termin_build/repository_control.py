@@ -655,6 +655,9 @@ def validate_ctest_inventory(
         capability_labels = [
             label for label in labels if label.startswith("termin:capability:")
         ]
+        build_target_labels = [
+            label for label in labels if label.startswith("termin:build-target:")
+        ]
         if len(module_labels) != 1:
             errors.append(f"CTest test {test_name}: expected one termin:module label")
         else:
@@ -663,6 +666,10 @@ def validate_ctest_inventory(
             errors.append(f"CTest test {test_name}: expected one termin:tier label")
         if not capability_labels:
             errors.append(f"CTest test {test_name}: missing termin:capability label")
+        if len(build_target_labels) != 1:
+            errors.append(
+                f"CTest test {test_name}: expected one termin:build-target label"
+            )
 
     for suite in catalog.suites:
         if suite.executor == "ctest" and suite.module not in observed_modules:
@@ -1286,20 +1293,8 @@ def _load_configured_native_sources(build_dir: Path) -> list[dict[str, str]]:
             raise ManifestError(f"compile commands root must be an array: {compile_commands_path}")
         return value
 
-    reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
-    indexes = sorted(reply_dir.glob("index-*.json"))
-    if not indexes:
-        raise ManifestError(
-            "configured native source inventory is missing; enable "
-            "CMAKE_EXPORT_COMPILE_COMMANDS or request CMake file-api codemodel-v2 "
-            f"before configuring {build_dir}"
-        )
+    reply_dir, codemodel = _cmake_file_api_codemodel(build_dir)
     try:
-        index = json.loads(indexes[-1].read_text(encoding="utf-8"))
-        codemodel_ref = index["reply"]["codemodel-v2"]
-        codemodel = json.loads(
-            (reply_dir / codemodel_ref["jsonFile"]).read_text(encoding="utf-8")
-        )
         source_root = Path(codemodel["paths"]["source"])
         sources: set[str] = set()
         for configuration in codemodel["configurations"]:
@@ -1316,6 +1311,145 @@ def _load_configured_native_sources(build_dir: Path) -> list[dict[str, str]]:
     except (KeyError, OSError, TypeError, json.JSONDecodeError) as exc:
         raise ManifestError(f"invalid CMake file-api codemodel in {reply_dir}: {exc}") from exc
     return [{"file": source} for source in sorted(sources)]
+
+
+def _cmake_file_api_codemodel(build_dir: Path) -> tuple[Path, dict[str, object]]:
+    reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
+    indexes = sorted(reply_dir.glob("index-*.json"))
+    if not indexes:
+        raise ManifestError(
+            "CMake file-api codemodel is missing; request codemodel-v2 before "
+            f"configuring {build_dir}"
+        )
+    try:
+        index = json.loads(indexes[-1].read_text(encoding="utf-8"))
+        codemodel_ref = index["reply"]["codemodel-v2"]
+        codemodel = json.loads(
+            (reply_dir / codemodel_ref["jsonFile"]).read_text(encoding="utf-8")
+        )
+    except (KeyError, OSError, TypeError, json.JSONDecodeError) as exc:
+        raise ManifestError(
+            f"invalid CMake file-api codemodel in {reply_dir}: {exc}"
+        ) from exc
+    if not isinstance(codemodel, dict):
+        raise ManifestError(f"invalid CMake file-api codemodel in {reply_dir}")
+    return reply_dir, codemodel
+
+
+def _configured_executable_targets(
+    build_dir: Path, config: str | None
+) -> dict[str, str]:
+    reply_dir, codemodel = _cmake_file_api_codemodel(build_dir)
+    configurations = codemodel.get("configurations")
+    if not isinstance(configurations, list):
+        raise ManifestError(
+            f"CMake file-api codemodel has no configurations: {reply_dir}"
+        )
+    selected_configurations = [
+        entry
+        for entry in configurations
+        if isinstance(entry, dict)
+        and (config is None or entry.get("name") == config)
+    ]
+    if not selected_configurations:
+        raise ManifestError(
+            f"CMake file-api codemodel has no {config!r} configuration: {reply_dir}"
+        )
+
+    targets: dict[str, str] = {}
+    try:
+        for configuration in selected_configurations:
+            for target_ref in configuration.get("targets", []):
+                target = json.loads(
+                    (reply_dir / target_ref["jsonFile"]).read_text(encoding="utf-8")
+                )
+                if target.get("type") != "EXECUTABLE":
+                    continue
+                target_name = target.get("name")
+                if not isinstance(target_name, str):
+                    continue
+                for artifact in target.get("artifacts", []):
+                    artifact_path = artifact.get("path")
+                    if not isinstance(artifact_path, str):
+                        continue
+                    absolute_path = Path(artifact_path)
+                    if not absolute_path.is_absolute():
+                        absolute_path = build_dir / absolute_path
+                    targets[os.path.normcase(os.path.abspath(absolute_path))] = (
+                        target_name
+                    )
+    except (KeyError, OSError, TypeError, json.JSONDecodeError) as exc:
+        raise ManifestError(
+            f"invalid CMake executable target in {reply_dir}: {exc}"
+        ) from exc
+    return targets
+
+
+def resolve_ctest_build_targets(
+    build_dir: Path,
+    ctest_payload: object,
+    execution_plan: dict[str, object],
+    config: str | None,
+) -> tuple[str, ...]:
+    if not isinstance(ctest_payload, dict) or not isinstance(
+        ctest_payload.get("tests"), list
+    ):
+        raise ManifestError("CTest JSON must contain a tests array")
+    selected = execution_plan.get("selected")
+    if not isinstance(selected, list):
+        raise ManifestError("CTest execution plan has no selected test list")
+
+    registrations = {
+        raw_test["name"]: raw_test
+        for raw_test in ctest_payload["tests"]
+        if isinstance(raw_test, dict) and isinstance(raw_test.get("name"), str)
+    }
+    executable_targets = _configured_executable_targets(build_dir, config)
+    configured_target_names = set(executable_targets.values())
+    build_targets = set()
+    for entry in selected:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            raise ManifestError("CTest execution plan contains an invalid test")
+        name = entry["name"]
+        registration = registrations.get(name)
+        labels = _ctest_labels(registration)
+        target_labels = [
+            label.removeprefix("termin:build-target:")
+            for label in labels
+            if label.startswith("termin:build-target:")
+        ]
+        if len(target_labels) > 1:
+            raise ManifestError(
+                f"CTest test {name} has multiple termin:build-target labels"
+            )
+        if target_labels:
+            target = target_labels[0]
+            if target not in configured_target_names:
+                raise ManifestError(
+                    f"CTest test {name} names unknown CMake build target: {target}"
+                )
+            build_targets.add(target)
+            continue
+
+        command = registration.get("command") if registration else None
+        if (
+            not isinstance(command, list)
+            or not command
+            or not isinstance(command[0], str)
+        ):
+            raise ManifestError(
+                f"CTest test {name} has no termin:build-target label or "
+                "executable command"
+            )
+        command_path = os.path.normcase(os.path.abspath(command[0]))
+        target = executable_targets.get(command_path)
+        if target is None:
+            raise ManifestError(
+                f"CTest test {name} executable is not a configured CMake target: "
+                f"{command[0]}"
+            )
+        build_targets.add(target)
+    return tuple(sorted(build_targets))
 
 
 def _cmd_check_ctest(
@@ -1362,6 +1496,7 @@ def _cmd_ctest_plan(
     capabilities: tuple[str, ...],
     json_output: bool,
     regex_output: bool,
+    build_targets_output: bool,
     config: str | None = None,
 ) -> int:
     catalog = _load_valid_catalog(repo_root)
@@ -1388,6 +1523,11 @@ def _cmd_ctest_plan(
     if regex_output:
         names = [entry["name"] for entry in plan["selected"]]
         print("^(" + "|".join(re.escape(name) for name in names) + ")$")
+    elif build_targets_output:
+        for target in resolve_ctest_build_targets(
+            build_dir, payload, plan, config
+        ):
+            print(target)
     elif json_output:
         _print_json(plan)
     else:
@@ -1762,6 +1902,12 @@ def main(argv: list[str] | None = None) -> int:
     ctest_plan_parser.add_argument("--json", action="store_true", dest="json_output")
     ctest_plan_parser.add_argument("--regex", action="store_true", dest="regex_output")
     ctest_plan_parser.add_argument(
+        "--build-targets",
+        action="store_true",
+        dest="build_targets_output",
+        help="Emit the exact CMake executable targets selected by the plan.",
+    )
+    ctest_plan_parser.add_argument(
         "--config", help="CTest multi-config configuration, for example Release."
     )
 
@@ -1849,6 +1995,7 @@ def main(argv: list[str] | None = None) -> int:
                 tuple(args.capability),
                 args.json_output,
                 args.regex_output,
+                args.build_targets_output,
                 args.config,
             )
         if args.command == "report-ctest":

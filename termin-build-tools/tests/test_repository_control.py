@@ -415,6 +415,7 @@ def test_ctest_inventory_requires_standard_labels_and_registered_module(
         "CTest test alpha_test: expected one termin:module label",
         "CTest test alpha_test: expected one termin:tier label",
         "CTest test alpha_test: missing termin:capability label",
+        "CTest test alpha_test: expected one termin:build-target label",
         "alpha-native: no configured CTest registration for module alpha",
     ]
 
@@ -461,6 +462,73 @@ def test_configured_native_sources_fall_back_to_cmake_file_api(tmp_path: Path) -
     assert repository_control._load_configured_native_sources(tmp_path) == [
         {"file": str(source_root / "alpha/tests/test_native.cpp")}
     ]
+
+
+def test_ctest_build_targets_are_resolved_from_cmake_file_api(
+    tmp_path: Path,
+) -> None:
+    reply = tmp_path / ".cmake" / "api" / "v1" / "reply"
+    reply.mkdir(parents=True)
+    executable = tmp_path / "bin" / "Release" / "shared_test_name.exe"
+    _write_json(
+        reply / "index-1.json",
+        {"reply": {"codemodel-v2": {"jsonFile": "codemodel.json"}}},
+    )
+    _write_json(
+        reply / "codemodel.json",
+        {
+            "configurations": [
+                {
+                    "name": "Release",
+                    "targets": [{"jsonFile": "target.json"}],
+                }
+            ],
+        },
+    )
+    _write_json(
+        reply / "target.json",
+        {
+            "name": "shared_test_target",
+            "type": "EXECUTABLE",
+            "artifacts": [{"path": "bin/Release/shared_test_name.exe"}],
+        },
+    )
+    ctest_payload = {
+        "tests": [
+            {
+                "name": "first_registration",
+                "properties": [
+                    {
+                        "name": "LABELS",
+                        "value": [
+                            "termin:build-target:shared_test_target",
+                        ],
+                    }
+                ],
+            },
+            {
+                "name": "second_registration",
+                "properties": [
+                    {
+                        "name": "LABELS",
+                        "value": [
+                            "termin:build-target:shared_test_target",
+                        ],
+                    }
+                ],
+            },
+        ]
+    }
+    execution_plan = {
+        "selected": [
+            {"name": "first_registration"},
+            {"name": "second_registration"},
+        ]
+    }
+
+    assert repository_control.resolve_ctest_build_targets(
+        tmp_path, ctest_payload, execution_plan, "Release"
+    ) == ("shared_test_target",)
 
 
 def test_ctest_plan_reports_capability_exclusion_reason(tmp_path: Path) -> None:

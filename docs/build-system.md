@@ -779,6 +779,18 @@ C/C++ тесты собираются через root CMake graph:
 bash run-tests-cpp.sh
 ```
 
+По умолчанию runner использует тот же `build/<BuildType>`, что и
+`build-sdk.sh`/`build-sdk.ps1`. После включения тестов CMake planner разрешает
+выбранные CTest registrations в точные executable targets и проверяет их
+принадлежность capability-aware целям `termin_native_tests` или
+`termin_native_tests_with_window`. Эти цели исключают Python-binding tests из
+нативного прогона и собирают зарегистрированные тесты с их зависимостями одним
+вызовом backend build system.
+Уже собранные библиотеки ядра и third-party переиспользуются инкрементально;
+отдельный полный `build/Release-tests` для обычного прогона не создаётся.
+`BUILD_DIR` по-прежнему позволяет явно выбрать изолированный граф для
+sanitizer/coverage или другого несовместимого профиля.
+
 Флаги:
 
 - без флагов запускается рабочий набор CTest без тестов, создающих окна;
