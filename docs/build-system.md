@@ -314,6 +314,33 @@ sdk/bin/termin_python -c "import tcbase, termin.engine"
 bindings; обычный вызов `setup-sdk-python-env.*` сам определяет, нужно ли
 пересобрать test-only слой или достаточно перегенерировать overlay.
 
+### Mutable CI SDK release
+
+Workflow `.github/workflows/publish-sdk-ci.yml` по ручному запуску независимо
+собирает canonical SDK на Linux и Windows, но публикует release только после
+успеха обеих платформ. Контракт release фиксирует ровно четыре asset:
+
+- `termin-sdk-linux-x86_64-py314t-latest-ci.tar.zst` и `.sha256`;
+- `termin-sdk-windows-x86_64-py314t-latest-ci.zip` и `.sha256`.
+
+Общий упаковщик `python -m termin_build.sdk_release` требует schema 3 для
+`python-runtime-manifest.json`, bundled `termin_python[.exe]`, `lib`, `wheels`,
+free-threaded CPython 3.14t и единый `native_build_id` runtime/artifact/wheel
+manifests. Он запускает relocated-SDK verification до упаковки, создаёт archive
+во временном каталоге, распаковывает его и повторяет ту же проверку. Только
+после этого archive и checksum атомарно заменяют предыдущие локальные outputs.
+Поэтому ошибка сборки, ABI, payload hashes или упаковки не может затереть
+готовый coherent asset.
+
+После загрузки полного набора workflow посылает `repository_dispatch` в
+Diffusion Editor с точными полями `asset`, `asset_checksum`, `windows_asset` и
+`windows_asset_checksum`. Windows SDK собирается с SDL и D3D11, но без
+Vulkan/OpenGL: `--no-vulkan --no-opengl`. Профиль `--no-sdl` остаётся только
+для C#-ориентированных локальных сборок и непригоден для native player.
+
+Локальный Linux publisher `./publish-sdk-ci-release.sh` использует тот же
+упаковщик и больше не имеет отдельного legacy `py310` контракта.
+
 ---
 
 ## Куда что ставится
@@ -565,6 +592,14 @@ manifest-ами и entry point-ами, но используют общий APK 
 `release`. Готовый artifact определяется по Gradle `output-metadata.json`,
 включая проверку `applicationId`; фиксированное имя `app-debug.apk` не является
 частью контракта.
+
+Публичные wrapper-ы APK platform-specific: `build-android-apk.sh` и
+`build-quest-openxr-apk.sh` на Linux, соответствующие `.ps1` на Windows.
+`ToolchainContext` выбирает suffix текущего host-а, а общий APK pipeline
+запускает PowerShell wrapper через `pwsh -NoProfile -File`. Обе Windows-команды
+поддерживают тот же набор `--assets-dir`, `--sdk-root`, `--abi`, `--platform`,
+`--gradle`, `--variant` и application/version аргументов; Quest wrapper
+дополнительно поддерживает `--adb`, `--install` и `--launch`.
 
 Оба Android-family target-а читают один `application` из канонического
 `project_settings/project.json`: base application ID, launcher label,

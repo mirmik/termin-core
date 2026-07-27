@@ -236,6 +236,24 @@ def write_artifacts(
     artifact_install_dir = install_dir if install_dir is not None else sdk_prefix
     sdk_root = sdk_prefix.resolve()
 
+    feature_cache_keys = {
+        "sdl": "TERMIN_ENABLE_SDL",
+        "recast": "TERMIN_NAVMESH_BUILD_RECAST",
+    }
+    cache_values: dict[str, bool] = {}
+    cache_path = build_dir / "CMakeCache.txt"
+    if cache_path.is_file():
+        for line in cache_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("//") or ":" not in line or "=" not in line:
+                continue
+            key_and_type, value = line.split("=", 1)
+            key, _type = key_and_type.split(":", 1)
+            cache_values[key] = value.strip().upper() in {"1", "ON", "TRUE", "YES", "Y"}
+
+    def feature_enabled(feature: str) -> bool:
+        cache_key = feature_cache_keys.get(feature)
+        return cache_key is None or cache_key not in cache_values or cache_values[cache_key]
+
     def bundled_runtime_dependencies(names: list[str]) -> tuple[list[dict[str, str]], list[str]]:
         bundled = []
         external = []
@@ -283,6 +301,11 @@ def write_artifacts(
     )
 
     for owner, ownership, owner_features, native_extension in extension_owners:
+        extension_features = tuple(
+            dict.fromkeys((*owner_features, *native_extension.features))
+        )
+        if not all(feature_enabled(feature) for feature in extension_features):
+            continue
         build_path = _find_native_artifact(
             build_dir,
             native_extension.target,
@@ -333,9 +356,7 @@ def write_artifacts(
             "extension": native_extension.extension,
             "target": native_extension.target,
             "optional": native_extension.optional,
-            "features": list(
-                dict.fromkeys((*owner_features, *native_extension.features))
-            ),
+            "features": list(extension_features),
             "external_runtime_dependencies": external_dependencies,
         }
         build_artifacts.append(

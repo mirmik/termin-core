@@ -373,6 +373,51 @@ def test_write_artifacts_prefers_windows_config_pyd_over_stale_bin_copy(
     assert build_data["artifacts"][0]["path"] == str(build_artifact.resolve())
 
 
+def test_write_artifacts_ignores_stale_disabled_feature_extension(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    build_dir = tmp_path / "build"
+    sdk_prefix = tmp_path / "sdk"
+    build_bin = build_dir / "bin"
+    installed = sdk_prefix / "lib" / "python" / "termin" / "display"
+    build_bin.mkdir(parents=True)
+    installed.mkdir(parents=True)
+    (build_dir / "CMakeCache.txt").write_text(
+        "TERMIN_ENABLE_SDL:BOOL=OFF\n",
+        encoding="utf-8",
+    )
+    artifact_name = (
+        f"_platform_native.{artifact_manifest.PythonAbiIdentity.current().soabi}.so"
+    )
+    (build_bin / artifact_name).write_text("stale", encoding="utf-8")
+    (installed / artifact_name).write_text("stale", encoding="utf-8")
+
+    packages = [
+        PackageEntry(
+            path="termin-display",
+            distribution="termin-display",
+            features=(),
+            native_extensions=(
+                NativeExtension(
+                    extension="termin.display._platform_native",
+                    target="_platform_native",
+                    optional=True,
+                    features=("sdl",),
+                ),
+            ),
+        )
+    ]
+    monkeypatch.setattr(sdk, "load_manifest", lambda _repo_root: packages)
+
+    assert sdk.write_artifacts(repo_root, build_dir, sdk_prefix) == 0
+    manifest = json.loads(
+        (sdk_prefix / "termin-artifacts.json").read_text(encoding="utf-8")
+    )
+    assert manifest["artifacts"] == []
+
+
 def test_verify_duplicate_libraries_reports_windows_duplicates(
     tmp_path,
     monkeypatch,
