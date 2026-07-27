@@ -2,6 +2,7 @@ import base64
 import hashlib
 import importlib.metadata
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -37,8 +38,7 @@ def _write_test_distribution(
         encoding="utf-8",
     )
     (metadata / "RECORD").write_text(
-        f"{module_path.name},sha256={encoded},{module_path.stat().st_size}\n"
-        f"{metadata.name}/RECORD,,\n",
+        f"{module_path.name},sha256={encoded},{module_path.stat().st_size}\n{metadata.name}/RECORD,,\n",
         encoding="utf-8",
     )
     return module_path
@@ -133,9 +133,7 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
     monkeypatch.setattr(
         sdk.shutil,
         "which",
-        lambda name: "C:/Program Files/PowerShell/7/pwsh.exe"
-        if name == "pwsh"
-        else None,
+        lambda name: "C:/Program Files/PowerShell/7/pwsh.exe" if name == "pwsh" else None,
     )
 
     result = sdk.run_sdk_build(
@@ -308,9 +306,7 @@ def test_sdk_runtime_seed_includes_pytest_and_excludes_heavy_optional_packages()
 def test_repo_installs_umbrella_termin_cmake_package():
     repo_root = sdk.repo_root_from(Path(__file__))
     root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
-    package_config = (repo_root / "cmake" / "terminConfig.cmake.in").read_text(
-        encoding="utf-8"
-    )
+    package_config = (repo_root / "cmake" / "terminConfig.cmake.in").read_text(encoding="utf-8")
 
     assert "cmake/terminConfig.cmake.in" in root_cmake
     assert "DESTINATION lib/cmake/termin" in root_cmake
@@ -319,11 +315,22 @@ def test_repo_installs_umbrella_termin_cmake_package():
     assert "INTERFACE_LINK_LIBRARIES tcbase::termin_base" in package_config
 
 
+def test_native_test_configuration_does_not_mutate_render_product_target():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    render_cmake = (repo_root / "termin-render/CMakeLists.txt").read_text(encoding="utf-8")
+    test_configuration = render_cmake[render_cmake.index("if(TERMIN_RENDER_BUILD_TESTS)") :]
+    product_target_mutation = re.compile(
+        r"(?:target_(?:compile_definitions|compile_options|include_directories|"
+        r"link_libraries|precompile_headers|sources)|set_target_properties)"
+        r"\(\s*termin_render(?:\s|\))"
+    )
+
+    assert product_target_mutation.search(test_configuration) is None
+
+
 def test_openxr_package_declares_all_public_target_dependencies():
     repo_root = sdk.repo_root_from(Path(__file__))
-    package_config = (
-        repo_root / "termin-openxr/cmake/termin_openxrConfig.cmake.in"
-    ).read_text(encoding="utf-8")
+    package_config = (repo_root / "termin-openxr/cmake/termin_openxrConfig.cmake.in").read_text(encoding="utf-8")
 
     expected_dependencies = {
         "termin_base",
@@ -359,12 +366,15 @@ def test_write_android_capabilities_records_placeholder_and_full_abis(tmp_path):
         f"ANDROID_VULKAN_LIB:FILEPATH={vulkan_library}\n",
         encoding="utf-8",
     )
-    assert sdk.write_android_capabilities(
-        sdk_root=sdk_root,
-        android_sdk_root=android_sdk_root,
-        abi="x86_64",
-        build_dir=placeholder_build,
-    ) == 0
+    assert (
+        sdk.write_android_capabilities(
+            sdk_root=sdk_root,
+            android_sdk_root=android_sdk_root,
+            abi="x86_64",
+            build_dir=placeholder_build,
+        )
+        == 0
+    )
 
     full_prefix = android_sdk_root / "arm64-v8a"
     loader = full_prefix / "lib/libopenxr_loader.so"
@@ -378,21 +388,20 @@ def test_write_android_capabilities_records_placeholder_and_full_abis(tmp_path):
         f"ANDROID_VULKAN_LIB:FILEPATH={vulkan_library}\n",
         encoding="utf-8",
     )
-    assert sdk.write_android_capabilities(
-        sdk_root=sdk_root,
-        android_sdk_root=android_sdk_root,
-        abi="arm64-v8a",
-        build_dir=full_build,
-    ) == 0
+    assert (
+        sdk.write_android_capabilities(
+            sdk_root=sdk_root,
+            android_sdk_root=android_sdk_root,
+            abi="arm64-v8a",
+            build_dir=full_build,
+        )
+        == 0
+    )
 
     placeholder = json.loads(
-        (android_sdk_root / "x86_64/share/termin/android-capabilities.json").read_text(
-            encoding="utf-8"
-        )
+        (android_sdk_root / "x86_64/share/termin/android-capabilities.json").read_text(encoding="utf-8")
     )
-    manifest = json.loads(
-        (sdk_root / "termin-sdk-capabilities.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((sdk_root / "termin-sdk-capabilities.json").read_text(encoding="utf-8"))
     assert placeholder["openxr_headers"] is False
     assert placeholder["openxr_loader"] is False
     assert placeholder["vulkan"] is True
@@ -437,8 +446,7 @@ def test_install_target_uses_single_pip_invocation(tmp_path, monkeypatch):
     stale_pkg_a_module.parent.mkdir()
     stale_pkg_a_module.write_text("STALE = True\n", encoding="utf-8")
     (stale_pkg_a / "RECORD").write_text(
-        "pkg_a/removed_module.py,,\n"
-        "pkg_a-0.1.0+old.dist-info/METADATA,,\n",
+        "pkg_a/removed_module.py,,\npkg_a-0.1.0+old.dist-info/METADATA,,\n",
         encoding="utf-8",
     )
     stale_pkg_b = target_dir / "pkg_b.egg-info"
@@ -659,9 +667,7 @@ def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
             str(requirements),
         ]
     ]
-    assert (environment_root / "python-sdk-build-requirements.txt").read_bytes() == (
-        requirements.read_bytes()
-    )
+    assert (environment_root / "python-sdk-build-requirements.txt").read_bytes() == (requirements.read_bytes())
 
 
 def test_windows_build_environment_accepts_versioned_base_executable_alias(
@@ -676,9 +682,7 @@ def test_windows_build_environment_accepts_versioned_base_executable_alias(
     build_python = environment_root / "Scripts" / "python.exe"
     build_python.parent.mkdir(parents=True)
     build_python.touch()
-    (environment_root / "python-sdk-build-requirements.txt").write_bytes(
-        requirements.read_bytes()
-    )
+    (environment_root / "python-sdk-build-requirements.txt").write_bytes(requirements.read_bytes())
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
     python_alias = runtime_root / "python.exe"
@@ -696,11 +700,7 @@ def test_windows_build_environment_accepts_versioned_base_executable_alias(
             "free_threaded": True,
             "py_gil_disabled": True,
             "base_prefix": str(runtime_root),
-            "base_executable": str(
-                canonical_python
-                if Path(python) == build_python
-                else python_alias
-            ),
+            "base_executable": str(canonical_python if Path(python) == build_python else python_alias),
         },
     )
     commands = []
@@ -720,14 +720,7 @@ def test_windows_build_environment_accepts_versioned_base_executable_alias(
 
 
 def test_installed_artifact_selection_rejects_stale_python_abi(tmp_path):
-    package_dir = (
-        tmp_path
-        / "python"
-        / "Lib"
-        / "site-packages"
-        / "termin"
-        / "sample"
-    )
+    package_dir = tmp_path / "python" / "Lib" / "site-packages" / "termin" / "sample"
     package_dir.mkdir(parents=True)
     stale = package_dir / "_sample_native.cp312-win_amd64.pyd"
     expected = package_dir / "_sample_native.cp314t-win_amd64.pyd"
@@ -758,9 +751,7 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
     stale_stdlib = sdk_prefix / "lib" / "python3.10" / "removed_in_new_runtime.py"
     stale_stdlib.parent.mkdir(parents=True)
     stale_stdlib.write_text("stale\n", encoding="utf-8")
-    preserved_package = (
-        sdk_prefix / "lib" / "python3.10" / "site-packages" / "preserved.py"
-    )
+    preserved_package = sdk_prefix / "lib" / "python3.10" / "site-packages" / "preserved.py"
     preserved_package.parent.mkdir(parents=True)
     preserved_package.write_text("installed\n", encoding="utf-8")
     stdlib = tmp_path / "host" / "lib" / "python3.10"
@@ -795,9 +786,7 @@ def test_bundled_python_runtime_copies_shared_libpython_and_drops_config_artifac
 
     assert bundled_py_dir == sdk_prefix / "lib" / "python3.10"
     assert (sdk_prefix / "lib" / "libpython3.10.so.1.0").read_bytes() == b"shared"
-    assert (
-        sdk_prefix / "include" / "python3.10" / "Python.h"
-    ).read_text(encoding="utf-8") == "/* fixture */\n"
+    assert (sdk_prefix / "include" / "python3.10" / "Python.h").read_text(encoding="utf-8") == "/* fixture */\n"
     assert not (bundled_py_dir / "config-3.10-x86_64-linux-gnu").exists()
     assert (bundled_py_dir / "ctypes" / "__init__.py").is_file()
     assert not stale_stdlib.exists()
@@ -1158,10 +1147,13 @@ def test_sdk_python_layout_can_require_native_bindings(tmp_path, monkeypatch):
         sdk.resolve_sdk_python_layout(sdk_prefix, require_native_bindings=True)
 
     (tcbase_dir / "_tcbase_native.cpython-310-x86_64-linux-gnu.so").touch()
-    assert sdk.resolve_sdk_python_layout(
-        sdk_prefix,
-        require_native_bindings=True,
-    ) == tcbase_dir.parent
+    assert (
+        sdk.resolve_sdk_python_layout(
+            sdk_prefix,
+            require_native_bindings=True,
+        )
+        == tcbase_dir.parent
+    )
 
 
 def test_publish_cmake_python_install_normalizes_staged_bindings(
@@ -1172,14 +1164,7 @@ def test_publish_cmake_python_install_normalizes_staged_bindings(
     install_dir = tmp_path / "install"
     site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
     legacy_tcbase = install_dir / "lib" / "python" / "tcbase"
-    staged_package = (
-        install_dir
-        / "lib"
-        / "python3.10"
-        / "site-packages"
-        / "termin"
-        / "editor"
-    )
+    staged_package = install_dir / "lib" / "python3.10" / "site-packages" / "termin" / "editor"
     site_packages.mkdir(parents=True)
     legacy_tcbase.mkdir(parents=True)
     staged_package.mkdir(parents=True)
@@ -1203,9 +1188,7 @@ def test_publish_cmake_python_install_normalizes_staged_bindings(
 
     assert result == site_packages
     assert (site_packages / "tcbase" / native_name).read_bytes() == b"native"
-    assert (site_packages / "termin" / "editor" / "runtime.py").read_text() == (
-        "VALUE = 1\n"
-    )
+    assert (site_packages / "termin" / "editor" / "runtime.py").read_text() == ("VALUE = 1\n")
     assert not (sdk_prefix / "lib" / "python").exists()
     assert not list(site_packages.rglob("__pycache__"))
     assert not list(site_packages.rglob("*.pyc"))
@@ -1235,9 +1218,7 @@ def test_publish_cmake_python_install_removes_windows_legacy_tree(
     result = sdk.publish_cmake_python_install(sdk_prefix, sdk_prefix)
 
     assert result == site_packages
-    assert (
-        site_packages / "termin" / "sample" / "_sample_native.cp310-win_amd64.pyd"
-    ).read_bytes() == b"sample"
+    assert (site_packages / "termin" / "sample" / "_sample_native.cp310-win_amd64.pyd").read_bytes() == b"sample"
     assert not (sdk_prefix / "lib" / "python").exists()
 
 
@@ -1247,9 +1228,7 @@ def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_p
     old_metadata = target_dir / "termin_voxels-0.1.0+old.dist-info"
     old_metadata.mkdir()
     (old_metadata / "METADATA").write_text(
-        "Metadata-Version: 2.1\n"
-        "Name: termin-voxels\n"
-        "Version: 0.1.0+old\n",
+        "Metadata-Version: 2.1\nName: termin-voxels\nVersion: 0.1.0+old\n",
         encoding="utf-8",
     )
     package = PackageEntry("termin-voxels", "termin-voxels", (), ())
@@ -1259,14 +1238,11 @@ def test_target_metadata_cleanup_keeps_entry_point_discovery_deterministic(tmp_p
     fresh_metadata = target_dir / "termin_voxels-0.1.0+fresh.dist-info"
     fresh_metadata.mkdir()
     (fresh_metadata / "METADATA").write_text(
-        "Metadata-Version: 2.1\n"
-        "Name: termin-voxels\n"
-        "Version: 0.1.0+fresh\n",
+        "Metadata-Version: 2.1\nName: termin-voxels\nVersion: 0.1.0+fresh\n",
         encoding="utf-8",
     )
     (fresh_metadata / "entry_points.txt").write_text(
-        "[termin.asset_import_plugins]\n"
-        "voxel_grid = termin.default_assets.voxels.asset_plugin:create_import_plugin\n",
+        "[termin.asset_import_plugins]\nvoxel_grid = termin.default_assets.voxels.asset_plugin:create_import_plugin\n",
         encoding="utf-8",
     )
 
@@ -1492,18 +1468,12 @@ def test_sdk_python_install_builds_wheels_then_installs_offline_and_writes_manif
     monkeypatch.setattr(
         sdk,
         "_prepare_external_runtime_wheels",
-        lambda root, wheels, python: calls.append(
-            ("external", root, wheels, python)
-        )
-        or 0,
+        lambda root, wheels, python: calls.append(("external", root, wheels, python)) or 0,
     )
     monkeypatch.setattr(
         sdk,
         "_build_local_package_wheels",
-        lambda **kwargs: calls.append(
-            ("build", kwargs, installed_artifact.is_file())
-        )
-        or 0,
+        lambda **kwargs: calls.append(("build", kwargs, installed_artifact.is_file())) or 0,
     )
     monkeypatch.setattr(
         sdk,
