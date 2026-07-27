@@ -285,13 +285,13 @@ struct Mat44f {
 
         // Rotation part (transposed because we're building the inverse)
         m(0, 0) = static_cast<float>(right.x);    m(1, 0) = static_cast<float>(right.y);    m(2, 0) = static_cast<float>(right.z);
-        m(0, 1) = static_cast<float>(up_ortho.x); m(1, 1) = static_cast<float>(up_ortho.y); m(2, 1) = static_cast<float>(up_ortho.z);
-        m(0, 2) = static_cast<float>(forward.x);  m(1, 2) = static_cast<float>(forward.y);  m(2, 2) = static_cast<float>(forward.z);
+        m(0, 1) = static_cast<float>(forward.x);  m(1, 1) = static_cast<float>(forward.y);  m(2, 1) = static_cast<float>(forward.z);
+        m(0, 2) = static_cast<float>(up_ortho.x); m(1, 2) = static_cast<float>(up_ortho.y); m(2, 2) = static_cast<float>(up_ortho.z);
 
         // Translation part
         m(3, 0) = static_cast<float>(-right.dot(eye));
-        m(3, 1) = static_cast<float>(-up_ortho.dot(eye));
-        m(3, 2) = static_cast<float>(-forward.dot(eye));
+        m(3, 1) = static_cast<float>(-forward.dot(eye));
+        m(3, 2) = static_cast<float>(-up_ortho.dot(eye));
 
         return m;
     }
@@ -572,11 +572,11 @@ struct Mat44 {
 
         Mat44 m = identity();
         m(0, 0) = right.x;    m(1, 0) = right.y;    m(2, 0) = right.z;
-        m(0, 1) = up_ortho.x; m(1, 1) = up_ortho.y; m(2, 1) = up_ortho.z;
-        m(0, 2) = forward.x;  m(1, 2) = forward.y;  m(2, 2) = forward.z;
+        m(0, 1) = forward.x;  m(1, 1) = forward.y;  m(2, 1) = forward.z;
+        m(0, 2) = up_ortho.x; m(1, 2) = up_ortho.y; m(2, 2) = up_ortho.z;
         m(3, 0) = -right.dot(eye);
-        m(3, 1) = -up_ortho.dot(eye);
-        m(3, 2) = -forward.dot(eye);
+        m(3, 1) = -forward.dot(eye);
+        m(3, 2) = -up_ortho.dot(eye);
         return m;
     }
 

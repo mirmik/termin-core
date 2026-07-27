@@ -3,6 +3,7 @@
 
 #include <tcbase/tc_types.h>
 #include <termin/geom/color.hpp>
+#include <termin/geom/mat44.hpp>
 #include <termin/geom/ray3.hpp>
 #include <termin/geom/bounds2.hpp>
 #include <termin/geom/rect2.hpp>
@@ -180,6 +181,29 @@ TEST_CASE("world2d canonical camera and sprite face each other along world Y") {
         termin::world2d::positive_rotation_axis().y == sprite_front.y);
 
     CHECK(camera_forward.dot(sprite_front) == -1.0);
+}
+
+TEST_CASE("look_at preserves the Y-forward Z-up camera convention") {
+    const termin::Vec3 eye{0.0, -2.0, 0.0};
+    const termin::Vec3 target{0.0, 0.0, 0.0};
+    const termin::Vec3 world_up{0.0, 0.0, 1.0};
+
+    const termin::Mat44 view = termin::Mat44::look_at(eye, target, world_up);
+    const termin::Vec3 eye_view = view.transform_point(eye);
+    const termin::Vec3 target_view = view.transform_point(target);
+    const termin::Vec3 up_view =
+        view.transform_point(target + world_up);
+
+    CHECK((eye_view - termin::Vec3{0.0, 0.0, 0.0}).norm() < 1.0e-12);
+    CHECK((target_view - termin::Vec3{0.0, 2.0, 0.0}).norm() < 1.0e-12);
+    CHECK((up_view - termin::Vec3{0.0, 2.0, 1.0}).norm() < 1.0e-12);
+
+    const termin::Mat44f view_f = termin::Mat44f::look_at(eye, target, world_up);
+    const termin::Vec3 target_view_f = view_f.transform_point(target);
+    const termin::Vec3 up_view_f =
+        view_f.transform_point(target + world_up);
+    CHECK((target_view_f - termin::Vec3{0.0, 2.0, 0.0}).norm() < 1.0e-6);
+    CHECK((up_view_f - termin::Vec3{0.0, 2.0, 1.0}).norm() < 1.0e-6);
 }
 
 TEST_CASE("world2d positive angle is counter-clockwise in the visible XZ plane") {
