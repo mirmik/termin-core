@@ -132,7 +132,14 @@ Root CMake-граф поддерживает несколько ускорите
 
 - `ccache` включается автоматически, если бинарь найден в `PATH`. Отключение: `--no-ccache` или `-DTERMIN_USE_CCACHE=OFF`.
 - Для новых build-dir shell-скрипты по умолчанию оставляют CMake default generator. `Ninja` включается явно через `--ninja`, `TERMIN_CMAKE_GENERATOR=Ninja` или `CMAKE_GENERATOR_NAME=Ninja`. Уже существующий build-dir не меняет генератор; для смены генератора нужен `--clean` или новый `BUILD_DIR`.
-- `BUILD_JOBS=<N>` задаёт параллелизм для `cmake --build`.
+- `BUILD_JOBS=<N>` задаёт общий бюджет параллелизма для `cmake --build`.
+  Для Visual Studio generator этот бюджет применяется и к независимым
+  MSBuild-проектам, и к единицам трансляции внутри одного `vcxproj` через
+  общий `MultiToolTask` scheduler. Это избегает как последовательной
+  компиляции крупных targets, так и перемножения двух уровней параллелизма.
+- `--no-parallel` принудительно задаёт один job, в том числе для Visual
+  Studio generator; режим полезен для диагностики воспроизводимых ошибок
+  сборки.
 - `--unity` включает CMake unity build для выбранных C++-тяжёлых целей. Флаг экспериментальный и не включён по умолчанию.
 - `--pch` включает precompiled headers для выбранных C++-тяжёлых целей и включён по умолчанию. Отключение: `--no-pch` или `-DTERMIN_ENABLE_PCH=OFF`. C++-тяжёлые runtime-библиотеки (`termin_engine`, `termin_navmesh_components`) сохраняют свой локальный PCH.
 - Глобальный CMake unity build (`-DCMAKE_UNITY_BUILD=ON`) поддерживается для root graph после cleanup внутренних helper/state имён. Vendored `Recast`/`Detour` targets явно собираются без unity.
@@ -155,6 +162,10 @@ $env:BUILD_DIR="build\Release-no-pch"; .\build-sdk-cpp.ps1 --sdl --no-pch
 ```
 
 На Windows PowerShell-скрипты по умолчанию не выбирают Ninja автоматически и оставляют CMake default generator (обычно Visual Studio/MSVC). Ninja можно включить явно через `$env:TERMIN_CMAKE_GENERATOR="Ninja"`, но тогда CMake возьмёт компилятор из окружения/PATH; старый LLVM `clang-cl` может быть несовместим с текущим MSVC STL.
+
+Windows SDK, C# bindings, C++ tests и D3D11 validation используют общий
+PowerShell build helper, поэтому `BUILD_JOBS` и `--no-parallel` имеют
+одинаковую семантику во всех штатных точках входа.
 
 Прямой CMake-вариант:
 
