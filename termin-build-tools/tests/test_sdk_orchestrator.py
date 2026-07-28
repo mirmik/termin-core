@@ -221,11 +221,27 @@ def test_sdk_build_publishes_and_verifies_canonical_wheelhouse(
         "prepare_pinned_python_build_environment",
         lambda _root: interpreter,
     )
+    current_abi = artifact_manifest.PythonAbiIdentity.current()
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _python: {
+            "version": current_abi.version,
+            "soabi": current_abi.soabi,
+            "free_threaded": current_abi.free_threaded,
+            "py_gil_disabled": current_abi.free_threaded,
+        },
+    )
     monkeypatch.setattr(sdk, "_run", lambda *args, **kwargs: 0)
     monkeypatch.setattr(
         sdk,
         "install_python_packages",
         lambda *args, **kwargs: calls.append("install") or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "write_artifacts",
+        lambda *args, **kwargs: calls.append("manifest") or 0,
     )
     monkeypatch.setattr(
         sdk,
@@ -253,7 +269,7 @@ def test_sdk_build_publishes_and_verifies_canonical_wheelhouse(
     )
 
     assert result == 0
-    assert calls == ["install", "publish", "subset", "verify"]
+    assert calls == ["install", "manifest", "publish", "subset", "verify"]
 
 
 def test_wheelhouse_arg_parser_keeps_stage_args_but_extracts_wheel_options(tmp_path):

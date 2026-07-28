@@ -226,10 +226,12 @@ def write_artifacts(
     build_dir: Path,
     sdk_prefix: Path,
     install_dir: Path | None = None,
+    *,
+    python_abi: PythonAbiIdentity | None = None,
 ) -> int:
     packages = load_manifest(repo_root)
     application_payloads = load_application_payloads(repo_root)
-    python_abi = PythonAbiIdentity.current()
+    python_abi = python_abi or PythonAbiIdentity.current()
     build_artifacts = []
     sdk_artifacts = []
     missing_required = []
@@ -1488,6 +1490,24 @@ def run_sdk_build(
     if not dry_run and legacy_sdk_python.is_dir():
         print(f"Removing legacy SDK Python staging tree: {legacy_sdk_python}")
         shutil.rmtree(legacy_sdk_python)
+
+    # Stage 1 records native extensions from the CMake install staging tree.
+    # Stage 3 installs their wheels into the bundled runtime and removes that
+    # legacy tree, so publish a final manifest whose paths and hashes describe
+    # the actual SDK layout consumed by launchers and wheelhouse validation.
+    if not dry_run:
+        runtime_python_abi = PythonAbiIdentity.from_runtime_probe(
+            _python_version_and_paths(str(build_python)),
+            context="SDK target Python",
+        )
+        result = write_artifacts(
+            repo_root,
+            build_dir,
+            sdk_prefix,
+            python_abi=runtime_python_abi,
+        )
+        if result != 0:
+            return result
 
     print("")
     print("========================================")
