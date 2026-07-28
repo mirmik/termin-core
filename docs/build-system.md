@@ -314,11 +314,18 @@ Test-only `site-packages` также является exact производны
 
 ```bash
 # Разработка и тесты из checkout поверх SDK runtime
-sdk/bin/termin_python --termin-overlay build/python-envs/test/overlay.json -m pytest
+./run-python.sh -m pytest
+
+# Произвольный скрипт из checkout с тем же SDK + overlay
+./run-python.sh path/to/script.py
 
 # Проверка только установленного SDK, без checkout overlay
 sdk/bin/termin_python -c "import tcbase, termin.engine"
 ```
+
+На Windows первым двум командам соответствует `.\run-python.ps1`.
+`TERMIN_SDK`, `PYTHON_BIN` и `TERMIN_PYTHON_OVERLAY` позволяют launcher-скрипту
+использовать нестандартное расположение SDK или manifest.
 
 Старые `setup-test-venv.*` и корневой `.venv` workflow удалены. Новый workflow
 не копирует `.so`/`.pyd` в source tree и не требует `--force` после пересборки
