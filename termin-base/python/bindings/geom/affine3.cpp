@@ -91,6 +91,15 @@ void bind_affine3(nb::module_& m) {
             }
             return mat44_row_tuple(row_major);
         })
+        .def("as_mat44", [](const Affine3d& affine) {
+            double column_major[16];
+            affine.matrix4(column_major);
+            Mat44 matrix;
+            for (size_t i = 0; i < 16; ++i) {
+                matrix.data[i] = column_major[i];
+            }
+            return matrix;
+        })
         .def_static("identity", &Affine3d::identity)
         .def_static(
             "from_translation",
