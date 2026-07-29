@@ -49,6 +49,12 @@ state, но не callbacks или Python objects.
 - `trent` - JSON/YAML/value tree utilities.
 - `termin/geom/*` - базовые геометрические/value-типы: vectors, matrices,
   poses, quaternions, rays, AABB, colors, sizes, rectangles.
+- `geom/tc_affine3.h` / `termin/geom/affine3.hpp` - exact
+  double-precision `Basis3d` и `Affine3d`. Basis хранится тремя подряд идущими
+  column vectors; affine добавляет translation и действует на column vector
+  как `basis * point + translation`. Композиция `parent * child` сначала
+  применяет child. Преобразование в 4x4 использует общий column-major
+  OpenGL-style layout Termin.
 - `termin/camera/orbit_camera.hpp` / `termin.geombase.OrbitCamera` - чистая математика orbit camera без ECS, UI и render backend.
 - `tc_profiler` / `tcbase.profiler` - base-level profiler без зависимости от `termin-app`.
 - input enums (`Action`, `MouseButton`, `Mods`, `Key`) для общего event vocabulary.

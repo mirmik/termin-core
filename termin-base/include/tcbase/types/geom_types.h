@@ -534,6 +534,75 @@ struct tc_affine2f {
     bool try_inverse(tc_affine2f& out, float epsilon = 1.0e-8f) const;
 };
 
+struct tc_basis3d {
+    // Column vectors. For column-vector multiplication:
+    // result = x * vector.x + y * vector.y + z * vector.z.
+    tc_vec3 x = {1.0, 0.0, 0.0};
+    tc_vec3 y = {0.0, 1.0, 0.0};
+    tc_vec3 z = {0.0, 0.0, 1.0};
+
+    constexpr tc_basis3d() noexcept = default;
+    constexpr tc_basis3d(
+        const tc_vec3& x,
+        const tc_vec3& y,
+        const tc_vec3& z) noexcept
+        : x(x), y(y), z(z) {}
+
+    static tc_basis3d identity();
+    static tc_basis3d from_quat(const tc_quat& rotation);
+    static tc_basis3d scaling(double sx, double sy, double sz);
+    static tc_basis3d scaling(const tc_vec3& scale);
+    static tc_basis3d scaling(double uniform);
+
+    tc_basis3d operator*(const tc_basis3d& child) const;
+    tc_vec3 transform_vector(const tc_vec3& vector) const;
+    double determinant() const;
+    bool is_finite() const;
+    bool try_inverse(tc_basis3d& out, double epsilon = 1.0e-12) const;
+};
+
+struct tc_pose3;
+struct tc_general_pose3;
+
+struct tc_affine3d {
+    // T * Basis for column vectors. The packed ABI is 9 basis coefficients
+    // followed by 3 translation coefficients.
+    tc_basis3d basis;
+    tc_vec3 translation;
+
+    constexpr tc_affine3d() noexcept = default;
+    constexpr tc_affine3d(
+        const tc_basis3d& basis,
+        const tc_vec3& translation) noexcept
+        : basis(basis), translation(translation) {}
+
+    static tc_affine3d identity();
+    static tc_affine3d from_translation(double x, double y, double z);
+    static tc_affine3d from_translation(const tc_vec3& value);
+    static tc_affine3d from_rotation(const tc_quat& rotation);
+    static tc_affine3d scaling(double sx, double sy, double sz);
+    static tc_affine3d scaling(const tc_vec3& scale);
+    static tc_affine3d scaling(double uniform);
+    static tc_affine3d trs(
+        const tc_vec3& translation,
+        const tc_quat& rotation,
+        const tc_vec3& scale);
+    static tc_affine3d from_pose3(const tc_pose3& pose);
+    static tc_affine3d from_general_pose3(const tc_general_pose3& pose);
+
+    tc_affine3d operator*(const tc_affine3d& child) const;
+    tc_vec3 transform_point(const tc_vec3& point) const;
+    tc_vec3 transform_vector(const tc_vec3& vector) const;
+    double determinant() const;
+    bool is_finite() const;
+    bool try_inverse(tc_affine3d& out, double epsilon = 1.0e-12) const;
+    void matrix4(double* out_column_major_16) const;
+    static bool try_from_matrix4(
+        const double* column_major_16,
+        tc_affine3d& out,
+        double epsilon = 1.0e-12);
+};
+
 struct tc_pose3 {
     tc_quat ang;
     tc_vec3 lin;
@@ -846,6 +915,17 @@ typedef struct tc_affine2f {
     float m10, m11;
     float tx, ty;
 } tc_affine2f;
+
+typedef struct tc_basis3d {
+    tc_vec3 x;
+    tc_vec3 y;
+    tc_vec3 z;
+} tc_basis3d;
+
+typedef struct tc_affine3d {
+    tc_basis3d basis;
+    tc_vec3 translation;
+} tc_affine3d;
 
 typedef struct tc_pose3 {
     tc_quat ang;

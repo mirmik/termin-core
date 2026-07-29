@@ -1,8 +1,10 @@
 #include <cmath>
+#include <random>
 #include <type_traits>
 
 #include <tcbase/tc_types.h>
 #include <termin/geom/affine2.hpp>
+#include <termin/geom/affine3.hpp>
 #include <termin/geom/color.hpp>
 #include <termin/geom/mat44.hpp>
 #include <termin/geom/ray3.hpp>
@@ -51,6 +53,8 @@ TEST_CASE("base geometry value types preserve simple construction semantics") {
     static_assert(std::is_same_v<termin::Bounds2f, tc_bounds2f>);
     static_assert(std::is_same_v<termin::Rect2f, tc_rect2f>);
     static_assert(std::is_same_v<termin::Affine2f, tc_affine2f>);
+    static_assert(std::is_same_v<termin::Basis3d, tc_basis3d>);
+    static_assert(std::is_same_v<termin::Affine3d, tc_affine3d>);
     static_assert(std::is_standard_layout_v<termin::Size2i>);
     static_assert(std::is_standard_layout_v<termin::Size2f>);
     static_assert(std::is_standard_layout_v<termin::Bounds2i>);
@@ -173,6 +177,161 @@ TEST_CASE("Affine2f conversion preserves the rigid Pose2 contract") {
 
     CHECK(std::abs(affine_result.x - static_cast<float>(pose_result.x)) < 1.0e-5f);
     CHECK(std::abs(affine_result.y - static_cast<float>(pose_result.y)) < 1.0e-5f);
+}
+
+namespace {
+
+bool affine3_near_vec(
+    const termin::Vec3& a,
+    const termin::Vec3& b,
+    double epsilon = 1.0e-10) {
+    return std::abs(a.x - b.x) <= epsilon
+        && std::abs(a.y - b.y) <= epsilon
+        && std::abs(a.z - b.z) <= epsilon;
+}
+
+} // namespace
+
+TEST_CASE("Affine3d preserves hierarchy-generated shear exactly") {
+    const termin::Affine3d parent =
+        termin::Affine3d::from_translation(5.0, -3.0, 2.0)
+        * termin::Affine3d::scaling(2.0, 0.5, 1.25);
+    const termin::Affine3d child = termin::Affine3d::trs(
+        {-1.0, 4.0, 0.75},
+        termin::Quat::from_axis_angle(termin::Vec3::unit_z(), 0.63),
+        {0.8, 1.4, 2.0});
+    const termin::Affine3d composed = parent * child;
+    const termin::Vec3 point{3.0, -2.0, 1.5};
+
+    CHECK(affine3_near_vec(
+        composed.transform_point(point),
+        parent.transform_point(child.transform_point(point))));
+    CHECK(std::abs(composed.basis.x.dot(composed.basis.y)) > 1.0e-3);
+
+    double matrix[16];
+    composed.matrix4(matrix);
+    termin::Affine3d from_matrix;
+    CHECK(termin::Affine3d::try_from_matrix4(matrix, from_matrix));
+    CHECK(affine3_near_vec(
+        from_matrix.transform_point(point),
+        composed.transform_point(point)));
+}
+
+TEST_CASE("Affine3d TRS conversion matches the existing public matrix convention") {
+    const termin::GeneralPose3 pose{
+        termin::Quat::from_axis_angle(
+            termin::Vec3{0.2, -0.4, 0.7}.normalized(),
+            0.83),
+        {4.0, -6.0, 2.5},
+        {-2.0, 0.75, 1.5}};
+    const termin::Affine3d affine =
+        termin::Affine3d::from_general_pose3(pose);
+
+    double expected[16];
+    double actual[16];
+    pose.matrix4(expected);
+    affine.matrix4(actual);
+    for (int i = 0; i < 16; ++i) {
+        CHECK(std::abs(actual[i] - expected[i]) < 1.0e-12);
+    }
+
+    const termin::Vec3 point{1.5, -2.0, 0.25};
+    CHECK(affine3_near_vec(
+        affine.transform_point(point),
+        pose.transform_point(point),
+        1.0e-12));
+}
+
+TEST_CASE("Affine3d randomized composition and inverse match sequential transforms") {
+    std::mt19937_64 rng(0xAFF13DULL);
+    std::uniform_real_distribution<double> position(-10.0, 10.0);
+    std::uniform_real_distribution<double> axis_component(-1.0, 1.0);
+    std::uniform_real_distribution<double> angle(-3.0, 3.0);
+    std::uniform_real_distribution<double> positive_scale(0.25, 3.0);
+
+    auto random_affine = [&]() {
+        termin::Vec3 axis{
+            axis_component(rng),
+            axis_component(rng),
+            axis_component(rng)};
+        if (axis.norm_squared() < 1.0e-6) {
+            axis = termin::Vec3::unit_x();
+        } else {
+            axis = axis.normalized();
+        }
+
+        termin::Vec3 scale{
+            positive_scale(rng),
+            positive_scale(rng),
+            positive_scale(rng)};
+        if ((rng() & 1U) != 0U) {
+            scale.x = -scale.x;
+        }
+        if ((rng() & 2U) != 0U) {
+            scale.y = -scale.y;
+        }
+
+        return termin::Affine3d::trs(
+            {position(rng), position(rng), position(rng)},
+            termin::Quat::from_axis_angle(axis, angle(rng)),
+            scale);
+    };
+
+    for (int iteration = 0; iteration < 256; ++iteration) {
+        const termin::Affine3d first = random_affine();
+        const termin::Affine3d second = random_affine();
+        const termin::Affine3d third = random_affine();
+        const termin::Vec3 point{
+            position(rng),
+            position(rng),
+            position(rng)};
+        const termin::Vec3 vector{
+            axis_component(rng),
+            axis_component(rng),
+            axis_component(rng)};
+
+        const termin::Affine3d composed = first * second;
+        CHECK(affine3_near_vec(
+            composed.transform_point(point),
+            first.transform_point(second.transform_point(point)),
+            1.0e-9));
+        CHECK(affine3_near_vec(
+            composed.transform_vector(vector),
+            first.transform_vector(second.transform_vector(vector)),
+            1.0e-9));
+
+        CHECK(affine3_near_vec(
+            ((first * second) * third).transform_point(point),
+            (first * (second * third)).transform_point(point),
+            1.0e-8));
+
+        termin::Affine3d inverse;
+        CHECK(composed.try_inverse(inverse));
+        CHECK(affine3_near_vec(
+            inverse.transform_point(composed.transform_point(point)),
+            point,
+            1.0e-8));
+        CHECK(affine3_near_vec(
+            inverse.transform_vector(composed.transform_vector(vector)),
+            vector,
+            1.0e-8));
+    }
+}
+
+TEST_CASE("Affine3d inverse and matrix import fail without modifying output") {
+    termin::Affine3d unchanged =
+        termin::Affine3d::from_translation(9.0, 11.0, 13.0);
+    CHECK(!termin::Affine3d::scaling(0.0, 2.0, 3.0).try_inverse(unchanged));
+    CHECK(unchanged.translation == termin::Vec3(9.0, 11.0, 13.0));
+
+    double projective[16] = {
+        1.0, 0.0, 0.0, 0.25,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        2.0, 3.0, 4.0, 1.0,
+    };
+    CHECK(!termin::Affine3d::try_from_matrix4(projective, unchanged));
+    CHECK(unchanged.translation == termin::Vec3(9.0, 11.0, 13.0));
 }
 
 TEST_CASE("world2d maps double positions between Vec2 and the canonical XZ plane") {

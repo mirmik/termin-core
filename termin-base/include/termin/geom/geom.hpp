@@ -14,6 +14,7 @@
 #include "mat44.hpp"
 #include "pose2.hpp"
 #include "affine2.hpp"
+#include "affine3.hpp"
 #include "pose3.hpp"
 #include "general_pose3.hpp"
 #include "screw2.hpp"
