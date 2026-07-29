@@ -16,6 +16,15 @@ struct GlobalOptions {
     fs::path project_root;
     fs::path profiles_path;
     fs::path request_output;
+    fs::path sdk_root;
+    fs::path termin_root;
+    fs::path android_sdk_root;
+    fs::path shader_compiler;
+    fs::path fxc;
+    fs::path android_build_script;
+    fs::path quest_openxr_build_script;
+    fs::path gradle;
+    fs::path adb;
     bool dry_run = false;
 };
 
@@ -33,7 +42,18 @@ void print_help() {
         << "  termin_builder --help\n"
         << "  termin_builder profiles [--project <dir>] [--profiles <file>]\n"
         << "  termin_builder profile <name> [--project <dir>] [--profiles <file>]\n"
-        << "  termin_builder build <name> [--project <dir>] [--profiles <file>] [--dry-run]\n"
+        << "  termin_builder build <name> [--project <dir>] [--profiles <file>] [toolchain options] [--dry-run]\n"
+        << "\n"
+        << "Build toolchain options:\n"
+        << "  --sdk-root <dir>\n"
+        << "  --termin-root <dir>\n"
+        << "  --android-sdk-root <dir>\n"
+        << "  --shader-compiler <file>\n"
+        << "  --fxc <file>\n"
+        << "  --android-build-script <file>\n"
+        << "  --quest-openxr-build-script <file>\n"
+        << "  --gradle <file>\n"
+        << "  --adb <file>\n"
         << "\n"
         << "Profile file:\n"
         << "  project_settings/build_profiles.json\n"
@@ -103,6 +123,24 @@ ParsedArgs parse_args(int argc, char** argv) {
             parsed.options.profiles_path = take_value();
         } else if (arg == "--request-output" && parsed.command == "resolve") {
             parsed.options.request_output = take_value();
+        } else if (arg == "--sdk-root" && parsed.command == "build") {
+            parsed.options.sdk_root = take_value();
+        } else if (arg == "--termin-root" && parsed.command == "build") {
+            parsed.options.termin_root = take_value();
+        } else if (arg == "--android-sdk-root" && parsed.command == "build") {
+            parsed.options.android_sdk_root = take_value();
+        } else if (arg == "--shader-compiler" && parsed.command == "build") {
+            parsed.options.shader_compiler = take_value();
+        } else if (arg == "--fxc" && parsed.command == "build") {
+            parsed.options.fxc = take_value();
+        } else if (arg == "--android-build-script" && parsed.command == "build") {
+            parsed.options.android_build_script = take_value();
+        } else if (arg == "--quest-openxr-build-script" && parsed.command == "build") {
+            parsed.options.quest_openxr_build_script = take_value();
+        } else if (arg == "--gradle" && parsed.command == "build") {
+            parsed.options.gradle = take_value();
+        } else if (arg == "--adb" && parsed.command == "build") {
+            parsed.options.adb = take_value();
         } else if (arg == "--dry-run") {
             parsed.options.dry_run = true;
         } else {
@@ -184,6 +222,26 @@ std::vector<std::string> profile_backend_command(
     }
     if (args.command == "build" && args.options.dry_run) {
         command.push_back("--dry-run");
+    }
+    if (args.command == "build") {
+        const auto append_path_option =
+            [&command](const char* name, const fs::path& value) {
+                if (!value.empty()) {
+                    command.insert(command.end(), {name, value.string()});
+                }
+            };
+        append_path_option("--sdk-root", args.options.sdk_root);
+        append_path_option("--termin-root", args.options.termin_root);
+        append_path_option("--android-sdk-root", args.options.android_sdk_root);
+        append_path_option("--shader-compiler", args.options.shader_compiler);
+        append_path_option("--fxc", args.options.fxc);
+        append_path_option("--android-build-script", args.options.android_build_script);
+        append_path_option(
+            "--quest-openxr-build-script",
+            args.options.quest_openxr_build_script
+        );
+        append_path_option("--gradle", args.options.gradle);
+        append_path_option("--adb", args.options.adb);
     }
     if (args.command == "resolve") {
         command.insert(command.end(), {
