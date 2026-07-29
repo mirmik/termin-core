@@ -28,9 +28,24 @@ void bind_general_pose3(nb::module_& m) {
             [](GeneralPose3& p, const Vec3& val) {
                 p.scale = val;
             })
-        .def(nb::self * nb::self)
-        .def("__matmul__", [](const GeneralPose3& a, const GeneralPose3& b) { return a * b; })
-        .def("inverse", &GeneralPose3::inverse)
+        .def(
+            "compose_trs_projected",
+            nb::overload_cast<const GeneralPose3&>(
+                &GeneralPose3::compose_trs_projected,
+                nb::const_),
+            nb::arg("child"),
+            "Compose and project the affine result back to TRS; may lose shear.")
+        .def(
+            "compose_trs_projected",
+            nb::overload_cast<const Pose3&>(
+                &GeneralPose3::compose_trs_projected,
+                nb::const_),
+            nb::arg("child"),
+            "Compose and project the affine result back to TRS; may lose shear.")
+        .def(
+            "inverse_trs_projected",
+            &GeneralPose3::inverse_trs_projected,
+            "Invert and project the affine result back to TRS; may lose shear.")
         .def("transform_point", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_point, nb::const_))
         .def("transform_vector", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_vector, nb::const_))
         .def("transform_direction", nb::overload_cast<const Vec3&>(&GeneralPose3::transform_direction, nb::const_))

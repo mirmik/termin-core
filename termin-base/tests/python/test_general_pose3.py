@@ -58,7 +58,7 @@ class TestGeneralPose3Basics:
 
 
 class TestGeneralPose3Composition:
-    """Test pose composition with scale."""
+    """Test explicitly projected TRS composition with scale."""
 
     def test_composition_identity(self):
         """Identity * pose = pose."""
@@ -67,7 +67,7 @@ class TestGeneralPose3Composition:
             lin=Vec3(1, 2, 3),
             scale=Vec3(2, 2, 2)
         )
-        result = identity * gp
+        result = identity.compose_trs_projected(gp)
         assert_vec3_approx(result.lin, (1, 2, 3))
         assert_vec3_approx(result.scale, (2, 2, 2))
 
@@ -76,7 +76,7 @@ class TestGeneralPose3Composition:
         parent = GeneralPose3(scale=Vec3(2, 2, 2))
         child = GeneralPose3(lin=Vec3(1, 0, 0))
 
-        result = parent * child
+        result = parent.compose_trs_projected(child)
 
         # Child at [1,0,0] with parent scale [2,2,2] -> global [2,0,0]
         assert_vec3_approx(result.lin, (2, 0, 0))
@@ -86,7 +86,7 @@ class TestGeneralPose3Composition:
         parent = GeneralPose3(scale=Vec3(2, 3, 4))
         child = GeneralPose3(scale=Vec3(5, 6, 7))
 
-        result = parent * child
+        result = parent.compose_trs_projected(child)
 
         assert_vec3_approx(result.scale, (10, 18, 28))
 
@@ -95,7 +95,7 @@ class TestGeneralPose3Composition:
         parent = GeneralPose3(scale=Vec3(2, 1, 3))
         child = GeneralPose3(lin=Vec3(1, 1, 1))
 
-        result = parent * child
+        result = parent.compose_trs_projected(child)
 
         # Each axis scaled independently
         assert_vec3_approx(result.lin, (2, 1, 3))
@@ -108,7 +108,7 @@ class TestGeneralPose3Composition:
 
         child = GeneralPose3(lin=Vec3(1, 0, 0))
 
-        result = parent * child
+        result = parent.compose_trs_projected(child)
 
         # Child [1,0,0] rotated 90 around Z -> [0,1,0], then scaled by 2 -> [0,2,0]
         assert_vec3_approx(result.lin, (0, 2, 0), eps=1e-5)
@@ -118,7 +118,7 @@ class TestGeneralPose3Composition:
         parent = GeneralPose3(lin=Vec3(10, 0, 0))
         child = GeneralPose3(lin=Vec3(1, 0, 0), scale=Vec3(3, 3, 3))
 
-        result = parent * child
+        result = parent.compose_trs_projected(child)
 
         # Parent translation + child position (no scale on parent)
         assert_vec3_approx(result.lin, (11, 0, 0))
@@ -133,7 +133,7 @@ class TestGeneralPose3Composition:
         )
         child = GeneralPose3(lin=Vec3(1, 0, 0))
 
-        result = parent * child
+        result = parent.compose_trs_projected(child)
 
         # Child [1,0,0] scaled by 2 -> [2,0,0], rotated 90 around Z -> [0,2,0],
         # then translated by [10,0,0] -> [10,2,0]
@@ -145,7 +145,9 @@ class TestGeneralPose3Composition:
         level2 = GeneralPose3(lin=Vec3(1, 0, 0), scale=Vec3(3, 3, 3))
         level3 = GeneralPose3(lin=Vec3(1, 0, 0))
 
-        result = level1 * level2 * level3
+        result = level1.compose_trs_projected(
+            level2.compose_trs_projected(level3)
+        )
 
         # level3 [1,0,0] scaled by level2 scale [3,3,3] -> [3,0,0]
         # level2 position [1,0,0] + [3,0,0] = [4,0,0]
@@ -155,23 +157,23 @@ class TestGeneralPose3Composition:
         assert_vec3_approx(result.scale, (6, 6, 6))
 
 
-class TestGeneralPose3Inverse:
-    """Test inverse with scale."""
+class TestGeneralPose3ProjectedInverse:
+    """Test explicitly projected TRS inverse with scale."""
 
     def test_inverse_identity(self):
         gp = GeneralPose3.identity()
-        inv = gp.inverse()
+        inv = gp.inverse_trs_projected()
         assert_vec3_approx(inv.lin, (0, 0, 0))
         assert_vec3_approx(inv.scale, (1, 1, 1))
 
     def test_inverse_translation_only(self):
         gp = GeneralPose3(lin=Vec3(1, 2, 3))
-        inv = gp.inverse()
+        inv = gp.inverse_trs_projected()
         assert_vec3_approx(inv.lin, (-1, -2, -3))
 
     def test_inverse_scale_only(self):
         gp = GeneralPose3(scale=Vec3(2, 4, 8))
-        inv = gp.inverse()
+        inv = gp.inverse_trs_projected()
         assert_vec3_approx(inv.scale, (0.5, 0.25, 0.125))
 
     def test_inverse_roundtrip(self):
@@ -181,7 +183,7 @@ class TestGeneralPose3Inverse:
             ang=GeneralPose3.rotateZ(0.5).ang,
             scale=Vec3(2, 3, 4)  # non-uniform scale OK for right multiplication
         )
-        result = gp * gp.inverse()
+        result = gp.compose_trs_projected(gp.inverse_trs_projected())
 
         assert_vec3_approx(result.lin, (0, 0, 0), eps=1e-5)
         assert_vec3_approx(result.scale, (1, 1, 1), eps=1e-5)
@@ -198,7 +200,7 @@ class TestGeneralPose3Inverse:
             ang=GeneralPose3.rotateZ(0.5).ang,
             scale=Vec3(2, 2, 2)  # uniform scale
         )
-        result = gp.inverse() * gp
+        result = gp.inverse_trs_projected().compose_trs_projected(gp)
 
         assert_vec3_approx(result.lin, (0, 0, 0), eps=1e-5)
         assert_vec3_approx(result.scale, (1, 1, 1), eps=1e-5)
@@ -212,10 +214,19 @@ class TestGeneralPose3Inverse:
             lin=Vec3(1, 2, 3),
             scale=Vec3(2, 3, 4)  # non-uniform, but no rotation
         )
-        result = gp.inverse() * gp
+        result = gp.inverse_trs_projected().compose_trs_projected(gp)
 
         assert_vec3_approx(result.lin, (0, 0, 0), eps=1e-5)
         assert_vec3_approx(result.scale, (1, 1, 1), eps=1e-5)
+
+    def test_exact_looking_algebra_is_not_exposed(self):
+        gp = GeneralPose3.identity()
+
+        with pytest.raises(TypeError):
+            gp * gp
+        with pytest.raises(TypeError):
+            gp @ gp
+        assert "inverse" not in dir(gp)
 
 
 class TestGeneralPose3TransformPoint:

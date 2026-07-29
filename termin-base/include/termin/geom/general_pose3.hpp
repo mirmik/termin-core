@@ -11,7 +11,8 @@ inline tc_general_pose3 tc_general_pose3::identity() {
     return {};
 }
 
-inline tc_general_pose3 tc_general_pose3::operator*(const tc_general_pose3& other) const {
+inline tc_general_pose3 tc_general_pose3::compose_trs_projected(
+    const tc_general_pose3& other) const {
     tc_vec3 scaled_child{scale.x * other.lin.x, scale.y * other.lin.y, scale.z * other.lin.z};
     tc_vec3 rotated_child = ang.rotate(scaled_child);
     return {
@@ -21,7 +22,8 @@ inline tc_general_pose3 tc_general_pose3::operator*(const tc_general_pose3& othe
     };
 }
 
-inline tc_general_pose3 tc_general_pose3::operator*(const tc_pose3& other) const {
+inline tc_general_pose3 tc_general_pose3::compose_trs_projected(
+    const tc_pose3& other) const {
     tc_vec3 scaled_child{scale.x * other.lin.x, scale.y * other.lin.y, scale.z * other.lin.z};
     tc_vec3 rotated_child = ang.rotate(scaled_child);
     return {
@@ -31,7 +33,7 @@ inline tc_general_pose3 tc_general_pose3::operator*(const tc_pose3& other) const
     };
 }
 
-inline tc_general_pose3 tc_general_pose3::inverse() const {
+inline tc_general_pose3 tc_general_pose3::inverse_trs_projected() const {
     tc_quat inv_ang = ang.inverse();
     tc_vec3 inv_scale{
         scale.x != 0.0 ? 1.0 / scale.x : 0.0,
@@ -371,7 +373,9 @@ inline GeneralPose3 lerp(const GeneralPose3& a, const GeneralPose3& b, double t)
     };
 }
 
-inline GeneralPose3 operator*(const Pose3& a, const GeneralPose3& b) {
+inline GeneralPose3 compose_trs_projected(
+    const Pose3& a,
+    const GeneralPose3& b) {
     Vec3 rotated_child = a.ang.rotate(b.lin);
     return {
         a.ang * b.ang,

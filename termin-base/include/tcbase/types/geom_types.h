@@ -682,9 +682,12 @@ struct tc_general_pose3 {
 
     static tc_general_pose3 identity();
 
-    tc_general_pose3 operator*(const tc_general_pose3& other) const;
-    tc_general_pose3 operator*(const tc_pose3& other) const;
-    tc_general_pose3 inverse() const;
+    // These operations project an affine result back into TRS and are not
+    // closed for arbitrary non-uniform scale and rotation.
+    tc_general_pose3 compose_trs_projected(
+        const tc_general_pose3& other) const;
+    tc_general_pose3 compose_trs_projected(const tc_pose3& other) const;
+    tc_general_pose3 inverse_trs_projected() const;
 
     tc_vec3 transform_point(const tc_vec3& p) const;
     tc_vec3 transform_vector(const tc_vec3& v) const;

@@ -84,8 +84,11 @@ static inline tc_pose3 tc_gpose_to_pose(tc_general_pose3 gp) {
     return TC_POSE3(gp.ang, gp.lin);
 }
 
-// Composition: parent * child (with scale inheritance)
-static inline tc_general_pose3 tc_gpose_mul(tc_general_pose3 parent, tc_general_pose3 child) {
+// Projected TRS composition. The exact affine product can contain shear.
+static inline tc_general_pose3 tc_gpose_compose_trs_projected(
+    tc_general_pose3 parent,
+    tc_general_pose3 child
+) {
     tc_vec3 scaled_child = tc_vec3_mul(parent.scale, child.lin);
     tc_vec3 rotated_child = tc_quat_rotate(parent.ang, scaled_child);
 
@@ -96,8 +99,8 @@ static inline tc_general_pose3 tc_gpose_mul(tc_general_pose3 parent, tc_general_
     );
 }
 
-// Inverse (approximate for non-uniform scale)
-static inline tc_general_pose3 tc_gpose_inverse(tc_general_pose3 p) {
+// Projected TRS inverse. The exact affine inverse can contain shear.
+static inline tc_general_pose3 tc_gpose_inverse_trs_projected(tc_general_pose3 p) {
     tc_quat inv_rot = tc_quat_inverse(p.ang);
     tc_vec3 inv_scale = TC_VEC3(1.0 / p.scale.x, 1.0 / p.scale.y, 1.0 / p.scale.z);
     tc_vec3 neg_pos = tc_vec3_neg(p.lin);
