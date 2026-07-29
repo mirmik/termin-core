@@ -255,12 +255,112 @@ def test_registry_broker_selects_user_editor_by_project(tmp_path: Path):
         called = _call_execute(broker, "project-call", "selected-project")
 
         assert called["result"]["isError"] is False
-        assert first_endpoint.requests[0]["params"]["arguments"]["script"] == ("print('selected-project')")
-        assert second_endpoint.requests == []
+        assert [request["method"] for request in first_endpoint.requests] == [
+            "ping",
+            "tools/call",
+        ]
+        assert first_endpoint.requests[1]["params"]["arguments"]["script"] == ("print('selected-project')")
+        assert [request["method"] for request in second_endpoint.requests] == ["ping"]
         assert broker.close() == ("", "")
     finally:
         first_endpoint.stop()
         second_endpoint.stop()
+        if broker.process.poll() is None:
+            broker.process.terminate()
+
+
+def test_registry_broker_selects_editor_for_project_nested_under_workspace(
+    tmp_path: Path,
+):
+    nested_endpoint = _EditorEndpoint("nested-token")
+    unrelated_endpoint = _EditorEndpoint("unrelated-token")
+    nested_endpoint.start()
+    unrelated_endpoint.start()
+    registry = tmp_path / "registry"
+    workspace = tmp_path / "workspace"
+    nested_project = workspace / "test-projects" / "showcase"
+    unrelated_project = tmp_path / "unrelated-project"
+    nested_project.mkdir(parents=True)
+    unrelated_project.mkdir()
+    _write_session(
+        registry / "nested.json",
+        nested_endpoint,
+        instance_id="nested-instance",
+        project_path=nested_project,
+    )
+    _write_session(
+        registry / "unrelated.json",
+        unrelated_endpoint,
+        instance_id="unrelated-instance",
+        project_path=unrelated_project,
+    )
+    broker = _BrokerProcess(registry_dir=registry, project=workspace)
+    try:
+        _initialize(broker)
+
+        called = _call_execute(broker, "nested-call", "nested")
+
+        assert called["result"]["isError"] is False
+        assert [request["method"] for request in nested_endpoint.requests] == [
+            "ping",
+            "tools/call",
+        ]
+        assert nested_endpoint.requests[1]["params"]["arguments"]["script"] == ("print('nested')")
+        assert [request["method"] for request in unrelated_endpoint.requests] == ["ping"]
+        assert broker.close() == ("", "")
+    finally:
+        nested_endpoint.stop()
+        unrelated_endpoint.stop()
+        if broker.process.poll() is None:
+            broker.process.terminate()
+
+
+def test_registry_broker_falls_back_to_only_reachable_editor_without_project_match(
+    tmp_path: Path,
+):
+    endpoint = _EditorEndpoint("live-token")
+    endpoint.start()
+    registry = tmp_path / "registry"
+    requested_project = tmp_path / "requested-project"
+    live_project = tmp_path / "live-project"
+    requested_project.mkdir()
+    live_project.mkdir()
+    stale = registry / "stale.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(
+        json.dumps(
+            {
+                "instance_id": "stale-instance",
+                "pid": 999999,
+                "project_path": str(requested_project),
+                "started_at": 0.0,
+                "url": "http://127.0.0.1:1/mcp",
+                "token": "stale-token",
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_session(
+        registry / "live.json",
+        endpoint,
+        instance_id="live-instance",
+        project_path=live_project,
+    )
+    broker = _BrokerProcess(registry_dir=registry, project=requested_project)
+    try:
+        _initialize(broker)
+
+        called = _call_execute(broker, "fallback-call", "fallback")
+
+        assert called["result"]["isError"] is False
+        assert [request["method"] for request in endpoint.requests] == [
+            "ping",
+            "tools/call",
+        ]
+        assert stale.exists()
+        assert broker.close() == ("", "")
+    finally:
+        endpoint.stop()
         if broker.process.poll() is None:
             broker.process.terminate()
 
