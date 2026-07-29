@@ -16,6 +16,7 @@ NB_MODULE(_geom_native, m) {
     bind_mat44(m);
     bind_pose3(m);
     bind_general_pose3(m);
+    bind_affine3(m);
     bind_screw2(m);
     bind_screw3(m);
     bind_ray3(m);

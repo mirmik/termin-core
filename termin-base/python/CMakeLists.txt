@@ -20,6 +20,7 @@ nanobind_add_module(_geom_native NB_SHARED
     bindings/geom/mat44.cpp
     bindings/geom/pose3.cpp
     bindings/geom/general_pose3.cpp
+    bindings/geom/affine3.cpp
     bindings/geom/screw2.cpp
     bindings/geom/screw3.cpp
     bindings/geom/ray3.cpp

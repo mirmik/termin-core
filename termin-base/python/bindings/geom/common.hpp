@@ -94,6 +94,7 @@ void bind_mat33(nb::module_& m);
 void bind_mat44(nb::module_& m);
 void bind_pose3(nb::module_& m);
 void bind_general_pose3(nb::module_& m);
+void bind_affine3(nb::module_& m);
 void bind_screw2(nb::module_& m);
 void bind_screw3(nb::module_& m);
 void bind_ray3(nb::module_& m);
