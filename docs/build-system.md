@@ -596,6 +596,14 @@ SDK installation defaults, затем environment, editor-local settings и, н�
 включает `termin_shaderc`, FXC, Android/Quest scripts, Gradle и ADB, но никогда
 не сохраняется в `build_profiles.json`.
 
+Редактор хранит свой provider в глобальных пользовательских настройках
+**Edit > Settings... > Build Toolchain**. Там задаются локальные корни Termin
+SDK/source, Termin Android SDK slice и overrides для `termin_shaderc`, FXC,
+Android/Quest build scripts, Gradle и ADB. Сохранение этих значений не меняет
+project-owned файлы. Build Profiles немедленно пересчитывает capabilities, а
+исполнение получает тот же editor-local context; запуск редактора через
+`GRADLE_BIN=...` для обычной работы не требуется.
+
 Канонический `inspect_profile_capabilities()` возвращает тот же stable-code
 report для CLI и editor consumers. `capability.*.missing` означает отсутствие
 настройки/обнаружения, `capability.*.invalid` — заданный путь неправильного
