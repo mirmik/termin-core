@@ -589,19 +589,23 @@ ABI и числовой `ndk_api`, но не имеют конфигурируе
 и build scripts в профиль не входят; их передает локальный `ToolchainContext`.
 
 `ToolchainContext` собирается одной provider chain. Приоритет отдельных полей:
-SDK installation defaults, затем environment, editor-local settings и, наконец,
+SDK installation defaults, затем environment, общие пользовательские настройки
+Termin и, наконец,
 явные параметры конкретного запуска. После слияния roots незаданные tools
 выводятся из итоговых `sdk_root`/`termin_root`/`android_sdk_root` и `PATH`.
 Поэтому смена SDK не оставляет compiler path от прежней установки. Контекст
 включает `termin_shaderc`, FXC, Android/Quest scripts, Gradle и ADB, но никогда
 не сохраняется в `build_profiles.json`.
 
-Редактор хранит свой provider в глобальных пользовательских настройках
-**Edit > Settings... > Build Toolchain**. Там задаются локальные корни Termin
-SDK/source, Termin Android SDK slice и overrides для `termin_shaderc`, FXC,
-Android/Quest build scripts, Gradle и ADB. Сохранение этих значений не меняет
-project-owned файлы. Build Profiles немедленно пересчитывает capabilities, а
-исполнение получает тот же editor-local context; запуск редактора через
+Канонический пользовательский конфиг Termin находится в
+`~/.config/termin/settings.json` на Linux и
+`%APPDATA%/termin/settings.json` на Windows. Редактор хранит там как свои
+пользовательские параметры, так и provider из
+**Edit > Settings... > Build Toolchain**: локальные корни Termin SDK/source,
+Termin Android SDK slice и overrides для `termin_shaderc`, FXC, Android/Quest
+build scripts, Gradle и ADB. Сохранение не меняет project-owned файлы. Build
+Profiles немедленно пересчитывает capabilities, а `termin build` читает тот же
+`Build/*` section, если соответствующий явный аргумент не задан. Запуск через
 `GRADLE_BIN=...` для обычной работы не требуется.
 
 Канонический `inspect_profile_capabilities()` возвращает тот же stable-code
