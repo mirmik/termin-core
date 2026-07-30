@@ -82,3 +82,26 @@ def test_test_runners_have_no_legacy_release_tests_fallback() -> None:
     assert "termin_build.artifact_resolution" in runner_paths[1].read_text(
         encoding="utf-8"
     )
+
+
+def test_cpp_runners_build_shader_compiler_before_python_resolution() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    linux_runner = (repo_root / "run-tests-cpp.sh").read_text(encoding="utf-8")
+    windows_runner = (repo_root / "run-tests-cpp.ps1").read_text(encoding="utf-8")
+
+    # Resolving an existing path is not a freshness guarantee.  Both central
+    # C++ runners must explicitly build the producer target in the active
+    # graph before run-tests.sh/run-tests.ps1 resolve TERMIN_SHADERC.
+    assert linux_runner.count("--target termin_shaderc") == 1
+    assert 'Target "termin_shaderc"' in windows_runner
+
+
+def test_cpp_runners_build_exact_planner_selected_targets() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    linux_runner = (repo_root / "run-tests-cpp.sh").read_text(encoding="utf-8")
+    windows_runner = (repo_root / "run-tests-cpp.ps1").read_text(encoding="utf-8")
+
+    assert '--target "${CTEST_BUILD_TARGETS[@]}"' in linux_runner
+    assert "-Target $CtestBuildTargets" in windows_runner
+    assert "termin_native_tests_with_window" not in linux_runner
+    assert "termin_native_tests_with_window" not in windows_runner
