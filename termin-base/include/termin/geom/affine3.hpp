@@ -89,7 +89,9 @@ inline tc_affine3d tc_affine3d::trs(
 }
 
 inline tc_affine3d tc_affine3d::from_pose3(const tc_pose3& pose) {
-    return tc_affine3d_from_pose3(pose);
+    tc_affine3d result;
+    tc_affine3d_from_pose3(pose, &result);
+    return result;
 }
 
 inline tc_affine3d tc_affine3d::from_general_pose3(

@@ -179,8 +179,10 @@ static inline tc_affine3d tc_affine3d_trs(
     return TC_AFFINE3D(basis, translation);
 }
 
-static inline tc_affine3d tc_affine3d_from_pose3(tc_pose3 pose) {
-    return tc_affine3d_trs(
+static inline void tc_affine3d_from_pose3(
+    tc_pose3 pose,
+    tc_affine3d* out) {
+    *out = tc_affine3d_trs(
         pose.lin,
         pose.ang,
         TC_VEC3(1.0, 1.0, 1.0));
