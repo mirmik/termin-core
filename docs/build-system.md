@@ -767,6 +767,15 @@ package. `entry_scene` обязан присутствовать в таблиц
 и регистрирует всю таблицу; player запускает entry scene и оставляет остальные
 сцены неактивными до явного перехода через `SceneManager`.
 
+Для packaged scene UI closure включает исполняемые фабрики, а не только файлы:
+каждый authored component обязан иметь зарегистрированную C++ factory, а
+`ui_document.type_dependencies` должны точно совпадать с recipe и разрешаться
+в C++ widget factories с native UiScript contract. Отсутствующие фабрики и
+Python-only component/widget dependencies являются validation errors до
+запуска target packaging. Во время анализа сцены exporter временно публикует
+только те скомпилированные UI documents, которых ещё нет в process registry,
+и снимает эти регистрации сразу после анализа.
+
 Desktop target packaging больше не должен копировать SDK `site-packages`
 целиком по умолчанию. В `minimal_strict` bundle получает Python stdlib из SDK
 без `site-packages`, затем создаёт чистый `site-packages` и добавляет только
