@@ -21,14 +21,14 @@
 extern "C" {
 #endif
 
-static inline tc_basis3d tc_basis3d_new(
+TC_C_STATIC_INLINE tc_basis3d tc_basis3d_new(
     tc_vec3 x,
     tc_vec3 y,
     tc_vec3 z) {
     return TC_BASIS3D(x, y, z);
 }
 
-static inline tc_basis3d tc_basis3d_identity(void) {
+TC_C_STATIC_INLINE tc_basis3d tc_basis3d_identity(void) {
     return TC_BASIS3D(
         TC_VEC3(1.0, 0.0, 0.0),
         TC_VEC3(0.0, 1.0, 0.0),
@@ -36,7 +36,7 @@ static inline tc_basis3d tc_basis3d_identity(void) {
 }
 
 // rotation must be a unit quaternion, matching the existing Pose3 contract.
-static inline tc_basis3d tc_basis3d_from_quat(tc_quat rotation) {
+TC_C_STATIC_INLINE tc_basis3d tc_basis3d_from_quat(tc_quat rotation) {
     double xx = rotation.x * rotation.x;
     double yy = rotation.y * rotation.y;
     double zz = rotation.z * rotation.z;
@@ -62,14 +62,14 @@ static inline tc_basis3d tc_basis3d_from_quat(tc_quat rotation) {
             1.0 - 2.0 * (xx + yy)));
 }
 
-static inline tc_basis3d tc_basis3d_scaling(double sx, double sy, double sz) {
+TC_C_STATIC_INLINE tc_basis3d tc_basis3d_scaling(double sx, double sy, double sz) {
     return TC_BASIS3D(
         TC_VEC3(sx, 0.0, 0.0),
         TC_VEC3(0.0, sy, 0.0),
         TC_VEC3(0.0, 0.0, sz));
 }
 
-static inline tc_vec3 tc_basis3d_transform_vector(
+TC_C_STATIC_INLINE tc_vec3 tc_basis3d_transform_vector(
     tc_basis3d basis,
     tc_vec3 vector) {
     return TC_VEC3(
@@ -79,7 +79,7 @@ static inline tc_vec3 tc_basis3d_transform_vector(
 }
 
 // parent * child applies child first, then parent.
-static inline tc_basis3d tc_basis3d_mul(
+TC_C_STATIC_INLINE tc_basis3d tc_basis3d_mul(
     tc_basis3d parent,
     tc_basis3d child) {
     return TC_BASIS3D(
@@ -88,13 +88,13 @@ static inline tc_basis3d tc_basis3d_mul(
         tc_basis3d_transform_vector(parent, child.z));
 }
 
-static inline double tc_basis3d_determinant(tc_basis3d basis) {
+TC_C_STATIC_INLINE double tc_basis3d_determinant(tc_basis3d basis) {
     return basis.x.x * (basis.y.y * basis.z.z - basis.y.z * basis.z.y)
         - basis.y.x * (basis.x.y * basis.z.z - basis.x.z * basis.z.y)
         + basis.z.x * (basis.x.y * basis.y.z - basis.x.z * basis.y.y);
 }
 
-static inline bool tc_basis3d_is_finite(tc_basis3d basis) {
+TC_C_STATIC_INLINE bool tc_basis3d_is_finite(tc_basis3d basis) {
     return isfinite(basis.x.x)
         && isfinite(basis.x.y)
         && isfinite(basis.x.z)
@@ -106,7 +106,7 @@ static inline bool tc_basis3d_is_finite(tc_basis3d basis) {
         && isfinite(basis.z.z);
 }
 
-static inline bool tc_basis3d_try_inverse(
+TC_C_STATIC_INLINE bool tc_basis3d_try_inverse(
     tc_basis3d basis,
     double epsilon,
     tc_basis3d* out_inverse) {
@@ -141,34 +141,34 @@ static inline bool tc_basis3d_try_inverse(
     return true;
 }
 
-static inline tc_affine3d tc_affine3d_new(
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_new(
     tc_basis3d basis,
     tc_vec3 translation) {
     return TC_AFFINE3D(basis, translation);
 }
 
-static inline tc_affine3d tc_affine3d_identity(void) {
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_identity(void) {
     return TC_AFFINE3D(tc_basis3d_identity(), TC_VEC3(0.0, 0.0, 0.0));
 }
 
-static inline tc_affine3d tc_affine3d_translation(double x, double y, double z) {
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_translation(double x, double y, double z) {
     return TC_AFFINE3D(tc_basis3d_identity(), TC_VEC3(x, y, z));
 }
 
-static inline tc_affine3d tc_affine3d_rotation(tc_quat rotation) {
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_rotation(tc_quat rotation) {
     return TC_AFFINE3D(
         tc_basis3d_from_quat(rotation),
         TC_VEC3(0.0, 0.0, 0.0));
 }
 
-static inline tc_affine3d tc_affine3d_scaling(double sx, double sy, double sz) {
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_scaling(double sx, double sy, double sz) {
     return TC_AFFINE3D(
         tc_basis3d_scaling(sx, sy, sz),
         TC_VEC3(0.0, 0.0, 0.0));
 }
 
 // T * R * S for column vectors.
-static inline tc_affine3d tc_affine3d_trs(
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_trs(
     tc_vec3 translation,
     tc_quat rotation,
     tc_vec3 scale) {
@@ -179,22 +179,20 @@ static inline tc_affine3d tc_affine3d_trs(
     return TC_AFFINE3D(basis, translation);
 }
 
-static inline void tc_affine3d_from_pose3(
-    tc_pose3 pose,
-    tc_affine3d* out) {
-    *out = tc_affine3d_trs(
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_from_pose3(tc_pose3 pose) {
+    return tc_affine3d_trs(
         pose.lin,
         pose.ang,
         TC_VEC3(1.0, 1.0, 1.0));
 }
 
-static inline tc_affine3d tc_affine3d_from_general_pose3(
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_from_general_pose3(
     tc_general_pose3 pose) {
     return tc_affine3d_trs(pose.lin, pose.ang, pose.scale);
 }
 
 // parent * child applies child first, then parent.
-static inline tc_affine3d tc_affine3d_mul(
+TC_C_STATIC_INLINE tc_affine3d tc_affine3d_mul(
     tc_affine3d parent,
     tc_affine3d child) {
     return TC_AFFINE3D(
@@ -204,7 +202,7 @@ static inline tc_affine3d tc_affine3d_mul(
             tc_basis3d_transform_vector(parent.basis, child.translation)));
 }
 
-static inline tc_vec3 tc_affine3d_transform_point(
+TC_C_STATIC_INLINE tc_vec3 tc_affine3d_transform_point(
     tc_affine3d affine,
     tc_vec3 point) {
     return tc_vec3_add(
@@ -212,24 +210,24 @@ static inline tc_vec3 tc_affine3d_transform_point(
         tc_basis3d_transform_vector(affine.basis, point));
 }
 
-static inline tc_vec3 tc_affine3d_transform_vector(
+TC_C_STATIC_INLINE tc_vec3 tc_affine3d_transform_vector(
     tc_affine3d affine,
     tc_vec3 vector) {
     return tc_basis3d_transform_vector(affine.basis, vector);
 }
 
-static inline double tc_affine3d_determinant(tc_affine3d affine) {
+TC_C_STATIC_INLINE double tc_affine3d_determinant(tc_affine3d affine) {
     return tc_basis3d_determinant(affine.basis);
 }
 
-static inline bool tc_affine3d_is_finite(tc_affine3d affine) {
+TC_C_STATIC_INLINE bool tc_affine3d_is_finite(tc_affine3d affine) {
     return tc_basis3d_is_finite(affine.basis)
         && isfinite(affine.translation.x)
         && isfinite(affine.translation.y)
         && isfinite(affine.translation.z);
 }
 
-static inline bool tc_affine3d_try_inverse(
+TC_C_STATIC_INLINE bool tc_affine3d_try_inverse(
     tc_affine3d affine,
     double epsilon,
     tc_affine3d* out_inverse) {
@@ -250,7 +248,7 @@ static inline bool tc_affine3d_try_inverse(
 }
 
 // Expands to the public OpenGL-style column-major 4x4 convention.
-static inline void tc_affine3d_to_matrix4(
+TC_C_STATIC_INLINE void tc_affine3d_to_matrix4(
     tc_affine3d affine,
     double* out_column_major_16) {
     if (out_column_major_16 == NULL) {
@@ -275,7 +273,7 @@ static inline void tc_affine3d_to_matrix4(
     out_column_major_16[15] = 1.0;
 }
 
-static inline bool tc_affine3d_try_from_matrix4(
+TC_C_STATIC_INLINE bool tc_affine3d_try_from_matrix4(
     const double* column_major_16,
     double epsilon,
     tc_affine3d* out_affine) {

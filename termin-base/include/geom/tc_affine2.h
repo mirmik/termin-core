@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-static inline tc_affine2f tc_affine2f_new(
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_new(
     float m00,
     float m01,
     float m10,
@@ -33,31 +33,31 @@ static inline tc_affine2f tc_affine2f_new(
     return TC_AFFINE2F(m00, m01, m10, m11, tx, ty);
 }
 
-static inline tc_affine2f tc_affine2f_identity(void) {
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_identity(void) {
     return TC_AFFINE2F(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
 }
 
-static inline tc_affine2f tc_affine2f_translation(float x, float y) {
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_translation(float x, float y) {
     return TC_AFFINE2F(1.0f, 0.0f, 0.0f, 1.0f, x, y);
 }
 
-static inline tc_affine2f tc_affine2f_rotation(float radians) {
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_rotation(float radians) {
     float c = cosf(radians);
     float s = sinf(radians);
     return TC_AFFINE2F(c, -s, s, c, 0.0f, 0.0f);
 }
 
-static inline tc_affine2f tc_affine2f_scaling(float sx, float sy) {
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_scaling(float sx, float sy) {
     return TC_AFFINE2F(sx, 0.0f, 0.0f, sy, 0.0f, 0.0f);
 }
 
 // x_by_y changes x as y grows; y_by_x changes y as x grows.
-static inline tc_affine2f tc_affine2f_shear(float x_by_y, float y_by_x) {
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_shear(float x_by_y, float y_by_x) {
     return TC_AFFINE2F(1.0f, x_by_y, y_by_x, 1.0f, 0.0f, 0.0f);
 }
 
 // T * R * S for column vectors.
-static inline tc_affine2f tc_affine2f_trs(
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_trs(
     tc_vec2f translation,
     float radians,
     tc_vec2f scale) {
@@ -72,7 +72,7 @@ static inline tc_affine2f tc_affine2f_trs(
         translation.y);
 }
 
-static inline tc_affine2f tc_affine2f_from_pose2(tc_pose2 pose) {
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_from_pose2(tc_pose2 pose) {
     float c = (float)cos(pose.ang);
     float s = (float)sin(pose.ang);
     return TC_AFFINE2F(
@@ -85,7 +85,7 @@ static inline tc_affine2f tc_affine2f_from_pose2(tc_pose2 pose) {
 }
 
 // parent * child applies child first, then parent.
-static inline tc_affine2f tc_affine2f_mul(
+TC_C_STATIC_INLINE tc_affine2f tc_affine2f_mul(
     tc_affine2f parent,
     tc_affine2f child) {
     return TC_AFFINE2F(
@@ -97,7 +97,7 @@ static inline tc_affine2f tc_affine2f_mul(
         parent.m10 * child.tx + parent.m11 * child.ty + parent.ty);
 }
 
-static inline tc_vec2f tc_affine2f_transform_point(
+TC_C_STATIC_INLINE tc_vec2f tc_affine2f_transform_point(
     tc_affine2f affine,
     tc_vec2f point) {
     return TC_VEC2F(
@@ -105,7 +105,7 @@ static inline tc_vec2f tc_affine2f_transform_point(
         affine.m10 * point.x + affine.m11 * point.y + affine.ty);
 }
 
-static inline tc_vec2f tc_affine2f_transform_vector(
+TC_C_STATIC_INLINE tc_vec2f tc_affine2f_transform_vector(
     tc_affine2f affine,
     tc_vec2f vector) {
     return TC_VEC2F(
@@ -113,11 +113,11 @@ static inline tc_vec2f tc_affine2f_transform_vector(
         affine.m10 * vector.x + affine.m11 * vector.y);
 }
 
-static inline float tc_affine2f_determinant(tc_affine2f affine) {
+TC_C_STATIC_INLINE float tc_affine2f_determinant(tc_affine2f affine) {
     return affine.m00 * affine.m11 - affine.m01 * affine.m10;
 }
 
-static inline bool tc_affine2f_is_finite(tc_affine2f affine) {
+TC_C_STATIC_INLINE bool tc_affine2f_is_finite(tc_affine2f affine) {
     return isfinite(affine.m00)
         && isfinite(affine.m01)
         && isfinite(affine.m10)
@@ -126,7 +126,7 @@ static inline bool tc_affine2f_is_finite(tc_affine2f affine) {
         && isfinite(affine.ty);
 }
 
-static inline bool tc_affine2f_try_inverse(
+TC_C_STATIC_INLINE bool tc_affine2f_try_inverse(
     tc_affine2f affine,
     float epsilon,
     tc_affine2f* out_inverse) {
@@ -154,7 +154,7 @@ static inline bool tc_affine2f_try_inverse(
     return true;
 }
 
-static inline tc_bounds2f tc_affine2f_transform_bounds(
+TC_C_STATIC_INLINE tc_bounds2f tc_affine2f_transform_bounds(
     tc_affine2f affine,
     tc_bounds2f bounds) {
     tc_vec2f p0 = tc_affine2f_transform_point(

@@ -16,4 +16,19 @@
     #endif
 #endif
 
+/*
+ * Header-only C helpers do not cross an ABI boundary, but MSVC still emits
+ * C4190 when their C++ facade return type has constructors or methods.
+ * Suppress that diagnostic only on declarations that remain static inline.
+ * Real exported C functions must use TC_API and an explicitly portable ABI.
+ */
+#ifndef TC_C_STATIC_INLINE
+    #if defined(_MSC_VER) && defined(__cplusplus)
+        #define TC_C_STATIC_INLINE \
+            __pragma(warning(suppress: 4190)) static inline
+    #else
+        #define TC_C_STATIC_INLINE static inline
+    #endif
+#endif
+
 #endif // TCBASE_TYPES_API_H
