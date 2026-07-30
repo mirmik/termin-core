@@ -105,12 +105,7 @@ static tc_value python_inspect_get_type_metadata(const char* type_name, void* ct
     return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
 }
 
-static bool g_python_inspect_vtable_initialized = false;
-
 void init_python_inspect_vtable() {
-    if (g_python_inspect_vtable_initialized) return;
-    g_python_inspect_vtable_initialized = true;
-
     static tc_inspect_lang_vtable python_vtable = {
         python_inspect_has_type,
         python_inspect_get_parent,

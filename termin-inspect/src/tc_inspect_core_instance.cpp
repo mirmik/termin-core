@@ -91,12 +91,7 @@ static tc_value cpp_get_type_metadata(const char* type_name, void* ctx) {
     return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
 }
 
-static bool g_cpp_inspect_vtable_initialized = false;
-
 void init_cpp_inspect_vtable() {
-    if (g_cpp_inspect_vtable_initialized) return;
-    g_cpp_inspect_vtable_initialized = true;
-
     static tc_inspect_lang_vtable cpp_vtable = {
         cpp_has_type,
         cpp_get_parent,
