@@ -565,6 +565,11 @@ project root и делегирует чтение, проверку и комп�
 собственного JSON-представления схемы. Target-specific логика живет в Python
 wrapper-ах для `desktop`, `android` и `quest_openxr`.
 
+Локальный capability report доступен через тот же установленный launcher:
+`termin_builder capabilities <profile> --project <dir> [--json]`. Команда
+принимает те же toolchain overrides, что и `build`, и возвращает exit code 0
+для buildable report либо 2, если report содержит capability diagnostics.
+
 Schema-v2 и ее persistence API принадлежат toolkit-neutral модулю
 `termin.project_build.profiles`. `BuildProfileStore` загружает и перечисляет
 профили, разрешает project-relative пути и атомарно сохраняет детерминированный

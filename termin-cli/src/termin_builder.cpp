@@ -26,6 +26,7 @@ struct GlobalOptions {
     fs::path gradle;
     fs::path adb;
     bool dry_run = false;
+    bool json = false;
 };
 
 struct ParsedArgs {
@@ -42,6 +43,7 @@ void print_help() {
         << "  termin_builder --help\n"
         << "  termin_builder profiles [--project <dir>] [--profiles <file>]\n"
         << "  termin_builder profile <name> [--project <dir>] [--profiles <file>]\n"
+        << "  termin_builder capabilities <name> [--project <dir>] [--profiles <file>] [toolchain options] [--json]\n"
         << "  termin_builder build <name> [--project <dir>] [--profiles <file>] [toolchain options] [--dry-run]\n"
         << "\n"
         << "Build toolchain options:\n"
@@ -77,7 +79,7 @@ void print_help() {
 
 void print_usage_error() {
     std::cerr
-        << "Usage: termin_builder profiles|profile <name>|build <name> [options]\n"
+        << "Usage: termin_builder profiles|profile <name>|capabilities <name>|build <name> [options]\n"
         << "Run 'termin_builder --help' for full help.\n";
 }
 
@@ -95,13 +97,17 @@ ParsedArgs parse_args(int argc, char** argv) {
     }
 
     parsed.command = argv[1];
-    if (parsed.command != "profiles" && parsed.command != "profile" && parsed.command != "build"
+    if (parsed.command != "profiles" && parsed.command != "profile"
+        && parsed.command != "capabilities" && parsed.command != "build"
         && parsed.command != "resolve") {
         throw std::runtime_error("unknown command: " + parsed.command);
     }
+    const bool accepts_toolchain_options =
+        parsed.command == "build" || parsed.command == "capabilities";
 
     int i = 2;
-    if (parsed.command == "profile" || parsed.command == "build" || parsed.command == "resolve") {
+    if (parsed.command == "profile" || parsed.command == "capabilities"
+        || parsed.command == "build" || parsed.command == "resolve") {
         if (i >= argc || std::string(argv[i]).rfind("-", 0) == 0) {
             throw std::runtime_error("missing profile name");
         }
@@ -123,26 +129,28 @@ ParsedArgs parse_args(int argc, char** argv) {
             parsed.options.profiles_path = take_value();
         } else if (arg == "--request-output" && parsed.command == "resolve") {
             parsed.options.request_output = take_value();
-        } else if (arg == "--sdk-root" && parsed.command == "build") {
+        } else if (arg == "--sdk-root" && accepts_toolchain_options) {
             parsed.options.sdk_root = take_value();
-        } else if (arg == "--termin-root" && parsed.command == "build") {
+        } else if (arg == "--termin-root" && accepts_toolchain_options) {
             parsed.options.termin_root = take_value();
-        } else if (arg == "--android-sdk-root" && parsed.command == "build") {
+        } else if (arg == "--android-sdk-root" && accepts_toolchain_options) {
             parsed.options.android_sdk_root = take_value();
-        } else if (arg == "--shader-compiler" && parsed.command == "build") {
+        } else if (arg == "--shader-compiler" && accepts_toolchain_options) {
             parsed.options.shader_compiler = take_value();
-        } else if (arg == "--fxc" && parsed.command == "build") {
+        } else if (arg == "--fxc" && accepts_toolchain_options) {
             parsed.options.fxc = take_value();
-        } else if (arg == "--android-build-script" && parsed.command == "build") {
+        } else if (arg == "--android-build-script" && accepts_toolchain_options) {
             parsed.options.android_build_script = take_value();
-        } else if (arg == "--quest-openxr-build-script" && parsed.command == "build") {
+        } else if (arg == "--quest-openxr-build-script" && accepts_toolchain_options) {
             parsed.options.quest_openxr_build_script = take_value();
-        } else if (arg == "--gradle" && parsed.command == "build") {
+        } else if (arg == "--gradle" && accepts_toolchain_options) {
             parsed.options.gradle = take_value();
-        } else if (arg == "--adb" && parsed.command == "build") {
+        } else if (arg == "--adb" && accepts_toolchain_options) {
             parsed.options.adb = take_value();
-        } else if (arg == "--dry-run") {
+        } else if (arg == "--dry-run" && parsed.command == "build") {
             parsed.options.dry_run = true;
+        } else if (arg == "--json" && parsed.command == "capabilities") {
+            parsed.options.json = true;
         } else {
             throw std::runtime_error("unknown option: " + arg);
         }
@@ -223,7 +231,7 @@ std::vector<std::string> profile_backend_command(
     if (args.command == "build" && args.options.dry_run) {
         command.push_back("--dry-run");
     }
-    if (args.command == "build") {
+    if (args.command == "build" || args.command == "capabilities") {
         const auto append_path_option =
             [&command](const char* name, const fs::path& value) {
                 if (!value.empty()) {
@@ -242,6 +250,9 @@ std::vector<std::string> profile_backend_command(
         );
         append_path_option("--gradle", args.options.gradle);
         append_path_option("--adb", args.options.adb);
+    }
+    if (args.command == "capabilities" && args.options.json) {
+        command.push_back("--json");
     }
     if (args.command == "resolve") {
         command.insert(command.end(), {
