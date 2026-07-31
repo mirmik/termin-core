@@ -14,12 +14,18 @@ typedef struct tc_runtime_type_facet_record {
     uint32_t abi_version;
 } tc_runtime_type_facet_record;
 
+typedef struct tc_runtime_type_binding_record {
+    void* payload;
+    tc_runtime_type_facet_destroy_fn destroy;
+} tc_runtime_type_binding_record;
+
 typedef struct tc_runtime_type_record {
     const char* name;
     const char* owner;
     const char* parent;
     uint64_t generation;
     tc_resource_map* facets;
+    tc_resource_map* bindings;
     tc_dlist_head instances;
     size_t instance_count;
     bool tombstoned;
@@ -32,12 +38,14 @@ typedef struct tc_runtime_type_registry_storage {
 static tc_runtime_type_registry_storage g_runtime_type_registry = {0};
 
 static tc_runtime_type_record* find_record(const char* type_name);
+static bool prepare_record_unload(tc_runtime_type_record* record, void* context);
 
 struct tc_runtime_type_descriptor {
     const char* name;
     const char* owner;
     const char* parent;
     tc_resource_map* facets;
+    tc_resource_map* prepared_bindings;
     tc_runtime_type_record* prepared_record;
     char* prepared_record_key;
     bool allow_same_owner_replacement;
@@ -53,6 +61,63 @@ static void destroy_facet_record(void* payload) {
         facet->destroy(facet->payload);
     }
     free(facet);
+}
+
+static void destroy_binding_record(void* payload) {
+    tc_runtime_type_binding_record* binding =
+        (tc_runtime_type_binding_record*)payload;
+    if (!binding) {
+        return;
+    }
+    if (binding->destroy && binding->payload) {
+        binding->destroy(binding->payload);
+    }
+    free(binding);
+}
+
+tc_runtime_owned_factory tc_runtime_owned_factory_make(
+    tc_runtime_owned_factory_create_fn create,
+    void* context,
+    tc_runtime_owned_factory_context_destroy_fn destroy_context
+) {
+    tc_runtime_owned_factory factory = {create, context, destroy_context};
+    return factory;
+}
+
+tc_runtime_owned_factory tc_runtime_owned_factory_take(
+    tc_runtime_owned_factory* factory
+) {
+    tc_runtime_owned_factory result = {0};
+    if (!factory) {
+        return result;
+    }
+    result = *factory;
+    *factory = (tc_runtime_owned_factory){0};
+    return result;
+}
+
+bool tc_runtime_owned_factory_invoke(
+    const tc_runtime_owned_factory* factory,
+    const void* request,
+    void* out_result
+) {
+    if (!factory || !factory->create || !out_result) {
+        tc_log(TC_LOG_ERROR, "[OwnedFactory] create callback and output are required");
+        return false;
+    }
+    return factory->create(factory->context, request, out_result);
+}
+
+void tc_runtime_owned_factory_reset(tc_runtime_owned_factory* factory) {
+    if (!factory) {
+        return;
+    }
+    void* context = factory->context;
+    tc_runtime_owned_factory_context_destroy_fn destroy = factory->destroy_context;
+    *factory = (tc_runtime_owned_factory){0};
+    if (destroy && context) {
+        destroy(context);
+    }
 }
 
 static void destroy_type_record(void* payload) {
@@ -75,6 +140,9 @@ static void destroy_type_record(void* payload) {
 
     if (record->facets) {
         tc_resource_map_free(record->facets);
+    }
+    if (record->bindings) {
+        tc_resource_map_free(record->bindings);
     }
     free(record);
 }
@@ -174,12 +242,14 @@ tc_runtime_type_descriptor* tc_runtime_type_descriptor_create(
         ? tc_intern_string(parent_name)
         : NULL;
     descriptor->facets = tc_resource_map_new(destroy_facet_record);
+    descriptor->prepared_bindings = tc_resource_map_new(destroy_binding_record);
     descriptor->prepared_record =
         (tc_runtime_type_record*)calloc(1, sizeof(tc_runtime_type_record));
     descriptor->prepared_record_key = duplicate_string(type_name);
     descriptor->valid = descriptor->name && descriptor->owner &&
         (!(parent_name && parent_name[0]) || descriptor->parent) &&
-        descriptor->facets && descriptor->prepared_record && descriptor->prepared_record_key;
+        descriptor->facets && descriptor->prepared_bindings &&
+        descriptor->prepared_record && descriptor->prepared_record_key;
 
     ensure_registry_initialized();
     if (!g_runtime_type_registry.records ||
@@ -274,6 +344,54 @@ bool tc_runtime_type_descriptor_add_facet(
     return true;
 }
 
+bool tc_runtime_type_descriptor_add_binding(
+    tc_runtime_type_descriptor* descriptor,
+    const char* binding_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy
+) {
+    if (!descriptor || !descriptor->valid || !descriptor->prepared_bindings ||
+        !binding_id || !binding_id[0] || !payload) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] descriptor binding rejected: type='%s' owner='%s' binding='%s'",
+            descriptor && descriptor->name ? descriptor->name : "<unknown>",
+            descriptor && descriptor->owner ? descriptor->owner : "<unknown>",
+            binding_id ? binding_id : "<unknown>"
+        );
+        if (destroy && payload) destroy(payload);
+        if (descriptor) descriptor->valid = false;
+        return false;
+    }
+    tc_runtime_type_binding_record* binding =
+        (tc_runtime_type_binding_record*)calloc(1, sizeof(*binding));
+    if (!binding) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to allocate descriptor binding '%s' for '%s'",
+            binding_id,
+            descriptor->name
+        );
+        if (destroy) destroy(payload);
+        descriptor->valid = false;
+        return false;
+    }
+    binding->payload = payload;
+    binding->destroy = destroy;
+    if (!tc_resource_map_add(descriptor->prepared_bindings, binding_id, binding)) {
+        destroy_binding_record(binding);
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] duplicate or failed descriptor binding '%s' for '%s'",
+            binding_id,
+            descriptor->name
+        );
+        descriptor->valid = false;
+        return false;
+    }
+    return true;
+}
+
 bool tc_runtime_type_descriptor_allow_same_owner_replacement(
     tc_runtime_type_descriptor* descriptor
 ) {
@@ -294,6 +412,9 @@ void tc_runtime_type_descriptor_destroy(tc_runtime_type_descriptor* descriptor) 
     }
     if (descriptor->facets) {
         tc_resource_map_free(descriptor->facets);
+    }
+    if (descriptor->prepared_bindings) {
+        tc_resource_map_free(descriptor->prepared_bindings);
     }
     free(descriptor->prepared_record);
     free(descriptor->prepared_record_key);
@@ -331,15 +452,29 @@ bool tc_runtime_type_registry_commit_descriptor(
             existing->owner ? existing->owner : "<none>",
             descriptor->owner
         );
+    } else if (can_replace_same_owner &&
+               !prepare_record_unload(existing, NULL)) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] active descriptor replacement refused by prepare-unload: type='%s' owner='%s'",
+            descriptor->name,
+            descriptor->owner
+        );
     } else if (can_replace_same_owner) {
         tc_resource_map* replaced_facets = existing->facets;
+        tc_resource_map* replaced_bindings = existing->bindings;
         existing->owner = descriptor->owner;
         existing->parent = descriptor->parent;
         existing->facets = descriptor->facets;
+        existing->bindings = descriptor->prepared_bindings;
         existing->generation++;
         descriptor->facets = NULL;
+        descriptor->prepared_bindings = NULL;
         if (replaced_facets) {
             tc_resource_map_free(replaced_facets);
+        }
+        if (replaced_bindings) {
+            tc_resource_map_free(replaced_bindings);
         }
         committed = true;
     } else if (existing &&
@@ -353,14 +488,20 @@ bool tc_runtime_type_registry_commit_descriptor(
         );
     } else if (existing) {
         tc_resource_map* replaced_facets = existing->facets;
+        tc_resource_map* replaced_bindings = existing->bindings;
         existing->owner = descriptor->owner;
         existing->parent = descriptor->parent;
         existing->facets = descriptor->facets;
+        existing->bindings = descriptor->prepared_bindings;
         existing->tombstoned = false;
         existing->generation++;
         descriptor->facets = NULL;
+        descriptor->prepared_bindings = NULL;
         if (replaced_facets) {
             tc_resource_map_free(replaced_facets);
+        }
+        if (replaced_bindings) {
+            tc_resource_map_free(replaced_bindings);
         }
         committed = true;
     } else {
@@ -370,6 +511,7 @@ bool tc_runtime_type_registry_commit_descriptor(
         record->parent = descriptor->parent;
         record->generation = 1;
         record->facets = descriptor->facets;
+        record->bindings = descriptor->prepared_bindings;
         tc_dlist_init_head(&record->instances);
         record->instance_count = 0;
         record->tombstoned = false;
@@ -381,6 +523,7 @@ bool tc_runtime_type_registry_commit_descriptor(
             descriptor->prepared_record = NULL;
             descriptor->prepared_record_key = NULL;
             descriptor->facets = NULL;
+            descriptor->prepared_bindings = NULL;
             committed = true;
         } else {
             record->facets = NULL;
@@ -408,6 +551,21 @@ static void clear_record_facets(tc_runtime_type_record* record) {
         tc_log(
             TC_LOG_ERROR,
             "[RuntimeTypeRegistry] failed to recreate facets for tombstoned type '%s'",
+            record->name ? record->name : "<unknown>"
+        );
+    }
+}
+
+static void clear_record_bindings(tc_runtime_type_record* record) {
+    if (!record || !record->bindings) {
+        return;
+    }
+    tc_resource_map_free(record->bindings);
+    record->bindings = tc_resource_map_new(destroy_binding_record);
+    if (!record->bindings) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to recreate bindings for tombstoned type '%s'",
             record->name ? record->name : "<unknown>"
         );
     }
@@ -498,6 +656,7 @@ bool tc_runtime_type_registry_unregister_type_with_context(
     }
 
     clear_record_facets(record);
+    clear_record_bindings(record);
     record->tombstoned = true;
     record->generation++;
     return true;
@@ -608,6 +767,7 @@ bool tc_runtime_type_registry_commit_owner_unload(
             tc_resource_map_remove(g_runtime_type_registry.records, ctx.names[i]);
         } else {
             clear_record_facets(record);
+            clear_record_bindings(record);
             record->tombstoned = true;
             record->generation++;
         }
@@ -663,6 +823,86 @@ bool tc_runtime_type_registry_has_facet(const char* type_name, const char* facet
     tc_runtime_type_record* record = find_record(type_name);
     return record && record->facets && facet_id &&
         tc_resource_map_contains(record->facets, facet_id);
+}
+
+bool tc_runtime_type_registry_set_binding(
+    const char* type_name,
+    const char* binding_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy
+) {
+    tc_runtime_type_record* record = find_record(type_name);
+    if (!record || record->tombstoned || !record->bindings ||
+        !binding_id || !binding_id[0] || !payload) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] cannot bind '%s' to runtime type '%s'",
+            binding_id ? binding_id : "<unknown>",
+            type_name ? type_name : "<unknown>"
+        );
+        if (destroy && payload) {
+            destroy(payload);
+        }
+        return false;
+    }
+
+    tc_runtime_type_binding_record* binding =
+        (tc_runtime_type_binding_record*)calloc(1, sizeof(*binding));
+    if (!binding) {
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to allocate binding '%s' for '%s'",
+            binding_id,
+            type_name
+        );
+        if (destroy) {
+            destroy(payload);
+        }
+        return false;
+    }
+    binding->payload = payload;
+    binding->destroy = destroy;
+    if (!tc_resource_map_replace(record->bindings, binding_id, binding)) {
+        destroy_binding_record(binding);
+        tc_log(
+            TC_LOG_ERROR,
+            "[RuntimeTypeRegistry] failed to publish binding '%s' for '%s'",
+            binding_id,
+            type_name
+        );
+        return false;
+    }
+    return true;
+}
+
+void* tc_runtime_type_registry_get_binding(
+    const char* type_name,
+    const char* binding_id
+) {
+    tc_runtime_type_record* record = find_record(type_name);
+    if (!record || record->tombstoned || !record->bindings || !binding_id) {
+        return NULL;
+    }
+    tc_runtime_type_binding_record* binding =
+        (tc_runtime_type_binding_record*)tc_resource_map_get(
+            record->bindings,
+            binding_id
+        );
+    return binding ? binding->payload : NULL;
+}
+
+bool tc_runtime_type_registry_remove_binding(
+    const char* type_name,
+    const char* binding_id
+) {
+    tc_runtime_type_record* record = find_record(type_name);
+    if (!record || record->tombstoned || !record->bindings || !binding_id) {
+        return true;
+    }
+    if (!tc_resource_map_contains(record->bindings, binding_id)) {
+        return true;
+    }
+    return tc_resource_map_remove(record->bindings, binding_id);
 }
 
 typedef struct foreach_type_with_facet_ctx {
