@@ -102,5 +102,34 @@ int main(void) {
     GUARD_C_CHECK(tc_handle_is_invalid(tc_pool_alloc(&pool)));
     GUARD_C_CHECK(pool.capacity == 2);
     tc_pool_free(&pool);
+
+    tc_pool_generation_epoch epoch = {0};
+    GUARD_C_CHECK(tc_pool_init_rebootstrap(&pool, sizeof(int), 1, &epoch));
+    tc_handle before_rebootstrap = tc_pool_alloc(&pool);
+    GUARD_C_CHECK(before_rebootstrap.index == 0);
+    tc_pool_free(&pool);
+
+    GUARD_C_CHECK(tc_pool_init_rebootstrap(&pool, sizeof(int), 1, &epoch));
+    tc_handle after_rebootstrap = tc_pool_alloc(&pool);
+    GUARD_C_CHECK(after_rebootstrap.index == before_rebootstrap.index);
+    GUARD_C_CHECK(after_rebootstrap.generation > before_rebootstrap.generation);
+    GUARD_C_CHECK(!tc_pool_is_valid(&pool, before_rebootstrap));
+
+    GUARD_C_CHECK(tc_pool_free_slot(&pool, after_rebootstrap));
+    tc_handle reused = tc_pool_alloc(&pool);
+    GUARD_C_CHECK(reused.index == after_rebootstrap.index);
+    GUARD_C_CHECK(reused.generation > after_rebootstrap.generation);
+    tc_handle grown = tc_pool_alloc(&pool);
+    GUARD_C_CHECK(grown.index != reused.index);
+    tc_pool_free(&pool);
+
+    GUARD_C_CHECK(tc_pool_init_rebootstrap(&pool, sizeof(int), 2, &epoch));
+    tc_handle final_first = tc_pool_alloc(&pool);
+    tc_handle final_second = tc_pool_alloc(&pool);
+    GUARD_C_CHECK(!tc_pool_is_valid(&pool, reused));
+    GUARD_C_CHECK(!tc_pool_is_valid(&pool, grown));
+    GUARD_C_CHECK(final_first.generation > reused.generation);
+    GUARD_C_CHECK(final_second.generation > grown.generation);
+    tc_pool_free(&pool);
     return 0;
 }

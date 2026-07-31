@@ -121,11 +121,4 @@ TC_INSPECT_INIT_API void tc_inspect_python_adapter_init(void) {
     // Python adapter wiring is owned by consumer layer.
 }
 
-TC_INSPECT_INIT_API void tc_init_full(void) {
-    // Compatibility wrapper kept for legacy callers.
-    // In extracted architecture this initializes inspect/kind core only.
-    tc_inspect_kind_core_init();
-    tc_inspect_python_adapter_init();
-}
-
 } // extern "C"

@@ -18,7 +18,6 @@ extern "C" {
 
 TC_INSPECT_INIT_API void tc_inspect_kind_core_init(void);
 TC_INSPECT_INIT_API void tc_inspect_python_adapter_init(void);
-TC_INSPECT_INIT_API void tc_inspect_core_init(void);
 
 #ifdef __cplusplus
 }

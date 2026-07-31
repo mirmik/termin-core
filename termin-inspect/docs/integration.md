@@ -21,13 +21,10 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/opt/termin
 // 1. Core inspect/kind dispatcher
 tc_inspect_kind_core_init();
 
-// 2. C++ language backend
-tc::init_cpp_inspect_vtable();
-
-// 3. Python language backend (опционально)
+// 2. Python language backend (опционально)
 tc::init_python_lang_vtable();
 
-// 4. Consumer adapters (в termin)
+// 3. Consumer adapters (в termin)
 my_component_adapter_init();   // регистрация component inspect
 my_render_adapter_init();      // регистрация pass inspect
 my_domain_kinds_init();        // регистрация domain kinds (tc_mesh, tc_material, ...)
@@ -54,9 +51,6 @@ my_domain_kinds_init();        // регистрация domain kinds (tc_mesh, 
 
 ## Совместимость
 
-Для существующих consumers сохранены обратно совместимые символы:
-
-- `tc_inspect_python_adapter_init()` — thin wrapper над новым init.
-- `tc_init_full()` — вызывает все init в правильном порядке.
-
-Эти символы deprecated и будут удалены в будущих версиях.
+`tc_inspect_python_adapter_init()` временно сохранён как deprecated no-op для
+существующих consumers. Он не владеет Python runtime и не заменяет явную
+инициализацию language bridge в consumer-слое.

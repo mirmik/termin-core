@@ -36,7 +36,7 @@ Core ничего не знает о содержимом контекста: э
 
 ## Порядок инициализации
 
-Core init (`tc_inspect_kind_core_init`) должен быть вызван **до** регистрации language backends.
-Language backends — **до** регистрации domain kinds и adapters.
+Core init (`tc_inspect_kind_core_init`) регистрирует встроенные C++ language
+backends и должен быть вызван **до** Python backend, domain kinds и adapters.
 Нарушение порядка логируется; descriptor commit с отсутствующим parent
 отклоняется без частичной публикации.

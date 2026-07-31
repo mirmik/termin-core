@@ -15,11 +15,10 @@
 
 | Функция | Слой | Описание |
 |---------|------|----------|
-| `tc_inspect_kind_core_init()` | C | Инициализация dispatcher |
-| `tc::init_cpp_inspect_vtable()` | C++ | Регистрация C++ language backend |
+| `tc_inspect_kind_core_init()` | C/C++ core | Инициализация dispatcher и встроенных C++ inspect/kind backend-ов |
 | `tc::init_python_lang_vtable()` | Python | Регистрация Python language backend |
 
-Порядок вызова: core -> C++ -> Python. См. [Интеграция](integration.md).
+Порядок вызова: core -> Python -> consumer adapters. См. [Интеграция](integration.md).
 
 ## Совместимость
 
@@ -27,8 +26,7 @@
 
 | Символ | Статус | Замена |
 |--------|--------|--------|
-| `tc_inspect_python_adapter_init()` | deprecated | `tc::init_python_lang_vtable()` |
-| `tc_init_full()` | deprecated | Явная последовательность init |
+| `tc_inspect_python_adapter_init()` | deprecated no-op | Python bridge инициализируется consumer-слоем |
 
 ## Как читать API
 
