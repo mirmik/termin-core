@@ -58,6 +58,61 @@ static int g_destroyed_runtime_instance_probe_facets = 0;
 static int g_prepared_runtime_instance_probe_facets = 0;
 static bool g_refuse_runtime_instance_probe_unload = true;
 
+struct OwnedFactoryCounters {
+    int creates = 0;
+    int destroys = 0;
+};
+
+struct OwnedFactoryContext {
+    OwnedFactoryCounters* counters = nullptr;
+    int value = 0;
+};
+
+struct OwnedFactoryFacet {
+    tc_runtime_owned_factory factory{};
+};
+
+bool g_refuse_owned_factory_replacement = false;
+
+bool create_owned_factory_probe(void* payload, const void*, void* out_result) {
+    auto* context = static_cast<OwnedFactoryContext*>(payload);
+    if (!context || !context->counters || !out_result) return false;
+    context->counters->creates++;
+    *static_cast<int*>(out_result) = context->value;
+    return true;
+}
+
+void destroy_owned_factory_probe_context(void* payload) {
+    auto* context = static_cast<OwnedFactoryContext*>(payload);
+    if (!context) return;
+    context->counters->destroys++;
+    delete context;
+}
+
+void destroy_owned_factory_probe_facet(void* payload) {
+    auto* facet = static_cast<OwnedFactoryFacet*>(payload);
+    if (!facet) return;
+    tc_runtime_owned_factory_reset(&facet->factory);
+    delete facet;
+}
+
+bool prepare_owned_factory_probe_facet(const char*, void*, void* context) {
+    return !g_refuse_owned_factory_replacement &&
+        (!context || *static_cast<bool*>(context));
+}
+
+OwnedFactoryFacet* make_owned_factory_probe(
+    OwnedFactoryCounters& counters,
+    int value
+) {
+    auto* facet = new OwnedFactoryFacet();
+    facet->factory = tc_runtime_owned_factory_make(
+        create_owned_factory_probe,
+        new OwnedFactoryContext{&counters, value},
+        destroy_owned_factory_probe_context);
+    return facet;
+}
+
 void destroy_runtime_instance_probe_facet(void* payload) {
     delete static_cast<int*>(payload);
     g_destroyed_runtime_instance_probe_facets++;
@@ -602,6 +657,110 @@ TEST_CASE("Runtime type owner unload prepares every record before atomic commit"
     CHECK(!tc_runtime_type_registry_has_type(refused_type));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
     g_refuse_runtime_instance_probe_unload = true;
+}
+
+TEST_CASE("Owned runtime factory context follows descriptor transactions exactly once") {
+    constexpr const char* facet_id = "termin.test.owned_factory";
+    constexpr const char* owner = "owned_factory_test";
+
+    OwnedFactoryCounters failed;
+    auto* descriptor = tc_runtime_type_descriptor_create(
+        "OwnedFactoryFailedCommit", owner, "MissingOwnedFactoryParent");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(tc_runtime_type_descriptor_add_facet(
+        descriptor, facet_id, make_owned_factory_probe(failed, 11),
+        destroy_owned_factory_probe_facet,
+        prepare_owned_factory_probe_facet, 1));
+    CHECK_FALSE(tc_runtime_type_registry_commit_descriptor(descriptor));
+    CHECK_EQ(failed.destroys, 1);
+
+    OwnedFactoryCounters active;
+    descriptor = tc_runtime_type_descriptor_create(
+        "OwnedFactoryLifecycle", owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(tc_runtime_type_descriptor_add_facet(
+        descriptor, facet_id, make_owned_factory_probe(active, 23),
+        destroy_owned_factory_probe_facet,
+        prepare_owned_factory_probe_facet, 1));
+    REQUIRE(tc_runtime_type_registry_commit_descriptor(descriptor));
+
+    auto* facet = static_cast<OwnedFactoryFacet*>(
+        tc_runtime_type_registry_get_facet("OwnedFactoryLifecycle", facet_id));
+    REQUIRE(facet != nullptr);
+    int created = 0;
+    CHECK(tc_runtime_owned_factory_invoke(&facet->factory, nullptr, &created));
+    CHECK_EQ(created, 23);
+    CHECK_EQ(active.creates, 1);
+
+    bool allow_unload = false;
+    CHECK_FALSE(tc_runtime_type_registry_unregister_type_with_context(
+        "OwnedFactoryLifecycle", &allow_unload));
+    CHECK(tc_runtime_type_registry_has_type("OwnedFactoryLifecycle"));
+    CHECK_EQ(active.destroys, 0);
+
+    OwnedFactoryCounters refused_replacement;
+    descriptor = tc_runtime_type_descriptor_create(
+        "OwnedFactoryLifecycle", owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor));
+    REQUIRE(tc_runtime_type_descriptor_add_facet(
+        descriptor, facet_id, make_owned_factory_probe(refused_replacement, 31),
+        destroy_owned_factory_probe_facet,
+        prepare_owned_factory_probe_facet, 1));
+    g_refuse_owned_factory_replacement = true;
+    CHECK_FALSE(tc_runtime_type_registry_commit_descriptor(descriptor));
+    g_refuse_owned_factory_replacement = false;
+    CHECK_EQ(active.destroys, 0);
+    CHECK_EQ(refused_replacement.destroys, 1);
+
+    OwnedFactoryCounters replacement;
+    descriptor = tc_runtime_type_descriptor_create(
+        "OwnedFactoryLifecycle", owner, nullptr);
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor));
+    REQUIRE(tc_runtime_type_descriptor_add_facet(
+        descriptor, facet_id, make_owned_factory_probe(replacement, 47),
+        destroy_owned_factory_probe_facet,
+        prepare_owned_factory_probe_facet, 1));
+    REQUIRE(tc_runtime_type_registry_commit_descriptor(descriptor));
+    CHECK_EQ(active.destroys, 1);
+    CHECK_EQ(replacement.destroys, 0);
+
+    allow_unload = true;
+    CHECK(tc_runtime_type_registry_unregister_type_with_context(
+        "OwnedFactoryLifecycle", &allow_unload));
+    CHECK_EQ(replacement.destroys, 1);
+}
+
+TEST_CASE("Runtime type bindings are record-owned and replaced transactionally") {
+    constexpr const char* type_name = "RuntimeTypeOwnedBinding";
+    constexpr const char* binding_id = "termin.test.python_projection";
+    OwnedFactoryCounters first;
+    OwnedFactoryCounters second;
+
+    auto* descriptor = tc_runtime_type_descriptor_create(
+        type_name, "owned_binding_test", nullptr);
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(tc_runtime_type_registry_commit_descriptor(descriptor));
+
+    auto* first_context = new OwnedFactoryContext{&first, 3};
+    REQUIRE(tc_runtime_type_registry_set_binding(
+        type_name, binding_id, first_context,
+        destroy_owned_factory_probe_context));
+    CHECK_EQ(tc_runtime_type_registry_get_binding(type_name, binding_id), first_context);
+
+    auto* second_context = new OwnedFactoryContext{&second, 5};
+    REQUIRE(tc_runtime_type_registry_set_binding(
+        type_name, binding_id, second_context,
+        destroy_owned_factory_probe_context));
+    CHECK_EQ(first.destroys, 1);
+    CHECK_EQ(second.destroys, 0);
+    CHECK_EQ(tc_runtime_type_registry_get_binding(type_name, binding_id), second_context);
+
+    REQUIRE(tc_runtime_type_registry_remove_binding(type_name, binding_id));
+    CHECK_EQ(second.destroys, 1);
+    CHECK(tc_runtime_type_registry_get_binding(type_name, binding_id) == nullptr);
+    tc_runtime_type_registry_unregister_type(type_name);
 }
 
 TEST_CASE("Runtime type descriptor rejects partial and duplicate facets atomically") {

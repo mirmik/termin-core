@@ -13,6 +13,35 @@ extern "C" {
 #endif
 
 typedef void (*tc_runtime_type_facet_destroy_fn)(void* payload);
+typedef bool (*tc_runtime_owned_factory_create_fn)(
+    void* context,
+    const void* request,
+    void* out_result
+);
+typedef void (*tc_runtime_owned_factory_context_destroy_fn)(void* context);
+typedef struct tc_runtime_owned_factory {
+    tc_runtime_owned_factory_create_fn create;
+    void* context;
+    tc_runtime_owned_factory_context_destroy_fn destroy_context;
+} tc_runtime_owned_factory;
+
+// One language-neutral factory ownership primitive. take() clears the source;
+// reset() destroys the context at most once.
+TC_API tc_runtime_owned_factory tc_runtime_owned_factory_make(
+    tc_runtime_owned_factory_create_fn create,
+    void* context,
+    tc_runtime_owned_factory_context_destroy_fn destroy_context
+);
+TC_API tc_runtime_owned_factory tc_runtime_owned_factory_take(
+    tc_runtime_owned_factory* factory
+);
+TC_API bool tc_runtime_owned_factory_invoke(
+    const tc_runtime_owned_factory* factory,
+    const void* request,
+    void* out_result
+);
+TC_API void tc_runtime_owned_factory_reset(tc_runtime_owned_factory* factory);
+
 typedef bool (*tc_runtime_type_facet_prepare_unload_fn)(
     const char* type_name,
     void* payload,
@@ -60,6 +89,12 @@ TC_API bool tc_runtime_type_descriptor_add_facet(
     tc_runtime_type_facet_prepare_unload_fn prepare_unload,
     uint32_t abi_version
 );
+TC_API bool tc_runtime_type_descriptor_add_binding(
+    tc_runtime_type_descriptor* descriptor,
+    const char* binding_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy
+);
 // Permit allocation-free replacement of an active descriptor owned by the
 // same subsystem. Replacement is rejected while instances remain linked.
 TC_API bool tc_runtime_type_descriptor_allow_same_owner_replacement(
@@ -99,6 +134,25 @@ TC_API const char* tc_runtime_type_registry_get_parent(const char* type_name);
 TC_API void* tc_runtime_type_registry_get_facet(
     const char* type_name,
     const char* facet_id
+);
+
+// Language projections and other post-publication bindings belong to the
+// runtime type record instead of process-static side registries. Replacing or
+// unregistering the descriptor destroys every binding. set_binding() consumes
+// payload on both success and failure when destroy is non-null.
+TC_API bool tc_runtime_type_registry_set_binding(
+    const char* type_name,
+    const char* binding_id,
+    void* payload,
+    tc_runtime_type_facet_destroy_fn destroy
+);
+TC_API void* tc_runtime_type_registry_get_binding(
+    const char* type_name,
+    const char* binding_id
+);
+TC_API bool tc_runtime_type_registry_remove_binding(
+    const char* type_name,
+    const char* binding_id
 );
 TC_API bool tc_runtime_type_registry_has_facet(
     const char* type_name,
