@@ -40,7 +40,13 @@ state, но не callbacks или Python objects.
   generation и порядком выдачи индексов. Та же конфигурация принимает пару
   allocator/deallocator; тесты `tc_pool` используют её для детерминированного
   fault-injection. Инициализация и рост транзакционны: ошибка одной из
-  storage-аллокаций не публикует частично заменённые массивы.
+  storage-аллокаций не публикует частично заменённые массивы. Process-global
+  registry с shutdown/rebootstrap хранит свой `tc_pool_generation_epoch` и
+  передаёт его в `tc_pool_init_rebootstrap()` либо
+  `tc_pool_config.generation_epoch`: `tc_pool_free()` продвигает epoch выше
+  всех поколений прежнего pool, включая выросшие и переиспользованные slots.
+  Переполнившийся slot выводится из обращения, а исчерпанный epoch запрещает
+  rebootstrap fail-closed.
 - `tc_resource_map` - generic resource map.
 - `tc_tensor` - ABI-friendly typed strided memory descriptor для bulk buffers.
 - `tc_value` - C tagged-union value type для сериализации и межмодульных данных.

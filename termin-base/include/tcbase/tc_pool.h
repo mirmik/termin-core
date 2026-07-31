@@ -16,6 +16,17 @@ extern "C" {
 
 #define TC_SLOT_FREE     0
 #define TC_SLOT_OCCUPIED 1
+#define TC_SLOT_RETIRED  2
+
+// Persistent state owned by a registry whose pool can be destroyed and
+// recreated while old public handles may still exist. Zero-initialization is
+// valid; tc_pool_init_ex publishes the configured initial generation on first
+// use and tc_pool_free advances it beyond every generation used by that pool.
+typedef struct tc_pool_generation_epoch {
+    uint32_t next_generation;
+    bool initialized;
+    bool exhausted;
+} tc_pool_generation_epoch;
 
 // ============================================================================
 // Generic pool structure
@@ -37,6 +48,7 @@ typedef struct tc_pool {
     void* (*allocate)(size_t size, void* user_data);
     void (*deallocate)(void* ptr, void* user_data);
     void* allocator_user_data;
+    tc_pool_generation_epoch* generation_epoch;
 } tc_pool;
 
 typedef void* (*tc_pool_allocate_fn)(size_t size, void* user_data);
@@ -50,6 +62,7 @@ typedef struct tc_pool_config {
     tc_pool_allocate_fn allocate;
     tc_pool_deallocate_fn deallocate;
     void* allocator_user_data;
+    tc_pool_generation_epoch* generation_epoch;
 } tc_pool_config;
 
 // ============================================================================
@@ -58,6 +71,15 @@ typedef struct tc_pool_config {
 
 // Initialize pool with given item size and initial capacity
 TCBASE_API bool tc_pool_init(tc_pool* pool, size_t item_size, uint32_t initial_capacity);
+
+// Initialize a process-lifetime registry pool whose handles must remain stale
+// across tc_pool_free() followed by another initialization with the same epoch.
+TCBASE_API bool tc_pool_init_rebootstrap(
+    tc_pool* pool,
+    size_t item_size,
+    uint32_t initial_capacity,
+    tc_pool_generation_epoch* generation_epoch
+);
 
 // Initialize a configured pool. Custom allocation is transactional: init/grow
 // either publishes all replacement arrays or leaves the pool unchanged.

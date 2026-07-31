@@ -55,6 +55,42 @@ static void pool_append_free_range(
     }
 }
 
+static void pool_advance_generation_epoch(tc_pool* pool) {
+    tc_pool_generation_epoch* epoch = pool->generation_epoch;
+    if (!epoch || pool->capacity == 0 || !pool->generations) return;
+
+    uint32_t maximum = pool->generations[0];
+    for (uint32_t i = 1; i < pool->capacity; ++i) {
+        if (pool->generations[i] > maximum) maximum = pool->generations[i];
+    }
+    if (maximum == UINT32_MAX) {
+        epoch->exhausted = true;
+        tc_log_error(
+            "[%s] handle generation epoch exhausted during shutdown",
+            pool_name(pool)
+        );
+        return;
+    }
+    epoch->next_generation = maximum + 1u;
+}
+
+static void pool_release(tc_pool* pool, bool advance_epoch) {
+    if (!pool) return;
+    if (advance_epoch) pool_advance_generation_epoch(pool);
+
+    tc_pool_deallocate_fn deallocate =
+        pool->deallocate ? pool->deallocate : system_deallocate;
+    pool_release_arrays(
+        deallocate,
+        pool->allocator_user_data,
+        pool->data,
+        pool->generations,
+        pool->states,
+        pool->free_list
+    );
+    memset(pool, 0, sizeof(*pool));
+}
+
 static bool pool_grow(tc_pool* pool, uint32_t requested_capacity) {
     const uint32_t old_capacity = pool->capacity;
     if (old_capacity >= pool->max_capacity) {
@@ -169,6 +205,26 @@ bool tc_pool_init(tc_pool* pool, size_t item_size, uint32_t initial_capacity) {
         .allocate = NULL,
         .deallocate = NULL,
         .allocator_user_data = NULL,
+        .generation_epoch = NULL,
+    };
+    return tc_pool_init_ex(pool, item_size, initial_capacity, &config);
+}
+
+bool tc_pool_init_rebootstrap(
+    tc_pool* pool,
+    size_t item_size,
+    uint32_t initial_capacity,
+    tc_pool_generation_epoch* generation_epoch
+) {
+    const tc_pool_config config = {
+        .max_capacity = UINT32_MAX,
+        .initial_generation = 1u,
+        .allocate_low_indices_first = false,
+        .name = "tc_pool",
+        .allocate = NULL,
+        .deallocate = NULL,
+        .allocator_user_data = NULL,
+        .generation_epoch = generation_epoch,
     };
     return tc_pool_init_ex(pool, item_size, initial_capacity, &config);
 }
@@ -194,11 +250,26 @@ bool tc_pool_init_ex(
         memset(pool, 0, sizeof(*pool));
         return false;
     }
+    tc_pool_generation_epoch* generation_epoch =
+        config ? config->generation_epoch : NULL;
+    if (generation_epoch && generation_epoch->exhausted) {
+        tc_log_error("[tc_pool] handle generation epoch is exhausted");
+        memset(pool, 0, sizeof(*pool));
+        return false;
+    }
 
     memset(pool, 0, sizeof(*pool));
     pool->item_size = item_size;
     pool->max_capacity = max_capacity;
-    pool->initial_generation = config ? config->initial_generation : 1u;
+    const uint32_t configured_initial_generation =
+        config ? config->initial_generation : 1u;
+    if (generation_epoch && !generation_epoch->initialized) {
+        generation_epoch->next_generation = configured_initial_generation;
+        generation_epoch->initialized = true;
+    }
+    pool->initial_generation = generation_epoch
+        ? generation_epoch->next_generation
+        : configured_initial_generation;
     pool->allocate_low_indices_first =
         config ? config->allocate_low_indices_first : false;
     pool->name = config ? config->name : "tc_pool";
@@ -206,30 +277,18 @@ bool tc_pool_init_ex(
     pool->deallocate =
         config && config->deallocate ? config->deallocate : system_deallocate;
     pool->allocator_user_data = config ? config->allocator_user_data : NULL;
+    pool->generation_epoch = generation_epoch;
 
     if (initial_capacity == 0) return true;
     if (!pool_grow(pool, initial_capacity)) {
-        tc_pool_free(pool);
+        pool_release(pool, false);
         return false;
     }
     return true;
 }
 
 void tc_pool_free(tc_pool* pool) {
-    if (!pool) return;
-
-    tc_pool_deallocate_fn deallocate =
-        pool->deallocate ? pool->deallocate : system_deallocate;
-    pool_release_arrays(
-        deallocate,
-        pool->allocator_user_data,
-        pool->data,
-        pool->generations,
-        pool->states,
-        pool->free_list
-    );
-
-    memset(pool, 0, sizeof(tc_pool));
+    pool_release(pool, true);
 }
 
 void tc_pool_clear(tc_pool* pool) {
@@ -238,15 +297,26 @@ void tc_pool_clear(tc_pool* pool) {
     // Bump all generations and mark as free
     for (uint32_t i = 0; i < pool->capacity; i++) {
         if (pool->states[i] == TC_SLOT_OCCUPIED) {
-            pool->generations[i]++;
-            pool->states[i] = TC_SLOT_FREE;
+            if (pool->generations[i] == UINT32_MAX) {
+                pool->states[i] = TC_SLOT_RETIRED;
+                tc_log_error(
+                    "[%s] retired slot %u after handle generation exhaustion",
+                    pool_name(pool),
+                    i
+                );
+            } else {
+                pool->generations[i]++;
+                pool->states[i] = TC_SLOT_FREE;
+            }
         }
     }
 
     // Rebuild free list
     pool->free_count = 0;
     for (uint32_t i = 0; i < pool->capacity; i++) {
-        pool->free_list[pool->free_count++] = i;
+        if (pool->states[i] == TC_SLOT_FREE) {
+            pool->free_list[pool->free_count++] = i;
+        }
     }
 
     pool->count = 0;
@@ -286,13 +356,22 @@ bool tc_pool_free_slot(tc_pool* pool, tc_handle h) {
     if (pool->states[h.index] != TC_SLOT_OCCUPIED) return false;
     if (pool->generations[h.index] != h.generation) return false;
 
-    // Mark as free
-    pool->states[h.index] = TC_SLOT_FREE;
-    pool->generations[h.index]++;  // Bump generation
+    if (pool->generations[h.index] == UINT32_MAX) {
+        pool->states[h.index] = TC_SLOT_RETIRED;
+        tc_log_error(
+            "[%s] retired slot %u after handle generation exhaustion",
+            pool_name(pool),
+            h.index
+        );
+    } else {
+        pool->states[h.index] = TC_SLOT_FREE;
+        pool->generations[h.index]++;
+    }
     pool->count--;
 
-    // Add to free list
-    pool->free_list[pool->free_count++] = h.index;
+    if (pool->states[h.index] == TC_SLOT_FREE) {
+        pool->free_list[pool->free_count++] = h.index;
+    }
 
     return true;
 }
