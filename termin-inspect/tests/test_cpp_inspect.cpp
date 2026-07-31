@@ -1,4 +1,7 @@
 #include "tc_inspect_cpp.hpp"
+#include "inspect/tc_inspect_init.h"
+#include "inspect/tc_kind.h"
+#include "inspect/tc_kind_cpp.hpp"
 #include "inspect/tc_runtime_type_registry.h"
 #include <tcbase/tc_string.h>
 
@@ -119,6 +122,18 @@ bool commit_inspect_descriptor(
 }
 
 } // namespace
+
+TEST_CASE("public inspect core initialization links and survives rebootstrap") {
+    tc_inspect_kind_core_init();
+    CHECK(tc_kind_exists("int"));
+
+    tc_inspect_cleanup();
+    tc::reset_kind_registry_cpp();
+    tc_kind_cleanup();
+
+    tc_inspect_kind_core_init();
+    CHECK(tc_kind_exists("int"));
+}
 
 TEST_CASE("C++ kind serialization mismatch is logged and returns nil") {
     tc::init_cpp_inspect_vtable();

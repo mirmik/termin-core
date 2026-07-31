@@ -48,9 +48,8 @@
 
 Порядок вызовов при запуске:
 
-1. `tc_inspect_kind_core_init()` — инициализация C dispatcher.
-2. `tc::init_cpp_inspect_vtable()` — регистрация C++ language backend.
-3. `tc::init_python_lang_vtable()` — регистрация Python language backend (если включён).
+1. `tc_inspect_kind_core_init()` — инициализация C dispatcher и встроенных C++ inspect/kind backend-ов.
+2. `tc::init_python_lang_vtable()` — регистрация Python language backend (если включён).
 
 Consumer-слой затем регистрирует domain kinds и строит полные runtime type
 descriptors. Parent, owner и все facets становятся видимыми только после
