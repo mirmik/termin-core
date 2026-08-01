@@ -785,6 +785,9 @@ struct tc_screw3 {
     tc_screw3 coadjoint(const tc_vec3& arm) const;
     tc_screw3 coadjoint_inv(const tc_pose3& pose) const;
     tc_screw3 coadjoint_inv(const tc_vec3& arm) const;
+    [[deprecated(
+        "Screw3::to_pose() copies lin directly and is not the SE(3) "
+        "exponential; do not use it to integrate a twist")]]
     tc_pose3 to_pose() const;
 };
 

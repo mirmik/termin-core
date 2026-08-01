@@ -7,6 +7,8 @@
 #include <termin/geom/affine3.hpp>
 #include <termin/geom/color.hpp>
 #include <termin/geom/mat44.hpp>
+#include <termin/geom/mat66.hpp>
+#include <termin/geom/vec6.hpp>
 #include <termin/geom/ray3.hpp>
 #include <termin/geom/bounds2.hpp>
 #include <termin/geom/rect2.hpp>
@@ -21,6 +23,40 @@ TEST_CASE("tc_vec3 normalized zero vector returns NaNs") {
     CHECK(std::isnan(normalized.x));
     CHECK(std::isnan(normalized.y));
     CHECK(std::isnan(normalized.z));
+}
+
+TEST_CASE("Mat66 follows the canonical column-major matrix contract")
+{
+    termin::Mat66 matrix;
+    matrix(2, 4) = 7.5;
+
+    CHECK(matrix.ptr()[2 * 6 + 4] == 7.5);
+    CHECK(matrix(2, 4) == 7.5);
+    CHECK(matrix(4, 2) == 0.0);
+
+    const termin::Mat66 identity = termin::Mat66::identity();
+    const termin::Mat66 product = matrix * identity;
+    CHECK(product(2, 4) == 7.5);
+
+    const termin::Mat66 transposed = matrix.transposed();
+    CHECK(transposed(4, 2) == 7.5);
+
+    const termin::Vec6 vector{1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+    const termin::Vec6 transformed = matrix.transform(vector);
+    CHECK(transformed[4] == 22.5);
+}
+
+TEST_CASE("Vec6 provides contiguous fixed-size vector operations")
+{
+    const termin::Vec6 left{1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+    const termin::Vec6 right{6.0, 5.0, 4.0, 3.0, 2.0, 1.0};
+
+    CHECK(left.ptr()[3] == 4.0);
+    CHECK(left.dot(right) == 56.0);
+    CHECK(left.norm_squared() == 91.0);
+    const termin::Vec6 sum{7.0, 7.0, 7.0, 7.0, 7.0, 7.0};
+    CHECK((left + right) == sum);
+    CHECK((left * 2.0)[5] == 12.0);
 }
 
 TEST_CASE("tc_vec3 normalized non-zero vector remains unit length") {
