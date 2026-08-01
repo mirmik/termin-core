@@ -55,6 +55,19 @@ state, но не callbacks или Python objects.
 - `trent` - JSON/YAML/value tree utilities.
 - `termin/geom/*` - базовые геометрические/value-типы: vectors, matrices,
   poses, quaternions, rays, AABB, colors, sizes, rectangles.
+- `termin/geom/screw3.hpp`, `se3.hpp` и `spatial_inertia3.hpp` — общий слой
+  spatial algebra. `Screw3` хранит пару `[angular, linear]`, а явные
+  `screw3_to_vec6_vw()`/`screw3_from_vec6_vw()` задают dense-порядок
+  `[linear, angular]`. `se3_exp()`/`se3_log()` учитывают связь вращения и
+  переноса через левый SO(3) Jacobian; deprecated `Screw3::to_pose()`
+  экспонентой не является. `SpatialInertia3` является каноническим
+  представлением массы, COM и главных моментов и отображает twist в momentum
+  без зависимости от конкретного физического движка или QP-сборщика.
+  `rotated_by(Quat)` меняет только оси; изменение frame/origin выполняют
+  `transform_as_twist_by(Pose3)` и `transform_as_wrench_by(Pose3)`. Перенос к
+  точке задаётся отдельно через `velocity_at_offset()` и
+  `wrench_at_offset()`, поэтому трансляция `Pose3` не может быть молча
+  проигнорирована.
 - `geom/tc_affine3.h` / `termin/geom/affine3.hpp` - exact
   double-precision `Basis3d` и `Affine3d`. Basis хранится тремя подряд идущими
   column vectors; affine добавляет translation и действует на column vector

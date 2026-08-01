@@ -19,6 +19,7 @@ NB_MODULE(_geom_native, m) {
     bind_affine3(m);
     bind_screw2(m);
     bind_screw3(m);
+    bind_spatial_inertia3(m);
     bind_ray3(m);
     bind_aabb(m);
     bind_orbit_camera(m);

@@ -21,5 +21,7 @@
 #include "general_pose3.hpp"
 #include "screw2.hpp"
 #include "screw3.hpp"
+#include "se3.hpp"
+#include "spatial_inertia3.hpp"
 #include "ray3.hpp"
 #include "aabb.hpp"

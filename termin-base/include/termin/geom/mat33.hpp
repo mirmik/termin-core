@@ -1,5 +1,6 @@
 #pragma once
 
+#include "quat.hpp"
 #include "vec3.hpp"
 #include <cmath>
 #include <cstring>
@@ -282,6 +283,30 @@ struct Mat33 {
         Mat33 m;
         m(0, 0) = s.x; m(1, 1) = s.y; m(2, 2) = s.z;
         return m;
+    }
+
+    static Mat33 rotation(const Quat& orientation) {
+        double row_major[9];
+        orientation.normalized().to_matrix(row_major);
+        Mat33 result;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                result(column, row) = row_major[row * 3 + column];
+            }
+        }
+        return result;
+    }
+
+    // Matrix [value]x such that cross_product(value) * v == value.cross(v).
+    static Mat33 cross_product(const Vec3& value) {
+        Mat33 result;
+        result(1, 0) = -value.z;
+        result(2, 0) = value.y;
+        result(0, 1) = value.z;
+        result(2, 1) = -value.x;
+        result(0, 2) = -value.y;
+        result(1, 2) = value.x;
+        return result;
     }
 
     // Rotation around axis (angle in radians)

@@ -23,6 +23,7 @@ nanobind_add_module(_geom_native NB_SHARED
     bindings/geom/affine3.cpp
     bindings/geom/screw2.cpp
     bindings/geom/screw3.cpp
+    bindings/geom/spatial_inertia3.cpp
     bindings/geom/ray3.cpp
     bindings/geom/aabb.cpp
     bindings/geom/orbit_camera.cpp

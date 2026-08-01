@@ -112,6 +112,10 @@ inline tc_pose3 tc_pose3::normalized() const {
     return {ang.normalized(), lin};
 }
 
+inline bool tc_pose3::is_finite() const {
+    return ang.is_finite() && lin.is_finite();
+}
+
 inline tc_pose3 tc_pose3::with_translation(const tc_vec3& new_lin) const {
     return {ang, new_lin};
 }
