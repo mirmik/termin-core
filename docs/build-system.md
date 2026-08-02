@@ -1022,6 +1022,14 @@ Python, editor и launcher targets, чтобы платформенные зав
 ./build-web-core.sh --browser-smoke
 ```
 
+Этот запуск является обязательным Chromium gate и сохраняет machine-readable
+отчёт `build/web-core/bin/browser-gate-report.json` с версиями окружения,
+raw/gzip-размерами artifacts и package, startup/frame/input/resize metrics.
+CI запускает тот же wrapper в job `web-runtime-chromium`. Полный contract,
+Firefox manual scenario и правила deployment описаны в
+[Web Runtime Browser Gate](./web-runtime-browser-gate.md). Safari в текущую
+compatibility matrix не входит.
+
 Если Chromium отсутствует в `PATH`, `TERMIN_WEB_BROWSER` должен указывать на
 его executable. `build/web-core/bin/termin-web-core.mjs` — стабильная внешняя
 ESM-точка входа; `termin_web_core.mjs` и `termin_web_core.wasm` являются
