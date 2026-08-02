@@ -998,8 +998,11 @@ MSVC-специфичные warnings (C4251 — STL-члены в dllexport-кл
 ## WebAssembly core profile
 
 Браузерный runtime начинается с намеренно небольшой статической композиции:
-`termin-base`, `termin-inspect`, `termin-mesh` и `termin-scene`. Профиль CMake
-`TERMIN_PLATFORM_WEB` исключает desktop graphics, windowing,
+`termin-base`, `termin-inspect`, `termin-mesh`, `termin-scene`, minimal-only
+`termin-bootstrap` и минимального среза `termin-graphics`. Профиль CMake
+`TERMIN_PLATFORM_WEB` включает
+`tgfx2` WebGPU через закреплённый Emscripten port `emdawnwebgpu`, но исключает
+desktop renderer stack, windowing,
 Python, editor и launcher targets, чтобы платформенные зависимости не
 просачивались в WebAssembly-граф.
 
@@ -1021,8 +1024,22 @@ Python, editor и launcher targets, чтобы платформенные зав
 Если Chromium отсутствует в `PATH`, `TERMIN_WEB_BROWSER` должен указывать на
 его executable. `build/web-core/bin/termin-web-core.mjs` — стабильная внешняя
 ESM-точка входа; `termin_web_core.mjs` и `termin_web_core.wasm` являются
-генерируемыми деталями. Пока loader экспортирует только smoke-level core API и
-намеренно не является rendering или editor API.
+генерируемыми деталями. Loader экспортирует core smoke и WebGPU render smoke:
+последний асинхронно создаёт adapter/device для `#termin-canvas`, рисует
+triangle и текстурированный indexed mesh через публичный tgfx2 API, затем
+проверяет повторную конфигурацию surface после resize. Это validation API, а не
+финальный scene-runtime или editor API.
+
+`TERMIN_PLATFORM_WEB` принудительно включает
+`TERMIN_BOOTSTRAP_MINIMAL_ONLY`. Такой `termin-bootstrap` собирается из
+отдельного implementation unit и зависит только от `termin-base`,
+`termin-inspect` и `termin-scene`; audio, prefab, render, collision, skeleton,
+voxels, navmesh, FEM, foliage и UI отсутствуют в target dependency closure.
+Обычная native-сборка сохраняет full profile по умолчанию. Host выбирает
+профиль явно через `RuntimePackageLoadOptions::bootstrap_profile`; minimal
+profile принимает core-only package-v2 scene и до десериализации отклоняет
+неподдерживаемые resources, components и scene extensions с логированной
+ошибкой.
 
 ### Offline WGSL audit
 
@@ -1078,5 +1095,5 @@ cmake -S . -B build/webgpu-sdk \
 
 Project runtime package exporter также принимает явный `webgpu` в
 `shader_targets` и пишет `.wgsl` вместе с обязательным соседним
-`.layout.json`. WebGPU пока не добавлен в desktop `runtime.backends`: выбор и
-исполнение этих offline artifacts принадлежат следующему WebGPU backend layer.
+`.layout.json`. WebGPU backend потребляет WGSL и sidecar v3 напрямую; runtime
+Slang compiler и скрытый reflection fallback в браузер не входят.
