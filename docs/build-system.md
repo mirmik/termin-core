@@ -1023,3 +1023,21 @@ Python, editor и launcher targets, чтобы платформенные зав
 ESM-точка входа; `termin_web_core.mjs` и `termin_web_core.wasm` являются
 генерируемыми деталями. Пока loader экспортирует только smoke-level core API и
 намеренно не является rendering или editor API.
+
+### Offline WGSL audit
+
+Web shader gate использует отдельный закреплённый toolchain: Slang генерирует
+WGSL, а Naga независимо парсит и валидирует результат. Версии, URL и checksum
+зафиксированы в `build-system/web-shader-toolchain-lock.json`. Полный каталог
+built-in Slang shaders проверяется одной командой:
+
+```bash
+./audit-webgpu-shaders.sh --setup
+```
+
+Повторные запуски используют `build/toolchains/slang-<version>` и
+`build/toolchains/naga-<version>`, а WGSL, reflection и machine-readable report
+пишут в `build/web-shader-audit`. Проверка требует явных уникальных
+`@group`/`@binding`, std140 lowering для uniform buffers, валидного matrix
+lowering и отдельных texture/sampler bindings. Текущий полный отчёт лежит в
+[Built-in Slang → WGSL audit](analysis/2026-08-02-builtin-slang-wgsl-audit.md).
