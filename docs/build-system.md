@@ -1038,21 +1038,20 @@ Node smoke детерминированно проверяет этот lifecycl
 страницей через Chrome DevTools и принимает только фактический terminal marker
 из DOM; наличие marker-текста в исходнике страницы не считается успехом. После
 host lifecycle он асинхронно создаёт WebGPU adapter/device для
-`#termin-canvas`, рисует triangle и текстурированный indexed mesh через
-публичный tgfx2 API и проверяет resize. В Emscripten `present()` освобождает
-acquired canvas texture, а показ выполняет browser в конце RAF callback;
-`wgpuSurfacePresent` там вызывать нельзя.
+`#termin-canvas`, загружает strict-export package с camera/mesh/texture/material,
+рендерит его через `EngineCore`/`RenderingManager` и проверяет пиксели canvas,
+reload, teardown и resize. В Emscripten показ выполняется browser в конце RAF
+callback, зарегистрированного через HTML5 API; `wgpuSurfacePresent` там вызывать
+нельзя. Render registry bootstrap живёт всё время жизни Wasm-модуля, тогда как
+reload освобождает package, EngineCore, display и WebGPU device state.
 
-`TERMIN_PLATFORM_WEB` принудительно включает
-`TERMIN_BOOTSTRAP_MINIMAL_ONLY` и `TERMIN_RUNTIME_MINIMAL_ONLY`. Такой
-`termin-bootstrap` собирается из
-отдельного implementation unit и зависит только от `termin-base`,
-`termin-inspect` и `termin-scene`; audio, prefab, render, collision, skeleton,
-voxels, navmesh, FEM, foliage и UI отсутствуют в target dependency closure.
-Minimal runtime implementation сохраняет публичный `RuntimePackageLoader`, но
-зависит только от base/scene/bootstrap, принимает только package-v2 с пустым
-resource set и core-only scenes и не линкует desktop resource domains. Обычная
-native-сборка сохраняет full profile по умолчанию. Host выбирает
+`TERMIN_PLATFORM_WEB` принудительно включает render-only варианты bootstrap,
+runtime, render components, render passes и default pipeline. Web closure
+содержит scene, mesh, image codecs, texture/material/shader loaders, display и
+engine, но исключает editor/app/Python, audio, prefab, foliage, UI, voxels,
+navmesh и FEM. Runtime сохраняет тот же публичный `RuntimePackageLoader` и
+package-v2 contract; offline export обязан приложить WGSL artifacts и sidecar
+v3. Обычная native-сборка сохраняет full profile по умолчанию. Host выбирает
 профиль явно через `RuntimePackageLoadOptions::bootstrap_profile`; minimal
 profile принимает core-only package-v2 scene и до десериализации отклоняет
 неподдерживаемые resources, components и scene extensions с логированной
