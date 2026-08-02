@@ -992,3 +992,34 @@ MSVC-специфичные warnings (C4251 — STL-члены в dllexport-кл
 - [ ] Python: установить и `.pyd`/`.so`, и `.py` файлы
 - [ ] Добавить модуль в `build-system/packages.json` в правильное место для pip/package workflow, если модуль имеет Python-пакет
 - [ ] Добавить модуль в корневой `CMakeLists.txt`, если он должен участвовать в SDK build graph
+
+---
+
+## WebAssembly core profile
+
+Браузерный runtime начинается с намеренно небольшой статической композиции:
+`termin-base`, `termin-inspect`, `termin-mesh` и `termin-scene`. Профиль CMake
+`TERMIN_PLATFORM_WEB` исключает desktop graphics, windowing,
+Python, editor и launcher targets, чтобы платформенные зависимости не
+просачивались в WebAssembly-граф.
+
+Точная версия Emscripten закреплена в
+`build-system/emscripten-version.txt`. В чистом checkout toolchain
+устанавливается, артефакт собирается и Node smoke запускается одной командой:
+
+```bash
+./build-web-core.sh --setup
+```
+
+Повторные сборки используют `build/toolchains/emsdk` и `build/web-core`. Для
+дополнительного прогона в настоящем браузере нужен Chromium-family browser:
+
+```bash
+./build-web-core.sh --browser-smoke
+```
+
+Если Chromium отсутствует в `PATH`, `TERMIN_WEB_BROWSER` должен указывать на
+его executable. `build/web-core/bin/termin-web-core.mjs` — стабильная внешняя
+ESM-точка входа; `termin_web_core.mjs` и `termin_web_core.wasm` являются
+генерируемыми деталями. Пока loader экспортирует только smoke-level core API и
+намеренно не является rendering или editor API.

@@ -6,10 +6,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(TERMIN_BASE_BUILD_TESTS "Build termin-base tests" ON)
+option(TERMIN_BASE_BUILD_SHARED "Build termin-base as a shared library" ON)
 
 # termin_base library (tc_log + trent + settings + tc_value_trent)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-add_library(termin_base SHARED
+set(TERMIN_BASE_SOURCES
     src/tc_log.c
     src/tc_profiler.c
     src/tc_tensor.c
@@ -30,6 +31,12 @@ add_library(termin_base SHARED
     src/tc_value_trent.cpp
     src/orbit_camera.cpp
 )
+if(TERMIN_BASE_BUILD_SHARED)
+    add_library(termin_base SHARED ${TERMIN_BASE_SOURCES})
+    target_compile_definitions(termin_base PRIVATE TCBASE_EXPORTS TC_EXPORTS)
+else()
+    add_library(termin_base STATIC ${TERMIN_BASE_SOURCES})
+endif()
 if(COMMAND termin_add_alias_if_missing)
     termin_add_alias_if_missing(tcbase::termin_base termin_base)
 endif()
@@ -43,7 +50,6 @@ target_include_directories(termin_base PUBLIC
     $<INSTALL_INTERFACE:include/tcbase>
 )
 
-target_compile_definitions(termin_base PRIVATE TCBASE_EXPORTS TC_EXPORTS)
 if(MSVC)
     set_source_files_properties(src/tc_log.c PROPERTIES
         COMPILE_OPTIONS "/experimental:c11atomics"
