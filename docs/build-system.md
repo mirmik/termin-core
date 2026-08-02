@@ -1041,3 +1041,42 @@ built-in Slang shaders проверяется одной командой:
 `@group`/`@binding`, std140 lowering для uniform buffers, валидного matrix
 lowering и отдельных texture/sampler bindings. Текущий полный отчёт лежит в
 [Built-in Slang → WGSL audit](analysis/2026-08-02-builtin-slang-wgsl-audit.md).
+
+### Offline WebGPU shader artifacts
+
+Audit проверяет совместимость исходников и upstream-компиляторов, а production
+artifact path проходит через `termin_shaderc --target webgpu`. Компилятор
+принимает Slang vertex, fragment и compute stages, нормализует все ресурсы в
+WebGPU bind group 0, разделяет combined texture/sampler placement, записывает
+sidecar contract version 3 и только затем принимает WGSL после независимой
+проверки Naga. Geometry stages завершаются явной ошибкой.
+
+Пути к инструментам разрешаются через `--slangc` / `TERMIN_SLANGC` и
+`--wgsl-validator` / `TERMIN_WGSL_VALIDATOR`; fallback в runtime-компиляцию не
+предусмотрен. После `./audit-webgpu-shaders.sh --setup` полный built-in набор
+можно сгенерировать напрямую:
+
+```bash
+sdk/bin/termin_python termin-graphics/cmake/compile_builtin_shader_artifacts.py \
+  --shaderc build/Release/bin/termin_shaderc \
+  --slangc build/toolchains/slang-2026.5.2/bin/slangc \
+  --wgsl-validator build/toolchains/naga-30.0.0/bin/naga \
+  --source-dir termin-graphics/resources/builtin_shaders \
+  --output-root build/webgpu-builtin-artifacts \
+  --target webgpu
+```
+
+Для SDK staging тот же target включается на configure:
+
+```bash
+TERMIN_SLANGC="$PWD/build/toolchains/slang-2026.5.2/bin/slangc" \
+TERMIN_WGSL_VALIDATOR="$PWD/build/toolchains/naga-30.0.0/bin/naga" \
+cmake -S . -B build/webgpu-sdk \
+  -DTERMIN_BUILD_BUILTIN_SHADER_ARTIFACTS=ON \
+  -DTERMIN_BUILTIN_SHADER_ARTIFACT_TARGETS=webgpu
+```
+
+Project runtime package exporter также принимает явный `webgpu` в
+`shader_targets` и пишет `.wgsl` вместе с обязательным соседним
+`.layout.json`. WebGPU пока не добавлен в desktop `runtime.backends`: выбор и
+исполнение этих offline artifacts принадлежат следующему WebGPU backend layer.
