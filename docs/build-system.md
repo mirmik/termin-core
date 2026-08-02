@@ -1045,6 +1045,33 @@ callback, зарегистрированного через HTML5 API; `wgpuSurf
 нельзя. Render registry bootstrap живёт всё время жизни Wasm-модуля, тогда как
 reload освобождает package, EngineCore, display и WebGPU device state.
 
+Для ручной проверки рядом с smoke harness устанавливается `viewer.html` —
+полноэкранная пользовательская оболочка над тем же host и strict package:
+
+```bash
+cd build/web-core/bin
+python3 -m http.server 8062 --bind 127.0.0.1
+# открыть http://127.0.0.1:8062/viewer.html
+```
+
+`termin-web-input.mjs` является отдельным browser adapter, а не частью scene
+domain. Он переводит pointer/mouse/wheel/keyboard/text events в существующий
+Termin display input contract, управляет pointer capture и синхронизирует
+canvas backing size с CSS-размером и `devicePixelRatio`. В web fixture левая
+кнопка мыши вращает камеру, правая перемещает target, колесо меняет дистанцию;
+обычный desktop default контроллера сохраняет вращение средней кнопкой.
+Web host, как и desktop player, создаёт и владеет
+`tc_viewport_input_manager` для каждого runtime viewport с input mode
+`simple`/`basic`. Одного display router недостаточно: без viewport manager
+события принимаются adapter-ом и учитываются в метриках, но не доходят до
+scene input handlers.
+ResizeObserver и window resize ведут к повторной конфигурации WebGPU surface и
+offscreen display; blur/visibility loss сбрасывают зажатые кнопки и клавиши.
+Browser smoke проверяет этот путь сквозным жестом: кадр обязан измениться после
+orbit/wheel input, а backing surface — после CSS resize. При проверке viewer
+HUD скрывается, поэтому изменение счётчика событий не может дать
+ложноположительный результат вместо изменения самой сцены.
+
 `TERMIN_PLATFORM_WEB` принудительно включает render-only варианты bootstrap,
 runtime, render components, render passes и default pipeline. Web closure
 содержит scene, mesh, image codecs, texture/material/shader loaders, display и
