@@ -38,6 +38,7 @@ void print_help() {
         << "  termin <command> [args...]\n"
         << "\n"
         << "Built-in commands:\n"
+        << "  init [--name NAME]    Initialize a project in the current directory.\n"
         << "  editor [project]       Run termin_editor.\n"
         << "  launcher               Run termin_launcher.\n"
         << "  shaderc [args...]      Run termin_shaderc.\n"
@@ -159,7 +160,9 @@ Dispatch resolve_dispatch(int argc, char** argv, const fs::path& own_dir) {
         dispatch.args = tail_args(argc, argv, arg_start);
     };
 
-    if (command == "editor") {
+    if (command == "init") {
+        direct("termin_init", 2);
+    } else if (command == "editor") {
         direct("termin_editor", 2);
     } else if (command == "launcher") {
         direct("termin_launcher", 2);

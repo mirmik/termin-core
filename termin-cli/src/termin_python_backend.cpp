@@ -120,6 +120,7 @@ std::vector<fs::path> python_module_paths(const fs::path &install_root, const fs
             {"termin-app", "__init__.py"},
             {"termin-player", "player/__init__.py"},
             {"termin-mcp", "mcp/__init__.py"},
+            {"termin-project/python", "project/__init__.py"},
             {"termin-project-build/python", "project_build/__init__.py"},
         };
         bool found_dev_checkout = false;

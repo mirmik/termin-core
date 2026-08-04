@@ -37,6 +37,8 @@ add_library(termin_cli_python_backend STATIC src/termin_python_backend.cpp)
 target_include_directories(termin_cli_python_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 termin_cli_add_tool(termin src/termin.cpp)
+termin_cli_add_tool(termin_init src/termin_init.cpp)
+target_link_libraries(termin_init PRIVATE termin_cli_python_backend)
 termin_cli_add_tool(termin_modules_cli src/termin_modules_cli.cpp)
 target_link_libraries(termin_modules_cli PRIVATE termin_cli_python_backend)
 termin_cli_add_tool(termin_stdlib src/termin_stdlib.cpp)
