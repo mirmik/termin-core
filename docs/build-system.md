@@ -1094,18 +1094,20 @@ profile принимает core-only package-v2 scene и до десериали
 
 ### Offline WGSL audit
 
-Web shader gate использует отдельный закреплённый toolchain: Slang генерирует
-WGSL, а Naga независимо парсит и валидирует результат. Версии, URL и checksum
-зафиксированы в `build-system/web-shader-toolchain-lock.json`. Полный каталог
-built-in Slang shaders проверяется одной командой:
+Web shader gate использует общий закреплённый Slang toolchain, а Naga
+независимо парсит и валидирует полученный WGSL. Slang зафиксирован в
+`build-system/slang-toolchain-lock.json`, специфичный для Web-аудита Naga — в
+`build-system/web-shader-toolchain-lock.json`. Полный каталог built-in Slang
+shaders проверяется одной командой:
 
 ```bash
 ./audit-webgpu-shaders.sh --setup
 ```
 
-Повторные запуски используют `build/toolchains/slang-<version>` и
+Slang устанавливается в пользовательский data-каталог и регистрируется как
+`Shader/slangCompiler` в общих настройках Termin. Naga остаётся в
 `build/toolchains/naga-<version>`, а WGSL, reflection и machine-readable report
-пишут в `build/web-shader-audit`. Проверка требует явных уникальных
+пишутся в `build/web-shader-audit`. Проверка требует явных уникальных
 `@group`/`@binding`, std140 lowering для uniform buffers, валидного matrix
 lowering и отдельных texture/sampler bindings. Текущий полный отчёт лежит в
 [Built-in Slang → WGSL audit](analysis/2026-08-02-builtin-slang-wgsl-audit.md).
@@ -1119,15 +1121,29 @@ WebGPU bind group 0, разделяет combined texture/sampler placement, за
 sidecar contract version 3 и только затем принимает WGSL после независимой
 проверки Naga. Geometry stages завершаются явной ошибкой.
 
-Пути к инструментам разрешаются через `--slangc` / `TERMIN_SLANGC` и
+Общий Slang toolchain можно установить независимо от Web-аудита:
+
+```bash
+./setup-slang-toolchain.sh
+```
+
+Скрипт проверяет checksum и версию закреплённого официального архива,
+устанавливает его по умолчанию в
+`${XDG_DATA_HOME:-~/.local/share}/termin/toolchains/slang-<version>` и записывает
+полный путь к `slangc` через `tcbase.Settings("termin")`. Python- и C++-хосты
+читают строковый ключ `Shader/slangCompiler` из того же
+`~/.config/termin/settings.json`; переменная `TERMIN_SLANG_TOOLCHAIN_DIR`
+переопределяет только каталог установки.
+
+CLI также принимают явные `--slangc` / `TERMIN_SLANGC` и
 `--wgsl-validator` / `TERMIN_WGSL_VALIDATOR`; fallback в runtime-компиляцию не
 предусмотрен. После `./audit-webgpu-shaders.sh --setup` полный built-in набор
-можно сгенерировать напрямую:
+можно сгенерировать напрямую, подставив путь из настройки:
 
 ```bash
 sdk/bin/termin_python termin-graphics/cmake/compile_builtin_shader_artifacts.py \
   --shaderc build/Release/bin/termin_shaderc \
-  --slangc build/toolchains/slang-2026.5.2/bin/slangc \
+  --slangc "$HOME/.local/share/termin/toolchains/slang-2026.5.2/bin/slangc" \
   --wgsl-validator build/toolchains/naga-30.0.0/bin/naga \
   --source-dir termin-graphics/resources/builtin_shaders \
   --output-root build/webgpu-builtin-artifacts \
@@ -1137,7 +1153,7 @@ sdk/bin/termin_python termin-graphics/cmake/compile_builtin_shader_artifacts.py 
 Для SDK staging тот же target включается на configure:
 
 ```bash
-TERMIN_SLANGC="$PWD/build/toolchains/slang-2026.5.2/bin/slangc" \
+TERMIN_SLANGC="$HOME/.local/share/termin/toolchains/slang-2026.5.2/bin/slangc" \
 TERMIN_WGSL_VALIDATOR="$PWD/build/toolchains/naga-30.0.0/bin/naga" \
 cmake -S . -B build/webgpu-sdk \
   -DTERMIN_BUILD_BUILTIN_SHADER_ARTIFACTS=ON \
