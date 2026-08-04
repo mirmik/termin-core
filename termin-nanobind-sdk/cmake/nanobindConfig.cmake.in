@@ -75,6 +75,22 @@ if(NOT _termin_nanobind_python_version STREQUAL
         "${_termin_nanobind_python_abi}")
 endif()
 
+# CMake versions predating free-threaded CPython do not propagate its Windows
+# ABI definitions to the imported development targets. The ABI probe above is
+# authoritative, so complete the target contract before creating extensions.
+if(WIN32)
+    foreach(_termin_nanobind_python_target Python::Python Python::Module)
+        if(TARGET "${_termin_nanobind_python_target}")
+            set_property(
+                TARGET "${_termin_nanobind_python_target}"
+                APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS
+                    Py_GIL_DISABLED=1
+                    Py_NO_LINK_LIB
+            )
+        endif()
+    endforeach()
+endif()
+
 set(TERMIN_NANOBIND_RUNTIME_TARGET
     "nanobind::@TERMIN_NANOBIND_RUNTIME_NAME@")
 include("${CMAKE_CURRENT_LIST_DIR}/termin-nanobind-profile.cmake")

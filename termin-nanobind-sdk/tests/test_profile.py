@@ -123,6 +123,34 @@ def test_installed_cmake_package_applies_interpreter_abi_profile(
     )
     if build_python is None:
         pytest.skip("pinned SDK Python build environment is unavailable")
+    python_development_hints: list[str] = []
+    if os.name == "nt":
+        base_prefix_result = subprocess.run(
+            [
+                str(build_python),
+                "-c",
+                (
+                    "import sys, sysconfig; "
+                    "print(sys.base_prefix); "
+                    "print(sysconfig.get_config_var('LDLIBRARY'))"
+                ),
+            ],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        )
+        python_home_text, runtime_library_name = (
+            base_prefix_result.stdout.splitlines()
+        )
+        python_home = Path(python_home_text)
+        import_library = python_home / "libs" / Path(runtime_library_name).with_suffix(
+            ".lib"
+        )
+        assert import_library.is_file(), f"Python import library is missing: {import_library}"
+        python_development_hints = [
+            f"-DPython_INCLUDE_DIR={python_home / 'Include'}",
+            f"-DPython_LIBRARY={import_library}",
+        ]
     source_dir = tmp_path / "source"
     build_dir = tmp_path / "build"
     source_dir.mkdir()
@@ -153,6 +181,7 @@ def test_installed_cmake_package_applies_interpreter_abi_profile(
             str(build_dir),
             f"-DCMAKE_PREFIX_PATH={sdk_root}",
             f"-DPython_EXECUTABLE={build_python}",
+            *python_development_hints,
         ],
         check=False,
         text=True,
@@ -161,7 +190,7 @@ def test_installed_cmake_package_applies_interpreter_abi_profile(
     )
     assert result.returncode == 0, result.stdout
     build_result = subprocess.run(
-        [cmake, "--build", str(build_dir)],
+        [cmake, "--build", str(build_dir), "--config", "Release"],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
