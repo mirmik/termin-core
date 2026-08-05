@@ -331,6 +331,40 @@ def test_repo_installs_umbrella_termin_cmake_package():
     assert "INTERFACE_LINK_LIBRARIES tcbase::termin_base" in package_config
 
 
+def test_root_propagates_global_native_test_option_to_subprojects():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
+    local_test_options = {
+        "TERMIN_AUDIO_BUILD_TESTS",
+        "TERMIN_BASE_BUILD_TESTS",
+        "TERMIN_COLLISION_BUILD_TESTS",
+        "TERMIN_COMPONENTS_KINEMATIC_BUILD_TESTS",
+        "TERMIN_CSG_BUILD_TESTS",
+        "TERMIN_DISPATCH_BUILD_TESTS",
+        "TERMIN_ENGINE_BUILD_TESTS",
+        "TERMIN_GUI_NATIVE_BUILD_TESTS",
+        "TERMIN_INPUT_BUILD_TESTS",
+        "TERMIN_LIGHTING_BUILD_TESTS",
+        "TERMIN_MODULES_BUILD_TESTS",
+        "TERMIN_PHYSICS_BUILD_TESTS",
+        "TERMIN_PHYSICS_QOPT_BUILD_TESTS",
+        "TERMIN_PREFAB_BUILD_TESTS",
+        "TERMIN_QOPT_BUILD_TESTS",
+        "TERMIN_RENDER_BUILD_TESTS",
+        "TERMIN_RENDER_PASSES_BUILD_TESTS",
+        "TERMIN_ROBOTICS_BUILD_TESTS",
+        "TERMIN_RUNTIME_BUILD_TESTS",
+        "TERMIN_SCENE_BUILD_TESTS",
+        "TERMIN_SKELETON_BUILD_TESTS",
+    }
+
+    for option in local_test_options:
+        assert (
+            f"set({option} ${{TERMIN_BUILD_TESTS}} CACHE BOOL \"\" FORCE)"
+            in root_cmake
+        )
+
+
 def test_native_test_configuration_does_not_mutate_render_product_target():
     repo_root = sdk.repo_root_from(Path(__file__))
     render_cmake = (repo_root / "termin-render/CMakeLists.txt").read_text(encoding="utf-8")

@@ -13,6 +13,12 @@ from termin_build import (
     sdk_verification,
 )
 from termin_build.package_manifest import NativeExtension, PackageEntry
+from termin_build.sdk_doctor import PROFILES
+
+
+@pytest.mark.parametrize("profile_name", ["sdk", "sdk-cpp", "sdk-bindings", "cpp-tests"])
+def test_native_build_profiles_require_eigen(profile_name):
+    assert "termin-thirdparty/eigen" in PROFILES[profile_name].submodules
 
 
 def test_sdk_doctor_profile_checks_copy_backend(tmp_path, monkeypatch, capsys):

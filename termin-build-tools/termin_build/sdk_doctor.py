@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 EXPECTED_SUBMODULE_FILES = {
+    "termin-thirdparty/eigen": ("CMakeLists.txt",),
     "termin-thirdparty/manifold": ("CMakeLists.txt",),
     "termin-thirdparty/clipper2": ("CPP/CMakeLists.txt",),
     "termin-thirdparty/guard": ("guard_c.h", "guard_main.h"),
@@ -28,6 +29,20 @@ EXPECTED_SUBMODULE_FILES = {
 }
 
 
+SDK_NATIVE_SUBMODULES = (
+    "termin-thirdparty/manifold",
+    "termin-thirdparty/clipper2",
+    "termin-thirdparty/recastnavigation",
+    "termin-thirdparty/eigen",
+    "termin-thirdparty/zlib",
+    "termin-thirdparty/libpng",
+    "termin-thirdparty/libjpeg-turbo",
+    "termin-thirdparty/libwebp",
+    "termin-thirdparty/libogg",
+    "termin-thirdparty/libvorbis",
+)
+
+
 @dataclass(frozen=True)
 class DoctorProfile:
     name: str
@@ -43,17 +58,7 @@ class DoctorProfile:
 PROFILES = {
     "sdk": DoctorProfile(
         name="sdk",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
+        submodules=SDK_NATIVE_SUBMODULES,
         needs_nanobind=True,
         needs_pip=True,
         needs_copy_backend=True,
@@ -61,50 +66,19 @@ PROFILES = {
     ),
     "sdk-cpp": DoctorProfile(
         name="sdk-cpp",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
+        submodules=SDK_NATIVE_SUBMODULES,
         needs_sdk_writable=True,
     ),
     "sdk-bindings": DoctorProfile(
         name="sdk-bindings",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
+        submodules=SDK_NATIVE_SUBMODULES,
         needs_nanobind=True,
         needs_copy_backend=True,
         needs_sdk_writable=True,
     ),
     "cpp-tests": DoctorProfile(
         name="cpp-tests",
-        submodules=(
-            "termin-thirdparty/manifold",
-            "termin-thirdparty/clipper2",
-            "termin-thirdparty/guard",
-            "termin-thirdparty/recastnavigation",
-            "termin-thirdparty/zlib",
-            "termin-thirdparty/libpng",
-            "termin-thirdparty/libjpeg-turbo",
-            "termin-thirdparty/libwebp",
-            "termin-thirdparty/libogg",
-            "termin-thirdparty/libvorbis",
-        ),
+        submodules=SDK_NATIVE_SUBMODULES + ("termin-thirdparty/guard",),
     ),
 }
 
