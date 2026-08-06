@@ -47,6 +47,26 @@ def test_installed_product_roots_include_payload_player_and_headless(
     ]
 
 
+def test_graphics_import_roots_exclude_engine_product(tmp_path):
+    (tmp_path / sdk_verification.APPLICATION_PAYLOAD_MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "schema": sdk_verification.APPLICATION_PAYLOAD_MANIFEST_SCHEMA,
+                "payloads": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    roots = sdk_verification._installed_product_import_roots(
+        tmp_path,
+        product_import_roots=sdk_verification._GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS,
+    )
+
+    assert roots == ["tcplot", "termin.visual_scene", "termin.gui_native"]
+    assert "termin.engine" not in roots
+
+
 def test_import_graph_probe_starts_isolated_and_treats_warnings_as_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

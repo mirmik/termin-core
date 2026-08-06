@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from contextvars import ContextVar
 from pathlib import Path
 
 from .artifact_manifest import (
@@ -36,7 +37,6 @@ from .python_abi import PythonAbiError, PythonAbiIdentity
 from .python_toolchain import PythonToolchainError, ensure_python_toolchain
 from .sdk_bundled_python import (
     _copy_python_development_headers,
-    _copy_windows_python_runtime_executables as _copy_windows_python_runtime_executables,
     _ensure_linux_python_shared_library,
     _remove_incompatible_bundled_python_runtimes,
     _remove_linux_python_config_artifacts,
@@ -64,6 +64,13 @@ from .sdk_python_layout import (
     resolve_sdk_python_layout,
 )
 from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
+from .sdk_profiles import (
+    FULL_SDK_PROFILE,
+    SDK_PROFILE_NAMES,
+    sdk_profile,
+    select_application_payloads,
+    select_python_packages,
+)
 from .wheelhouse import (
     WheelhouseError,
     supported_wheel_tags,
@@ -86,6 +93,29 @@ LEGACY_SOURCE_NATIVE_ARTIFACTS = {
     # removed after the binding was split into package-owned modules.
     "termin-app": ("termin/_native",),
 }
+
+
+_SDK_PROFILE_CONTEXT: ContextVar[str | None] = ContextVar(
+    "termin_sdk_profile",
+    default=None,
+)
+
+
+def _active_sdk_profile_name() -> str:
+    contextual = _SDK_PROFILE_CONTEXT.get()
+    if contextual is not None:
+        return contextual
+    return os.environ.get("TERMIN_SDK_PROFILE", FULL_SDK_PROFILE)
+
+
+def _sdk_packages(repo_root: Path) -> list[PackageEntry]:
+    profile = sdk_profile(_active_sdk_profile_name())
+    return select_python_packages(profile, load_manifest(repo_root))
+
+
+def _sdk_application_payloads(repo_root: Path):
+    profile = sdk_profile(_active_sdk_profile_name())
+    return select_application_payloads(profile, load_application_payloads(repo_root))
 
 
 def _tool_error(tool: str) -> str | None:
@@ -229,8 +259,8 @@ def write_artifacts(
     *,
     python_abi: PythonAbiIdentity | None = None,
 ) -> int:
-    packages = load_manifest(repo_root)
-    application_payloads = load_application_payloads(repo_root)
+    packages = _sdk_packages(repo_root)
+    application_payloads = _sdk_application_payloads(repo_root)
     python_abi = python_abi or PythonAbiIdentity.current()
     build_artifacts = []
     sdk_artifacts = []
@@ -512,6 +542,9 @@ def install_python_packages(
     if result != 0:
         return result
     try:
+        payload_args = {}
+        if _active_sdk_profile_name() != FULL_SDK_PROFILE:
+            payload_args["payloads"] = _sdk_application_payloads(repo_root)
         install_application_payloads(
             repo_root=repo_root,
             sdk_prefix=sdk_prefix,
@@ -522,16 +555,21 @@ def install_python_packages(
                 python_abi=target_python_abi,
             ),
             runtime_python_abi=target_python_abi,
+            **payload_args,
         )
     except RuntimeError as error:
         print(f"ERROR: failed to install application Python payload: {error}", file=sys.stderr)
         return 1
     try:
+        runtime_manifest_args = {}
+        if _active_sdk_profile_name() != FULL_SDK_PROFILE:
+            runtime_manifest_args["packages"] = _sdk_packages(repo_root)
         write_python_runtime_manifest(
             repo_root,
             sdk_prefix,
             bundled_site_packages,
             runtime_python_abi=target_python_abi,
+            **runtime_manifest_args,
         )
     except RuntimeError as error:
         print(f"ERROR: failed to write SDK Python runtime manifest: {error}", file=sys.stderr)
@@ -542,9 +580,11 @@ def install_python_packages(
 def prepare_build_python_runtime(sdk_prefix: Path) -> int:
     if _is_windows():
         py_exec = _python_executable()
-        info = _python_version_and_paths(py_exec)
         try:
-            _copy_windows_python_runtime_executables(sdk_prefix, info)
+            bundled_py_dir = ensure_bundled_python_runtime(
+                sdk_prefix,
+                python_executable=Path(py_exec),
+            )
         except (OSError, RuntimeError) as error:
             print(
                 f"ERROR: failed to prepare Windows Python runtime: {error}",
@@ -552,8 +592,8 @@ def prepare_build_python_runtime(sdk_prefix: Path) -> int:
             )
             return 1
         print(
-            "Prepared bundled Windows Python runtime for native SDK consumers: "
-            f"{sdk_prefix / 'bin'}"
+            "Prepared bundled Windows Python runtime for SDK build consumers: "
+            f"{bundled_py_dir}"
         )
         return 0
 
@@ -847,7 +887,7 @@ def _install_prepared_runtime_wheels(
             python_abi=python_abi,
             supported_tags=supported_wheel_tags(build_python),
         )
-        expected_local_count = len(load_manifest(repo_root))
+        expected_local_count = len(_sdk_packages(repo_root))
         validate_local_wheel_artifact_set(
             local_wheels,
             sdk_prefix=sdk_prefix,
@@ -956,7 +996,7 @@ def _resolve_bindings_dir(repo_root: Path, build_dir: Path) -> Path:
 
 
 def _clear_python_package_build_caches(repo_root: Path) -> None:
-    for package in load_manifest(repo_root):
+    for package in _sdk_packages(repo_root):
         package_dir = repo_root / package.path
         build_dir = package_dir / "build"
         if build_dir.is_dir():
@@ -1180,7 +1220,7 @@ def install_pip_packages(
     if force:
         force_flags = ["--force-reinstall", "--no-cache-dir"]
 
-    packages = load_manifest(repo_root)
+    packages = _sdk_packages(repo_root)
     if editable:
         _clear_legacy_source_native_artifacts(repo_root)
 
@@ -1333,9 +1373,10 @@ def _verify_library_wheel_subset_install(
     wheel_patterns = (
         "tcbase-*.whl",
         "tgfx-*.whl",
-        "termin_display-*.whl",
         "termin_gui_native-*.whl",
     )
+    if _active_sdk_profile_name() == FULL_SDK_PROFILE:
+        wheel_patterns = (*wheel_patterns, "termin_display-*.whl")
     wheels = []
     for pattern in wheel_patterns:
         matching = sorted(wheel_dir.glob(pattern))
@@ -1397,7 +1438,7 @@ def _build_local_package_wheels(
         bindings_dir=bindings_dir,
         wheel_dir=wheel_dir.resolve(),
         build_python=build_python,
-        packages=load_manifest(repo_root),
+        packages=_sdk_packages(repo_root),
         run=_run,
         clear_build_caches=_clear_python_package_build_caches,
     )
@@ -1411,7 +1452,7 @@ def _publish_runtime_wheelhouse(repo_root: Path, sdk_prefix: Path) -> int:
             local_wheels,
             wheel_dir,
             sdk_prefix=sdk_prefix,
-            expected_wheel_count=len(load_manifest(repo_root)),
+            expected_wheel_count=len(_sdk_packages(repo_root)),
         )
     except (LocalWheelArtifactError, OSError) as error:
         print(f"ERROR: failed to publish SDK wheelhouse: {error}", file=sys.stderr)
@@ -1457,16 +1498,18 @@ def prepare_pinned_python_build_environment(repo_root: Path) -> Path:
     )
 
 
-def run_sdk_build(
+def _run_sdk_build_impl(
     repo_root: Path,
     build_type: str,
     stage_args: list[str],
     build_csharp: bool,
     dry_run: bool,
+    profile_name: str = FULL_SDK_PROFILE,
 ) -> int:
     sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
     build_dir = _build_dir(repo_root, build_type)
     build_env = os.environ.copy()
+    build_env["TERMIN_SDK_PROFILE"] = profile_name
     if dry_run:
         print("+ ensure pinned free-threaded Python toolchain")
         build_python = Path(_python_executable())
@@ -1487,7 +1530,11 @@ def run_sdk_build(
     print("  Stage 1/4: C/C++ libraries + Python bindings")
     print("========================================")
     print("")
-    command = _stage_script(repo_root, "build-sdk-bindings") + stage_args
+    command = (
+        _stage_script(repo_root, "build-sdk-bindings")
+        + [f"--profile={profile_name}"]
+        + stage_args
+    )
     if dry_run:
         print("+ " + " ".join(command))
     else:
@@ -1501,7 +1548,12 @@ def run_sdk_build(
     print("========================================")
     print("")
     if build_csharp:
-        command = _stage_script(repo_root, "build-sdk-csharp") + stage_args
+        csharp_profile = "plot-d3d11" if profile_name == "graphics" else "full"
+        command = (
+            _stage_script(repo_root, "build-sdk-csharp")
+            + [f"--profile={csharp_profile}"]
+            + stage_args
+        )
         if dry_run:
             print("+ " + " ".join(command))
         else:
@@ -1580,7 +1632,12 @@ def run_sdk_build(
     if dry_run:
         print("+ verify SDK duplicate libraries and stale artifacts")
     else:
-        result = verify_sdk(sdk_prefix, build_dir)
+        result = verify_sdk(
+            sdk_prefix,
+            build_dir,
+            require_product_hosts=profile_name == FULL_SDK_PROFILE,
+            require_engine_package=profile_name == FULL_SDK_PROFILE,
+        )
         if result != 0:
             return result
 
@@ -1589,6 +1646,29 @@ def run_sdk_build(
     print("  All done!")
     print("========================================")
     return 0
+
+
+def run_sdk_build(
+    repo_root: Path,
+    build_type: str,
+    stage_args: list[str],
+    build_csharp: bool,
+    dry_run: bool,
+    profile_name: str = FULL_SDK_PROFILE,
+) -> int:
+    profile = sdk_profile(profile_name)
+    token = _SDK_PROFILE_CONTEXT.set(profile.name)
+    try:
+        return _run_sdk_build_impl(
+            repo_root=repo_root,
+            build_type=build_type,
+            stage_args=stage_args,
+            build_csharp=build_csharp,
+            dry_run=dry_run,
+            profile_name=profile.name,
+        )
+    finally:
+        _SDK_PROFILE_CONTEXT.reset(token)
 
 
 def doctor(
@@ -1814,6 +1894,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print the SDK build stages without executing them.",
     )
+    build_parser.add_argument(
+        "--profile",
+        choices=SDK_PROFILE_NAMES,
+        default=FULL_SDK_PROFILE,
+        help="SDK target graph profile (default: full).",
+    )
 
     args, unknown_args = parser.parse_known_args(argv)
     repo_root = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
@@ -1980,6 +2066,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_args=stage_args,
             build_csharp=_is_windows() or args.csharp,
             dry_run=args.dry_run,
+            profile_name=args.profile,
         )
 
     parser.print_help()

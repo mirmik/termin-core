@@ -42,6 +42,15 @@ SDK_NATIVE_SUBMODULES = (
     "termin-thirdparty/libvorbis",
 )
 
+SDK_GRAPHICS_SUBMODULES = (
+    "termin-thirdparty/recastnavigation",
+    "termin-thirdparty/eigen",
+    "termin-thirdparty/zlib",
+    "termin-thirdparty/libpng",
+    "termin-thirdparty/libjpeg-turbo",
+    "termin-thirdparty/libwebp",
+)
+
 
 @dataclass(frozen=True)
 class DoctorProfile:
@@ -72,6 +81,26 @@ PROFILES = {
     "sdk-bindings": DoctorProfile(
         name="sdk-bindings",
         submodules=SDK_NATIVE_SUBMODULES,
+        needs_nanobind=True,
+        needs_copy_backend=True,
+        needs_sdk_writable=True,
+    ),
+    "sdk-graphics": DoctorProfile(
+        name="sdk-graphics",
+        submodules=SDK_GRAPHICS_SUBMODULES,
+        needs_nanobind=True,
+        needs_pip=True,
+        needs_copy_backend=True,
+        needs_sdk_writable=True,
+    ),
+    "sdk-cpp-graphics": DoctorProfile(
+        name="sdk-cpp-graphics",
+        submodules=SDK_GRAPHICS_SUBMODULES,
+        needs_sdk_writable=True,
+    ),
+    "sdk-bindings-graphics": DoctorProfile(
+        name="sdk-bindings-graphics",
+        submodules=SDK_GRAPHICS_SUBMODULES,
         needs_nanobind=True,
         needs_copy_backend=True,
         needs_sdk_writable=True,

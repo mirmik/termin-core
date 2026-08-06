@@ -176,6 +176,7 @@ def install_application_payloads(
     resolve_native_artifact: Callable[[str], Path | None],
     *,
     runtime_python_abi: PythonAbiIdentity,
+    payloads: Iterable[ApplicationPayload] | None = None,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
     artifact_manifest.require_kind(SDK_MANIFEST_KIND)
@@ -187,7 +188,10 @@ def install_application_payloads(
     installed_payloads = []
     sdk_root = sdk_prefix.resolve()
     site_root = site_packages.resolve()
-    for payload in load_application_payloads(repo_root):
+    effective_payloads = (
+        tuple(payloads) if payloads is not None else load_application_payloads(repo_root)
+    )
+    for payload in effective_payloads:
         source_root = (repo_root / payload.source_root).resolve()
         destination_root = site_root / payload.destination_root
         for declared_path in payload.paths:

@@ -39,10 +39,15 @@ from .python_abi import PythonAbiError, PythonAbiIdentity
 from .wheelhouse import require_wheel_python_abi as _require_wheel_python_abi
 
 
-_PRODUCT_IMPORT_GRAPH_ROOTS = (
+_FULL_PRODUCT_IMPORT_GRAPH_ROOTS = (
     "termin.engine",
     "termin.player",
     "termin.player.headless",
+)
+_GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS = (
+    "tcplot",
+    "termin.visual_scene",
+    "termin.gui_native",
 )
 _GIL_WARNING_FILTER = (
     r"error:The global interpreter lock \(GIL\) has been enabled:RuntimeWarning"
@@ -180,15 +185,25 @@ def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
 def verify_sdk(
     sdk_prefix: Path,
     build_dir: Path,
+    *,
+    require_product_hosts: bool = True,
+    require_engine_package: bool = True,
 ) -> int:
     result = verify_sdk_artifacts(sdk_prefix, build_dir)
     if result != 0:
         return result
-    return verify_relocated_sdk(sdk_prefix)
+    return verify_relocated_sdk(
+        sdk_prefix,
+        require_product_hosts=require_product_hosts,
+        require_engine_package=require_engine_package,
+    )
 
 
 def verify_relocated_sdk(
     sdk_prefix: Path,
+    *,
+    require_product_hosts: bool = True,
+    require_engine_package: bool = True,
 ) -> int:
     """Verify a self-contained SDK tree without consulting its build tree."""
 
@@ -204,13 +219,25 @@ def verify_relocated_sdk(
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result
-    result = verify_embedded_python_hosts(sdk_prefix)
+    if require_product_hosts:
+        result = verify_embedded_python_hosts(sdk_prefix)
+        if result != 0:
+            return result
+    result = verify_sdk_python_launcher(
+        sdk_prefix,
+        require_engine_package=require_engine_package,
+    )
     if result != 0:
         return result
-    result = verify_sdk_python_launcher(sdk_prefix)
-    if result != 0:
-        return result
-    return verify_nanobind_extensions(sdk_prefix)
+    product_import_roots = (
+        _FULL_PRODUCT_IMPORT_GRAPH_ROOTS
+        if require_engine_package
+        else _GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS
+    )
+    return verify_nanobind_extensions(
+        sdk_prefix,
+        product_import_roots=product_import_roots,
+    )
 
 
 def _hostile_python_environment(sdk_prefix: Path) -> dict[str, str]:
@@ -246,7 +273,11 @@ def _python_version_and_paths(py_exec: str) -> dict[str, object]:
         raise RuntimeError(f"failed to inspect Python runtime: {py_exec}")
     return json.loads(result.stdout)
 
-def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
+def verify_sdk_python_launcher(
+    sdk_prefix: Path,
+    *,
+    require_engine_package: bool = True,
+) -> int:
     launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
     launcher = sdk_prefix / "bin" / launcher_name
     print("Verifying: isolated SDK Python launcher")
@@ -303,8 +334,9 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
             )
             return 1
 
+    profile_imports = "termin.engine, " if require_engine_package else "tcplot, termin.visual_scene, "
     smoke = (
-        "import pathlib, site, sys, tcbase, termin.engine, termin.tween; "
+        f"import pathlib, site, sys, tcbase, {profile_imports}termin.tween; "
         f"root = pathlib.Path({str(expected_root)!r}); "
         f"python_home = pathlib.Path({str(expected_python_home)!r}); "
         "assert pathlib.Path(tcbase.__file__).resolve().is_relative_to(root); "
@@ -332,7 +364,11 @@ def verify_sdk_python_launcher(sdk_prefix: Path) -> int:
     return 0
 
 
-def verify_nanobind_extensions(sdk_prefix: Path) -> int:
+def verify_nanobind_extensions(
+    sdk_prefix: Path,
+    *,
+    product_import_roots: tuple[str, ...] = _FULL_PRODUCT_IMPORT_GRAPH_ROOTS,
+) -> int:
     print("Verifying: canonical nanobind ABI and native extension import graph")
     try:
         artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
@@ -431,7 +467,10 @@ def verify_nanobind_extensions(sdk_prefix: Path) -> int:
         return 1
 
     try:
-        entry_modules = _installed_product_import_roots(sdk_prefix)
+        entry_modules = _installed_product_import_roots(
+            sdk_prefix,
+            product_import_roots=product_import_roots,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(
             f"FAILED: cannot determine product import graph roots: {error}",
@@ -467,7 +506,11 @@ def _sdk_python_launcher(sdk_prefix: Path) -> Path:
     return sdk_prefix / "bin" / launcher_name
 
 
-def _installed_product_import_roots(sdk_prefix: Path) -> list[str]:
+def _installed_product_import_roots(
+    sdk_prefix: Path,
+    *,
+    product_import_roots: tuple[str, ...] = _FULL_PRODUCT_IMPORT_GRAPH_ROOTS,
+) -> list[str]:
     manifest_path = sdk_prefix / APPLICATION_PAYLOAD_MANIFEST_NAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != APPLICATION_PAYLOAD_MANIFEST_SCHEMA:
@@ -486,7 +529,7 @@ def _installed_product_import_roots(sdk_prefix: Path) -> list[str]:
         ):
             raise ValueError(f"application payload {index} has invalid imports")
         imports.extend(payload_imports)
-    imports.extend(_PRODUCT_IMPORT_GRAPH_ROOTS)
+    imports.extend(product_import_roots)
     return list(dict.fromkeys(imports))
 
 
@@ -669,6 +712,10 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
             return 1
         imports.extend(payload_imports)
         executables.extend(payload_executables)
+
+    if not raw_payloads:
+        print("  OK: SDK profile declares no application-owned Python payloads")
+        return 0
 
     launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
     launcher = sdk_root / "bin" / launcher_name
