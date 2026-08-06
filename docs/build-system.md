@@ -92,14 +92,30 @@ First-party wheels собираются ровно один раз за полн
 ./build-sdk.sh --sdl --csharp
 ```
 
-Для WPF/C# D3D11-профиля SDK собирается без SDL, Vulkan и legacy OpenGL. После C++ SDK стадии C# слой нужно собрать в Windows-only plot profile, чтобы в `sdk/csharp` попали только tcplot/WPF runtime DLL и D3D11 shader artifacts:
+Для SDK, содержащего графическое ядро, visual scene, native widgets и 2D/3D
+charts без engine runtime, используется профиль `graphics`. Backend-флаги
+ортогональны профилю; Windows D3D11 остаётся доступен, когда SDL, Vulkan и
+legacy OpenGL выключены:
 
 ```powershell
-.\build-sdk.ps1 --no-sdl --no-vulkan --no-opengl
-.\build-sdk-csharp.ps1 --plot-d3d11 --no-sdl --no-vulkan --no-opengl
+.\build-sdk.ps1 --profile graphics --no-sdl --no-vulkan --no-opengl
 ```
 
-Профиль `plot-d3d11` генерирует C# API только для `tcplot`/`Termin.Wpf`, не копирует scene/render/component DLL и режет `share/termin` до D3D11 artifacts, нужных графикам.
+Профиль включает `termin-graphics2`, поэтому 3D chart, text3D и
+backend-neutral 3D rendering сохраняются. Он исключает engine scene/render
+pipeline, physics, CSG, navmesh, animation, audio, editor/player/launcher и их
+Python-пакеты. На Windows оркестратор автоматически выбирает существующий C#
+профиль `plot-d3d11`, который генерирует API только для
+`tcplot`/`Termin.Wpf` и копирует требуемые D3D11 shader artifacts.
+
+Standalone native stages принимают тот же профиль в форме
+`--profile=graphics`:
+
+```bash
+./build-sdk-cpp.sh --profile=graphics --no-sdl --no-vulkan --no-opengl
+./build-sdk-bindings.sh --profile=graphics --no-sdl --no-vulkan --no-opengl
+```
+
 `Termin.Wpf` собирается только Windows-скриптом и multitarget-ится под `netcoreapp3.1` и `net8.0-windows`. Управляемые сборки в SDK раскладываются по `sdk/csharp/lib/<tfm>/`; плоские `sdk/csharp/lib/*.dll` оставлены для старых потребителей и содержат `netcoreapp3.1`-вариант `Termin.Wpf`. Linux `build-sdk-csharp.sh` намеренно пакует только cross-platform `Termin.Native` и native runtime `.so`.
 
 Только C/C++ стадия:
