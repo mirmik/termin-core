@@ -700,6 +700,7 @@ def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
         "_run",
         lambda command, **_kwargs: commands.append(command) or 0,
     )
+    monkeypatch.setattr(sdk, "_python_pip_error", lambda _python: None)
 
     result = sdk._ensure_sdk_python_build_environment(repo_root)
 
@@ -718,6 +719,65 @@ def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
         ]
     ]
     assert (environment_root / "python-sdk-build-requirements.txt").read_bytes() == (requirements.read_bytes())
+
+
+def test_sdk_python_build_environment_repairs_missing_pip(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    requirements = repo_root / sdk.SDK_BUILD_REQUIREMENTS_RELATIVE
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("pip==26.1.2\n", encoding="utf-8")
+    environment_root = repo_root / "build" / "python-runtime" / "build-env"
+    build_python = environment_root / "bin" / "python"
+    build_python.parent.mkdir(parents=True)
+    build_python.touch()
+    commands = []
+    pip_errors = iter(["No module named pip", None])
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _python: {
+            "version": "3.14",
+            "soabi": "cpython-314t-x86_64-linux-gnu",
+            "free_threaded": True,
+            "py_gil_disabled": True,
+        },
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_python_pip_error",
+        lambda _python: next(pip_errors),
+    )
+
+    result = sdk._ensure_sdk_python_build_environment(repo_root)
+
+    assert result == build_python
+    assert commands == [
+        [
+            str(build_python),
+            "-I",
+            "-m",
+            "ensurepip",
+            "--upgrade",
+            "--default-pip",
+        ],
+        [
+            str(build_python),
+            "-I",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--no-deps",
+            "-r",
+            str(requirements),
+        ],
+    ]
 
 
 def test_windows_build_environment_accepts_versioned_base_executable_alias(
@@ -759,6 +819,7 @@ def test_windows_build_environment_accepts_versioned_base_executable_alias(
         "_run",
         lambda command, **_kwargs: commands.append(command) or 0,
     )
+    monkeypatch.setattr(sdk, "_python_pip_error", lambda _python: None)
 
     result = sdk._ensure_sdk_python_build_environment(
         repo_root,

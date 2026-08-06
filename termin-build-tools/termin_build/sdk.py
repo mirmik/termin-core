@@ -611,6 +611,23 @@ def _build_environment_python(environment_root: Path) -> Path:
     return environment_root / "bin" / "python"
 
 
+def _python_pip_error(python_executable: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            [str(python_executable), "-I", "-m", "pip", "--version"],
+            check=False,
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as error:
+        return str(error)
+    if result.returncode == 0:
+        return None
+    detail = result.stderr.strip()
+    return detail or f"pip probe exited with code {result.returncode}"
+
+
 def _ensure_sdk_python_build_environment(
     repo_root: Path,
     *,
@@ -683,6 +700,34 @@ def _ensure_sdk_python_build_environment(
         )
         if result != 0:
             raise RuntimeError(f"failed to create SDK Python build environment: {environment_root}")
+    pip_error = _python_pip_error(build_python)
+    if pip_error is not None:
+        print(
+            "Bootstrapping missing pip in SDK Python build environment "
+            f"({pip_error})"
+        )
+        result = _run(
+            [
+                str(build_python),
+                "-I",
+                "-m",
+                "ensurepip",
+                "--upgrade",
+                "--default-pip",
+            ],
+            cwd=repo_root,
+            env=os.environ.copy(),
+        )
+        if result != 0:
+            raise RuntimeError(
+                "failed to bootstrap pip in SDK Python build environment"
+            )
+        pip_error = _python_pip_error(build_python)
+        if pip_error is not None:
+            raise RuntimeError(
+                "pip is still unavailable in SDK Python build environment after "
+                f"ensurepip: {pip_error}"
+            )
     current = stamp.is_file() and stamp.read_bytes() == requirements.read_bytes()
     if not current:
         result = _run(
