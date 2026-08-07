@@ -12,7 +12,7 @@ static double get_time_ms(void) {
     }
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
-    return (double) now.QuadPart / (double) freq.QuadPart * 1000.0;
+    return (double)now.QuadPart / (double)freq.QuadPart * 1000.0;
 }
 #else
 #include <time.h>
@@ -42,17 +42,18 @@ struct tc_profiler_capture {
 };
 
 static void profile_frame_release(tc_frame_profile* frame) {
-    if (!frame) return;
+    if (!frame)
+        return;
     free(frame->sections);
     memset(frame, 0, sizeof(*frame));
 }
 
 static bool profile_ring_init(tc_profile_ring* ring, int capacity) {
-    if (!ring || capacity <= 0) return false;
-    ring->frames = (tc_frame_profile*) calloc((size_t) capacity, sizeof(tc_frame_profile));
+    if (!ring || capacity <= 0)
+        return false;
+    ring->frames = (tc_frame_profile*)calloc((size_t)capacity, sizeof(tc_frame_profile));
     if (!ring->frames) {
-        tc_log(TC_LOG_ERROR,
-            "tc_profiler: failed to allocate capture ring with capacity %d", capacity);
+        tc_log(TC_LOG_ERROR, "tc_profiler: failed to allocate capture ring with capacity %d", capacity);
         return false;
     }
     ring->capacity = capacity;
@@ -60,7 +61,8 @@ static bool profile_ring_init(tc_profile_ring* ring, int capacity) {
 }
 
 static void profile_ring_clear(tc_profile_ring* ring) {
-    if (!ring || !ring->frames) return;
+    if (!ring || !ring->frames)
+        return;
     for (int index = 0; index < ring->capacity; ++index) {
         profile_frame_release(&ring->frames[index]);
     }
@@ -70,33 +72,32 @@ static void profile_ring_clear(tc_profile_ring* ring) {
 }
 
 static void profile_ring_destroy(tc_profile_ring* ring) {
-    if (!ring) return;
+    if (!ring)
+        return;
     profile_ring_clear(ring);
     free(ring->frames);
     memset(ring, 0, sizeof(*ring));
 }
 
 static tc_frame_profile* profile_ring_at(const tc_profile_ring* ring, int index) {
-    if (!ring || !ring->frames || index < 0 || index >= ring->count) return NULL;
+    if (!ring || !ring->frames || index < 0 || index >= ring->count)
+        return NULL;
     int slot = (ring->start + index) % ring->capacity;
     return &ring->frames[slot];
 }
 
 static bool profile_ring_append(tc_profile_ring* ring, const tc_frame_profile* source) {
-    if (!ring || !ring->frames || !source) return false;
+    if (!ring || !ring->frames || !source)
+        return false;
 
     tc_section_timing* sections = NULL;
     if (source->section_count > 0) {
-        sections = (tc_section_timing*) malloc(
-            sizeof(tc_section_timing) * (size_t) source->section_count
-        );
+        sections = (tc_section_timing*)malloc(sizeof(tc_section_timing) * (size_t)source->section_count);
         if (!sections) {
-            tc_log(TC_LOG_ERROR,
-                "tc_profiler: failed to copy %d frame sections", source->section_count);
+            tc_log(TC_LOG_ERROR, "tc_profiler: failed to copy %d frame sections", source->section_count);
             return false;
         }
-        memcpy(sections, source->sections,
-               sizeof(tc_section_timing) * (size_t) source->section_count);
+        memcpy(sections, source->sections, sizeof(tc_section_timing) * (size_t)source->section_count);
     }
 
     int slot;
@@ -114,11 +115,8 @@ static bool profile_ring_append(tc_profile_ring* ring, const tc_frame_profile* s
     return true;
 }
 
-static bool profile_ring_after(
-    const tc_profile_ring* ring,
-    int last_frame_number,
-    tc_profiler_history_range* out_range
-) {
+static bool
+profile_ring_after(const tc_profile_ring* ring, int last_frame_number, tc_profiler_history_range* out_range) {
     if (!out_range) {
         tc_log(TC_LOG_ERROR, "tc_profiler history range output must not be NULL");
         return false;
@@ -126,7 +124,8 @@ static bool profile_ring_after(
     memset(out_range, 0, sizeof(*out_range));
     out_range->oldest_frame_number = -1;
     out_range->newest_frame_number = -1;
-    if (!ring || ring->count <= 0) return true;
+    if (!ring || ring->count <= 0)
+        return true;
 
     tc_frame_profile* oldest = profile_ring_at(ring, 0);
     tc_frame_profile* newest = profile_ring_at(ring, ring->count - 1);
@@ -185,18 +184,15 @@ static tc_profiler g_profiler = {0};
 static void profiler_refresh_enabled(void) {
     bool capture_active = false;
     bool capture_profiling = false;
-    for (tc_profiler_capture* capture = g_profiler.captures;
-         capture != NULL;
-         capture = capture->next) {
+    for (tc_profiler_capture* capture = g_profiler.captures; capture != NULL; capture = capture->next) {
         if (capture->active) {
             capture_active = true;
-            if (capture->profiling) capture_profiling = true;
+            if (capture->profiling)
+                capture_profiling = true;
         }
     }
-    g_profiler.sections_enabled =
-        g_profiler.enabled_requested || capture_profiling;
-    g_profiler.frame_capture_enabled =
-        g_profiler.enabled_requested || capture_active;
+    g_profiler.sections_enabled = g_profiler.enabled_requested || capture_profiling;
+    g_profiler.frame_capture_enabled = g_profiler.enabled_requested || capture_active;
 }
 
 void* tc_profiler_instance(void) {
@@ -204,9 +200,7 @@ void* tc_profiler_instance(void) {
 }
 
 bool tc_profiler_enabled(void) {
-    return g_profiler.current_frame
-        ? g_profiler.current_frame_profiles_sections
-        : g_profiler.sections_enabled;
+    return g_profiler.current_frame ? g_profiler.current_frame_profiles_sections : g_profiler.sections_enabled;
 }
 
 void tc_profiler_set_enabled(bool enabled) {
@@ -219,13 +213,14 @@ bool tc_profiler_frame_capture_enabled(void) {
 }
 
 void tc_profiler_begin_frame_with_info(const tc_profiler_frame_info* info) {
-    if (!g_profiler.frame_capture_enabled) return;
+    if (!g_profiler.frame_capture_enabled)
+        return;
     if (g_profiler.current_frame != NULL) {
         tc_log(TC_LOG_ERROR,
-            "tc_profiler_begin_frame: previous frame is still open "
-            "(stack_depth=%d). Nested/duplicate begin_frame call — check "
-            "the caller. The existing frame is kept.",
-            g_profiler.stack_depth);
+               "tc_profiler_begin_frame: previous frame is still open "
+               "(stack_depth=%d). Nested/duplicate begin_frame call — check "
+               "the caller. The existing frame is kept.",
+               g_profiler.stack_depth);
         return;
     }
 
@@ -262,26 +257,24 @@ void tc_profiler_begin_frame(void) {
 
 void tc_profiler_end_frame(void) {
     if (g_profiler.current_frame == NULL) {
-        if (!g_profiler.frame_capture_enabled) return;
+        if (!g_profiler.frame_capture_enabled)
+            return;
         tc_log(TC_LOG_ERROR,
-            "tc_profiler_end_frame: no frame is open. Unbalanced "
-            "begin_frame/end_frame pairing — check the caller.");
+               "tc_profiler_end_frame: no frame is open. Unbalanced "
+               "begin_frame/end_frame pairing — check the caller.");
         return;
     }
 
     tc_frame_profile* completed = g_profiler.current_frame;
     completed->active_ms = get_time_ms() - g_profiler.frame_start_time;
     completed->total_ms = completed->active_ms;
-    if (!g_profiler.history.frames &&
-        !profile_ring_init(&g_profiler.history, PROFILER_HISTORY_SIZE)) {
+    if (!g_profiler.history.frames && !profile_ring_init(&g_profiler.history, PROFILER_HISTORY_SIZE)) {
         g_profiler.current_frame = NULL;
         g_profiler.current_frame_profiles_sections = false;
         return;
     }
     profile_ring_append(&g_profiler.history, completed);
-    for (tc_profiler_capture* capture = g_profiler.captures;
-         capture != NULL;
-         capture = capture->next) {
+    for (tc_profiler_capture* capture = g_profiler.captures; capture != NULL; capture = capture->next) {
         if (capture->active && profile_ring_append(&capture->ring, completed)) {
             capture->revision++;
         }
@@ -297,8 +290,7 @@ static int find_or_create_section(const char* name, int parent_index) {
 
     if (parent_index < 0) {
         for (int i = 0; i < frame->section_count; i++) {
-            if (frame->sections[i].parent_index == -1 &&
-                strcmp(frame->sections[i].name, name) == 0) {
+            if (frame->sections[i].parent_index == -1 && strcmp(frame->sections[i].name, name) == 0) {
                 return i;
             }
         }
@@ -316,10 +308,11 @@ static int find_or_create_section(const char* name, int parent_index) {
         static int s_overflow_logged = 0;
         if (!s_overflow_logged) {
             tc_log(TC_LOG_WARN,
-                "tc_profiler: frame section count hit TC_PROFILER_MAX_SECTIONS=%d "
-                "(dropped section: %s). Raise the cap in tc_profiler.h or shorten "
-                "the pass list. Subsequent overflows are silenced.",
-                TC_PROFILER_MAX_SECTIONS, name);
+                   "tc_profiler: frame section count hit TC_PROFILER_MAX_SECTIONS=%d "
+                   "(dropped section: %s). Raise the cap in tc_profiler.h or shorten "
+                   "the pass list. Subsequent overflows are silenced.",
+                   TC_PROFILER_MAX_SECTIONS,
+                   name);
             s_overflow_logged = 1;
         }
         return -1;
@@ -354,15 +347,18 @@ static int find_or_create_section(const char* name, int parent_index) {
 }
 
 static void begin_section_internal(const char* name, bool muted) {
-    if (!g_profiler.current_frame_profiles_sections) return;
-    if (g_profiler.current_frame == NULL) return;
+    if (!g_profiler.current_frame_profiles_sections)
+        return;
+    if (g_profiler.current_frame == NULL)
+        return;
     if (g_profiler.stack_depth >= TC_PROFILER_MAX_DEPTH) {
         static int s_depth_logged = 0;
         if (!s_depth_logged) {
             tc_log(TC_LOG_WARN,
-                "tc_profiler: nesting depth exceeded TC_PROFILER_MAX_DEPTH=%d "
-                "(dropped section: %s). Raise the cap in tc_profiler.h.",
-                TC_PROFILER_MAX_DEPTH, name);
+                   "tc_profiler: nesting depth exceeded TC_PROFILER_MAX_DEPTH=%d "
+                   "(dropped section: %s). Raise the cap in tc_profiler.h.",
+                   TC_PROFILER_MAX_DEPTH,
+                   name);
             s_depth_logged = 1;
         }
         // Do not touch the fixed arrays: their final slot contains the
@@ -387,9 +383,7 @@ static void begin_section_internal(const char* name, bool muted) {
         return;
     }
 
-    int parent_index = (g_profiler.stack_depth > 0)
-        ? g_profiler.section_stack[g_profiler.stack_depth - 1]
-        : -1;
+    int parent_index = (g_profiler.stack_depth > 0) ? g_profiler.section_stack[g_profiler.stack_depth - 1] : -1;
 
     int section_idx = find_or_create_section(name, parent_index);
 
@@ -411,27 +405,30 @@ void tc_profiler_begin_section_muted(const char* name) {
 }
 
 void tc_profiler_end_section(void) {
-    if (!g_profiler.current_frame_profiles_sections) return;
-    if (g_profiler.current_frame == NULL) return;
+    if (!g_profiler.current_frame_profiles_sections)
+        return;
+    if (g_profiler.current_frame == NULL)
+        return;
     if (g_profiler.overflow_depth > 0) {
         g_profiler.overflow_depth--;
         return;
     }
-    if (g_profiler.stack_depth <= 0) return;
+    if (g_profiler.stack_depth <= 0)
+        return;
 
     g_profiler.stack_depth--;
 
     // If we just exited the mute scope, clear the latch so the next
     // begin_section at this depth records normally again.
-    if (g_profiler.muted_depth >= 0 &&
-        g_profiler.stack_depth == g_profiler.muted_depth) {
+    if (g_profiler.muted_depth >= 0 && g_profiler.stack_depth == g_profiler.muted_depth) {
         g_profiler.muted_depth = -1;
     }
 
     int section_idx = g_profiler.section_stack[g_profiler.stack_depth];
     // Sentinel (-1) means begin_section was muted or overflowed — skip
     // accounting.
-    if (section_idx < 0) return;
+    if (section_idx < 0)
+        return;
 
     double elapsed = get_time_ms() - g_profiler.section_start_times[g_profiler.stack_depth];
 
@@ -457,10 +454,7 @@ tc_frame_profile* tc_profiler_history_at(int index) {
     return profile_ring_at(&g_profiler.history, index);
 }
 
-bool tc_profiler_history_after(
-    int last_frame_number,
-    tc_profiler_history_range* out_range
-) {
+bool tc_profiler_history_after(int last_frame_number, tc_profiler_history_range* out_range) {
     return profile_ring_after(&g_profiler.history, last_frame_number, out_range);
 }
 
@@ -475,11 +469,10 @@ int tc_profiler_frame_count(void) {
 
 tc_profiler_capture* tc_profiler_capture_create(int capacity) {
     if (capacity <= 0) {
-        tc_log(TC_LOG_ERROR,
-            "tc_profiler_capture_create: capacity must be positive (got %d)", capacity);
+        tc_log(TC_LOG_ERROR, "tc_profiler_capture_create: capacity must be positive (got %d)", capacity);
         return NULL;
     }
-    tc_profiler_capture* capture = (tc_profiler_capture*) calloc(1, sizeof(*capture));
+    tc_profiler_capture* capture = (tc_profiler_capture*)calloc(1, sizeof(*capture));
     if (!capture) {
         tc_log(TC_LOG_ERROR, "tc_profiler_capture_create: allocation failed");
         return NULL;
@@ -495,23 +488,26 @@ tc_profiler_capture* tc_profiler_capture_create(int capacity) {
 }
 
 void tc_profiler_capture_destroy(tc_profiler_capture* capture) {
-    if (!capture) return;
+    if (!capture)
+        return;
     tc_profiler_capture** link = &g_profiler.captures;
-    while (*link && *link != capture) link = &(*link)->next;
+    while (*link && *link != capture)
+        link = &(*link)->next;
     if (*link != capture) {
-        tc_log(TC_LOG_ERROR,
-            "tc_profiler_capture_destroy: capture is not registered");
+        tc_log(TC_LOG_ERROR, "tc_profiler_capture_destroy: capture is not registered");
         return;
     }
     *link = capture->next;
     const bool was_active = capture->active;
     profile_ring_destroy(&capture->ring);
     free(capture);
-    if (was_active) profiler_refresh_enabled();
+    if (was_active)
+        profiler_refresh_enabled();
 }
 
 void tc_profiler_capture_set_active(tc_profiler_capture* capture, bool active) {
-    if (!capture || capture->active == active) return;
+    if (!capture || capture->active == active)
+        return;
     capture->active = active;
     profiler_refresh_enabled();
 }
@@ -520,11 +516,9 @@ bool tc_profiler_capture_active(const tc_profiler_capture* capture) {
     return capture && capture->active;
 }
 
-void tc_profiler_capture_set_profiling(
-    tc_profiler_capture* capture,
-    bool profiling
-) {
-    if (!capture || capture->profiling == profiling) return;
+void tc_profiler_capture_set_profiling(tc_profiler_capture* capture, bool profiling) {
+    if (!capture || capture->profiling == profiling)
+        return;
     capture->profiling = profiling;
     profiler_refresh_enabled();
 }
@@ -534,7 +528,8 @@ bool tc_profiler_capture_profiling(const tc_profiler_capture* capture) {
 }
 
 void tc_profiler_capture_clear(tc_profiler_capture* capture) {
-    if (!capture) return;
+    if (!capture)
+        return;
     profile_ring_clear(&capture->ring);
     capture->revision++;
 }
@@ -551,57 +546,43 @@ unsigned long long tc_profiler_capture_revision(const tc_profiler_capture* captu
     return capture ? capture->revision : 0;
 }
 
-const tc_frame_profile* tc_profiler_capture_at(
-    const tc_profiler_capture* capture,
-    int index
-) {
+const tc_frame_profile* tc_profiler_capture_at(const tc_profiler_capture* capture, int index) {
     return capture ? profile_ring_at(&capture->ring, index) : NULL;
 }
 
-const tc_frame_profile* tc_profiler_capture_find(
-    const tc_profiler_capture* capture,
-    int frame_number
-) {
-    if (!capture) return NULL;
+const tc_frame_profile* tc_profiler_capture_find(const tc_profiler_capture* capture, int frame_number) {
+    if (!capture)
+        return NULL;
     for (int index = 0; index < capture->ring.count; ++index) {
         tc_frame_profile* frame = profile_ring_at(&capture->ring, index);
-        if (frame && frame->frame_number == frame_number) return frame;
+        if (frame && frame->frame_number == frame_number)
+            return frame;
     }
     return NULL;
 }
 
-bool tc_profiler_capture_after(
-    const tc_profiler_capture* capture,
-    int last_frame_number,
-    tc_profiler_history_range* out_range
-) {
-    return profile_ring_after(
-        capture ? &capture->ring : NULL,
-        last_frame_number,
-        out_range
-    );
+bool tc_profiler_capture_after(const tc_profiler_capture* capture,
+                               int last_frame_number,
+                               tc_profiler_history_range* out_range) {
+    return profile_ring_after(capture ? &capture->ring : NULL, last_frame_number, out_range);
 }
 
 static bool frame_is_hitch(const tc_frame_profile* frame, double hitch_ratio) {
-    return frame && (
-        frame->missed_intervals > 0 ||
-        (frame->target_interval_ms > 0.0 &&
-         frame->interval_ms > frame->target_interval_ms * hitch_ratio)
-    );
+    return frame && (frame->missed_intervals > 0 ||
+                     (frame->target_interval_ms > 0.0 && frame->interval_ms > frame->target_interval_ms * hitch_ratio));
 }
 
-bool tc_profiler_capture_summary_at(
-    const tc_profiler_capture* capture,
-    int index,
-    double hitch_ratio,
-    tc_profiler_frame_summary* out_summary
-) {
+bool tc_profiler_capture_summary_at(const tc_profiler_capture* capture,
+                                    int index,
+                                    double hitch_ratio,
+                                    tc_profiler_frame_summary* out_summary) {
     if (!capture || !out_summary || hitch_ratio <= 1.0) {
         tc_log(TC_LOG_ERROR, "tc_profiler_capture_summary_at: invalid argument");
         return false;
     }
     const tc_frame_profile* frame = tc_profiler_capture_at(capture, index);
-    if (!frame) return false;
+    if (!frame)
+        return false;
     memset(out_summary, 0, sizeof(*out_summary));
     out_summary->frame_number = frame->frame_number;
     out_summary->start_time_ms = frame->start_time_ms;
@@ -613,11 +594,11 @@ bool tc_profiler_capture_summary_at(
     out_summary->hitch = frame_is_hitch(frame, hitch_ratio);
     if (index > 0) {
         const tc_frame_profile* previous = tc_profiler_capture_at(capture, index - 1);
-        out_summary->gap_before =
-            previous && frame->frame_number != previous->frame_number + 1;
+        out_summary->gap_before = previous && frame->frame_number != previous->frame_number + 1;
         if (previous && !out_summary->gap_before && frame->interval_ms > 0.0) {
             out_summary->pacing_gap_ms = frame->interval_ms - previous->active_ms;
-            if (out_summary->pacing_gap_ms < 0.0) out_summary->pacing_gap_ms = 0.0;
+            if (out_summary->pacing_gap_ms < 0.0)
+                out_summary->pacing_gap_ms = 0.0;
             out_summary->has_pacing_gap = true;
         }
     }
@@ -625,27 +606,26 @@ bool tc_profiler_capture_summary_at(
 }
 
 static int compare_doubles(const void* left, const void* right) {
-    const double a = *(const double*) left;
-    const double b = *(const double*) right;
+    const double a = *(const double*)left;
+    const double b = *(const double*)right;
     return (a > b) - (a < b);
 }
 
 static double percentile_sorted(const double* values, int count, double quantile) {
-    if (!values || count <= 0) return 0.0;
-    const double position = (double) (count - 1) * quantile;
-    const int lower = (int) position;
+    if (!values || count <= 0)
+        return 0.0;
+    const double position = (double)(count - 1) * quantile;
+    const int lower = (int)position;
     const int upper = lower + 1 < count ? lower + 1 : lower;
-    const double fraction = position - (double) lower;
+    const double fraction = position - (double)lower;
     return values[lower] * (1.0 - fraction) + values[upper] * fraction;
 }
 
-bool tc_profiler_capture_statistics(
-    const tc_profiler_capture* capture,
-    int start_frame_number,
-    int end_frame_number,
-    double hitch_ratio,
-    tc_profiler_statistics* out_statistics
-) {
+bool tc_profiler_capture_statistics(const tc_profiler_capture* capture,
+                                    int start_frame_number,
+                                    int end_frame_number,
+                                    double hitch_ratio,
+                                    tc_profiler_statistics* out_statistics) {
     if (!capture || !out_statistics || hitch_ratio <= 1.0) {
         tc_log(TC_LOG_ERROR, "tc_profiler_capture_statistics: invalid argument");
         return false;
@@ -654,7 +634,7 @@ bool tc_profiler_capture_statistics(
     out_statistics->overwritten_count = capture->ring.overwritten_count;
     double* intervals = NULL;
     if (capture->ring.count > 0) {
-        intervals = (double*) malloc(sizeof(double) * (size_t) capture->ring.count);
+        intervals = (double*)malloc(sizeof(double) * (size_t)capture->ring.count);
         if (!intervals) {
             tc_log(TC_LOG_ERROR, "tc_profiler_capture_statistics: allocation failed");
             return false;
@@ -663,13 +643,13 @@ bool tc_profiler_capture_statistics(
     int interval_count = 0;
     for (int index = 0; index < capture->ring.count; ++index) {
         const tc_frame_profile* frame = tc_profiler_capture_at(capture, index);
-        if (!frame ||
-            (start_frame_number >= 0 && frame->frame_number < start_frame_number) ||
+        if (!frame || (start_frame_number >= 0 && frame->frame_number < start_frame_number) ||
             (end_frame_number >= 0 && frame->frame_number > end_frame_number)) {
             continue;
         }
         out_statistics->frame_count++;
-        if (frame->interval_ms > 0.0) intervals[interval_count++] = frame->interval_ms;
+        if (frame->interval_ms > 0.0)
+            intervals[interval_count++] = frame->interval_ms;
         if (frame->interval_ms > out_statistics->max_interval_ms) {
             out_statistics->max_interval_ms = frame->interval_ms;
         }
@@ -679,10 +659,11 @@ bool tc_profiler_capture_statistics(
         if (frame->deadline_lateness_ms > out_statistics->max_lateness_ms) {
             out_statistics->max_lateness_ms = frame->deadline_lateness_ms;
         }
-        if (frame_is_hitch(frame, hitch_ratio)) out_statistics->hitch_count++;
+        if (frame_is_hitch(frame, hitch_ratio))
+            out_statistics->hitch_count++;
     }
     if (interval_count > 0) {
-        qsort(intervals, (size_t) interval_count, sizeof(double), compare_doubles);
+        qsort(intervals, (size_t)interval_count, sizeof(double), compare_doubles);
         out_statistics->interval_p50_ms = percentile_sorted(intervals, interval_count, 0.50);
         out_statistics->interval_p95_ms = percentile_sorted(intervals, interval_count, 0.95);
         out_statistics->interval_p99_ms = percentile_sorted(intervals, interval_count, 0.99);

@@ -35,9 +35,9 @@ typedef struct tc_enum_choice {
 } tc_enum_choice;
 
 typedef struct tc_field_info {
-    const char* path;           // Field path ("mesh", "transform.position")
-    const char* label;          // Display label
-    const char* kind;           // "bool", "float", "mesh_handle", "list[entity_handle]"
+    const char* path;  // Field path ("mesh", "transform.position")
+    const char* label; // Display label
+    const char* kind;  // "bool", "float", "mesh_handle", "list[entity_handle]"
 
     // Numeric constraints (for "int", "float", "double")
     double min;
@@ -45,8 +45,8 @@ typedef struct tc_field_info {
     double step;
 
     // Flags
-    bool is_serializable;   // Include in serialization (default true)
-    bool is_inspectable;    // Show in inspector (default true)
+    bool is_serializable; // Include in serialization (default true)
+    bool is_inspectable;  // Show in inspector (default true)
 
     // For enum fields
     const tc_enum_choice* choices;
@@ -64,7 +64,8 @@ typedef size_t (*tc_inspect_field_count_fn)(const char* type_name, void* ctx);
 typedef bool (*tc_inspect_get_field_fn)(const char* type_name, size_t index, tc_field_info* out, void* ctx);
 typedef bool (*tc_inspect_find_field_fn)(const char* type_name, const char* path, tc_field_info* out, void* ctx);
 typedef tc_value (*tc_inspect_getter_fn)(void* obj, const char* type_name, const char* path, void* ctx);
-typedef bool (*tc_inspect_setter_fn)(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx);
+typedef bool (*tc_inspect_setter_fn)(
+    void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx);
 typedef void (*tc_inspect_action_fn)(void* obj, const char* type_name, const char* path, void* ctx);
 typedef tc_value (*tc_inspect_get_type_metadata_fn)(const char* type_name, void* ctx);
 
@@ -160,20 +161,17 @@ typedef struct tc_inspect_apply_result {
 // Strict, fail-fast application for restore/migration paths. Every input key
 // must name a serializable field; callers may remove domain-owned keys first.
 // field_path points into inspect metadata or data and remains caller-owned.
-TC_API tc_inspect_apply_result tc_inspect_deserialize_checked(
-    void* obj,
-    const char* type_name,
-    const tc_value* data,
-    void* context
-);
+TC_API tc_inspect_apply_result tc_inspect_deserialize_checked(void* obj,
+                                                              const char* type_name,
+                                                              const tc_value* data,
+                                                              void* context);
 
 // ============================================================================
 // Parameterized kinds (e.g., "list[entity_handle]")
 // ============================================================================
 
 // Parse "list[T]" → ("list", "T"), returns false if not parameterized
-TC_API bool tc_kind_parse(const char* kind, char* container, size_t container_size,
-                          char* element, size_t element_size);
+TC_API bool tc_kind_parse(const char* kind, char* container, size_t container_size, char* element, size_t element_size);
 
 // ============================================================================
 // JSON interop

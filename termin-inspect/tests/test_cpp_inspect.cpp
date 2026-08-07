@@ -1,8 +1,8 @@
-#include "tc_inspect_cpp.hpp"
 #include "inspect/tc_inspect_init.h"
 #include "inspect/tc_kind.h"
 #include "inspect/tc_kind_cpp.hpp"
 #include "inspect/tc_runtime_type_registry.h"
+#include "tc_inspect_cpp.hpp"
 #include <tcbase/tc_string.h>
 
 #include <algorithm>
@@ -19,162 +19,147 @@
 
 namespace {
 
-struct CppBaseComponent {
-    int hp = 100;
-    float speed = 2.5f;
-};
+    struct CppBaseComponent {
+        int hp = 100;
+        float speed = 2.5f;
+    };
 
-struct CppDerivedComponent : public CppBaseComponent {
-    std::string title = "rookie";
-};
+    struct CppDerivedComponent : public CppBaseComponent {
+        std::string title = "rookie";
+    };
 
-struct CppChoiceComponent {
-    int numeric_mode = 1;
-    int accessor_mode = 0;
-    std::string string_mode = "average";
-};
+    struct CppChoiceComponent {
+        int numeric_mode = 1;
+        int accessor_mode = 0;
+        std::string string_mode = "average";
+    };
 
-struct CppUnsignedComponent {
-    unsigned int stable_id = 0;
-};
+    struct CppUnsignedComponent {
+        unsigned int stable_id = 0;
+    };
 
-struct CheckedSetterComponent {
-    int value = 3;
-    std::optional<int> nullable = 7;
-};
+    struct CheckedSetterComponent {
+        int value = 3;
+        std::optional<int> nullable = 7;
+    };
 
-static std::vector<std::string> g_inspect_logs;
+    static std::vector<std::string> g_inspect_logs;
 
-void capture_inspect_log(tc_log_level, const char* message) {
-    g_inspect_logs.emplace_back(message ? message : "");
-}
-
-struct RuntimeInstanceProbe {
-    tc_runtime_type_instance_link link;
-    int value = 0;
-};
-
-static int g_destroyed_runtime_instance_probe_facets = 0;
-static int g_prepared_runtime_instance_probe_facets = 0;
-static bool g_refuse_runtime_instance_probe_unload = true;
-
-struct OwnedFactoryCounters {
-    int creates = 0;
-    int destroys = 0;
-};
-
-struct OwnedFactoryContext {
-    OwnedFactoryCounters* counters = nullptr;
-    int value = 0;
-};
-
-struct OwnedFactoryFacet {
-    tc_runtime_owned_factory factory{};
-};
-
-bool g_refuse_owned_factory_replacement = false;
-
-bool create_owned_factory_probe(void* payload, const void*, void* out_result) {
-    auto* context = static_cast<OwnedFactoryContext*>(payload);
-    if (!context || !context->counters || !out_result) return false;
-    context->counters->creates++;
-    *static_cast<int*>(out_result) = context->value;
-    return true;
-}
-
-void destroy_owned_factory_probe_context(void* payload) {
-    auto* context = static_cast<OwnedFactoryContext*>(payload);
-    if (!context) return;
-    context->counters->destroys++;
-    delete context;
-}
-
-void destroy_owned_factory_probe_facet(void* payload) {
-    auto* facet = static_cast<OwnedFactoryFacet*>(payload);
-    if (!facet) return;
-    tc_runtime_owned_factory_reset(&facet->factory);
-    delete facet;
-}
-
-bool prepare_owned_factory_probe_facet(const char*, void*, void* context) {
-    return !g_refuse_owned_factory_replacement &&
-        (!context || *static_cast<bool*>(context));
-}
-
-OwnedFactoryFacet* make_owned_factory_probe(
-    OwnedFactoryCounters& counters,
-    int value
-) {
-    auto* facet = new OwnedFactoryFacet();
-    facet->factory = tc_runtime_owned_factory_make(
-        create_owned_factory_probe,
-        new OwnedFactoryContext{&counters, value},
-        destroy_owned_factory_probe_context);
-    return facet;
-}
-
-void destroy_runtime_instance_probe_facet(void* payload) {
-    delete static_cast<int*>(payload);
-    g_destroyed_runtime_instance_probe_facets++;
-}
-
-bool collect_runtime_instance_probe(void* instance, void* user_data) {
-    auto* values = static_cast<std::vector<int>*>(user_data);
-    auto* probe = static_cast<RuntimeInstanceProbe*>(instance);
-    values->push_back(probe ? probe->value : -1);
-    return true;
-}
-
-bool prepare_runtime_instance_probe_facet(
-    const char* type_name,
-    void* payload,
-    void* context
-) {
-    auto* marker = static_cast<int*>(payload);
-    auto* context_marker = static_cast<int*>(context);
-    if (!type_name || std::string(type_name) != "RuntimeTypePrepareProbe") {
-        return false;
+    void capture_inspect_log(tc_log_level, const char* message) {
+        g_inspect_logs.emplace_back(message ? message : "");
     }
-    if (!marker || !context_marker) {
-        return false;
+
+    struct RuntimeInstanceProbe {
+        tc_runtime_type_instance_link link;
+        int value = 0;
+    };
+
+    static int g_destroyed_runtime_instance_probe_facets = 0;
+    static int g_prepared_runtime_instance_probe_facets = 0;
+    static bool g_refuse_runtime_instance_probe_unload = true;
+
+    struct OwnedFactoryCounters {
+        int creates = 0;
+        int destroys = 0;
+    };
+
+    struct OwnedFactoryContext {
+        OwnedFactoryCounters* counters = nullptr;
+        int value = 0;
+    };
+
+    struct OwnedFactoryFacet {
+        tc_runtime_owned_factory factory{};
+    };
+
+    bool g_refuse_owned_factory_replacement = false;
+
+    bool create_owned_factory_probe(void* payload, const void*, void* out_result) {
+        auto* context = static_cast<OwnedFactoryContext*>(payload);
+        if (!context || !context->counters || !out_result)
+            return false;
+        context->counters->creates++;
+        *static_cast<int*>(out_result) = context->value;
+        return true;
     }
-    *marker += *context_marker;
-    g_prepared_runtime_instance_probe_facets++;
-    return true;
-}
 
-bool refuse_runtime_instance_probe_facet(
-    const char*,
-    void*,
-    void*
-) {
-    g_prepared_runtime_instance_probe_facets++;
-    return !g_refuse_runtime_instance_probe_unload;
-}
-
-bool accept_runtime_instance_probe_facet(const char*, void*, void*) {
-    g_prepared_runtime_instance_probe_facets++;
-    return true;
-}
-
-void expect_near(float a, float b, float eps = 1e-6f) {
-    CHECK(std::fabs(a - b) <= eps);
-}
-
-bool commit_inspect_descriptor(
-    const char* type_name,
-    const char* parent,
-    tc::InspectFacetBuilder&& inspect
-) {
-    auto* descriptor = tc_runtime_type_descriptor_create(
-        type_name, "termin-inspect-test", parent);
-    if (!descriptor) return false;
-    if (!inspect.attach_to(descriptor)) {
-        tc_runtime_type_descriptor_destroy(descriptor);
-        return false;
+    void destroy_owned_factory_probe_context(void* payload) {
+        auto* context = static_cast<OwnedFactoryContext*>(payload);
+        if (!context)
+            return;
+        context->counters->destroys++;
+        delete context;
     }
-    return tc_runtime_type_registry_commit_descriptor(descriptor);
-}
+
+    void destroy_owned_factory_probe_facet(void* payload) {
+        auto* facet = static_cast<OwnedFactoryFacet*>(payload);
+        if (!facet)
+            return;
+        tc_runtime_owned_factory_reset(&facet->factory);
+        delete facet;
+    }
+
+    bool prepare_owned_factory_probe_facet(const char*, void*, void* context) {
+        return !g_refuse_owned_factory_replacement && (!context || *static_cast<bool*>(context));
+    }
+
+    OwnedFactoryFacet* make_owned_factory_probe(OwnedFactoryCounters& counters, int value) {
+        auto* facet = new OwnedFactoryFacet();
+        facet->factory = tc_runtime_owned_factory_make(
+            create_owned_factory_probe, new OwnedFactoryContext{&counters, value}, destroy_owned_factory_probe_context);
+        return facet;
+    }
+
+    void destroy_runtime_instance_probe_facet(void* payload) {
+        delete static_cast<int*>(payload);
+        g_destroyed_runtime_instance_probe_facets++;
+    }
+
+    bool collect_runtime_instance_probe(void* instance, void* user_data) {
+        auto* values = static_cast<std::vector<int>*>(user_data);
+        auto* probe = static_cast<RuntimeInstanceProbe*>(instance);
+        values->push_back(probe ? probe->value : -1);
+        return true;
+    }
+
+    bool prepare_runtime_instance_probe_facet(const char* type_name, void* payload, void* context) {
+        auto* marker = static_cast<int*>(payload);
+        auto* context_marker = static_cast<int*>(context);
+        if (!type_name || std::string(type_name) != "RuntimeTypePrepareProbe") {
+            return false;
+        }
+        if (!marker || !context_marker) {
+            return false;
+        }
+        *marker += *context_marker;
+        g_prepared_runtime_instance_probe_facets++;
+        return true;
+    }
+
+    bool refuse_runtime_instance_probe_facet(const char*, void*, void*) {
+        g_prepared_runtime_instance_probe_facets++;
+        return !g_refuse_runtime_instance_probe_unload;
+    }
+
+    bool accept_runtime_instance_probe_facet(const char*, void*, void*) {
+        g_prepared_runtime_instance_probe_facets++;
+        return true;
+    }
+
+    void expect_near(float a, float b, float eps = 1e-6f) {
+        CHECK(std::fabs(a - b) <= eps);
+    }
+
+    bool commit_inspect_descriptor(const char* type_name, const char* parent, tc::InspectFacetBuilder&& inspect) {
+        auto* descriptor = tc_runtime_type_descriptor_create(type_name, "termin-inspect-test", parent);
+        if (!descriptor)
+            return false;
+        if (!inspect.attach_to(descriptor)) {
+            tc_runtime_type_descriptor_destroy(descriptor);
+            return false;
+        }
+        return tc_runtime_type_registry_commit_descriptor(descriptor);
+    }
 
 } // namespace
 
@@ -194,9 +179,7 @@ TEST_CASE("C++ kind serialization mismatch is logged and returns nil") {
     tc::init_cpp_inspect_vtable();
     tc::register_builtin_cpp_kinds();
 
-    tc_value value = tc::KindRegistryCpp::instance().serialize(
-        "int",
-        std::any(std::string("not-an-int")));
+    tc_value value = tc::KindRegistryCpp::instance().serialize("int", std::any(std::string("not-an-int")));
 
     CHECK(value.type == TC_VALUE_NIL);
     tc_value_free(&value);
@@ -209,18 +192,16 @@ TEST_CASE("C++ uint32 kind roundtrips the full unsigned int range") {
     auto& reg = tc::InspectRegistry::instance();
     tc_runtime_type_registry_unregister_type("CppUnsignedComponent");
     tc::InspectFacetBuilder inspect("CppUnsignedComponent");
-    REQUIRE((inspect.add<CppUnsignedComponent, unsigned int>(
-        "CppUnsignedComponent",
-        &CppUnsignedComponent::stable_id,
-        "stable_id",
-        "Stable Id",
-        "uint32",
-        0.0,
-        static_cast<double>(std::numeric_limits<unsigned int>::max()),
-        1.0
-    )));
-    REQUIRE(commit_inspect_descriptor(
-        "CppUnsignedComponent", nullptr, std::move(inspect)));
+    REQUIRE(
+        (inspect.add<CppUnsignedComponent, unsigned int>("CppUnsignedComponent",
+                                                         &CppUnsignedComponent::stable_id,
+                                                         "stable_id",
+                                                         "Stable Id",
+                                                         "uint32",
+                                                         0.0,
+                                                         static_cast<double>(std::numeric_limits<unsigned int>::max()),
+                                                         1.0)));
+    REQUIRE(commit_inspect_descriptor("CppUnsignedComponent", nullptr, std::move(inspect)));
 
     CppUnsignedComponent object;
     object.stable_id = 4000000000u;
@@ -245,14 +226,8 @@ TEST_CASE("C++ field serialization mismatch logs the registered type and path") 
     tc_runtime_type_registry_unregister_type("CppUnsignedMismatch");
     tc::InspectFacetBuilder inspect("CppUnsignedMismatch");
     REQUIRE((inspect.add<CppUnsignedComponent, unsigned int>(
-        "CppUnsignedMismatch",
-        &CppUnsignedComponent::stable_id,
-        "stable_id",
-        "Stable Id",
-        "int"
-    )));
-    REQUIRE(commit_inspect_descriptor(
-        "CppUnsignedMismatch", nullptr, std::move(inspect)));
+        "CppUnsignedMismatch", &CppUnsignedComponent::stable_id, "stable_id", "Stable Id", "int")));
+    REQUIRE(commit_inspect_descriptor("CppUnsignedMismatch", nullptr, std::move(inspect)));
 
     g_inspect_logs.clear();
     tc_log_set_callback(capture_inspect_log);
@@ -262,13 +237,9 @@ TEST_CASE("C++ field serialization mismatch logs the registered type and path") 
 
     CHECK_EQ(value.type, TC_VALUE_NIL);
     tc_value_free(&value);
-    CHECK(std::any_of(
-        g_inspect_logs.begin(),
-        g_inspect_logs.end(),
-        [](const std::string& message) {
-            return message.find("CppUnsignedMismatch.stable_id") != std::string::npos;
-        }
-    ));
+    CHECK(std::any_of(g_inspect_logs.begin(), g_inspect_logs.end(), [](const std::string& message) {
+        return message.find("CppUnsignedMismatch.stable_id") != std::string::npos;
+    }));
 }
 
 TEST_CASE("checked C++ setters report conversion, access, and callback failures") {
@@ -293,13 +264,14 @@ TEST_CASE("checked C++ setters report conversion, access, and callback failures"
     tc_runtime_type_registry_unregister_type("CheckedSetterComponent");
     tc::InspectFacetBuilder inspect("CheckedSetterComponent");
     REQUIRE((inspect.add<CheckedSetterComponent, int>(
-        "CheckedSetterComponent", &CheckedSetterComponent::value,
-        "value", "Value", "int")));
+        "CheckedSetterComponent", &CheckedSetterComponent::value, "value", "Value", "int")));
     REQUIRE((inspect.add<CheckedSetterComponent, std::optional<int>>(
-        "CheckedSetterComponent", &CheckedSetterComponent::nullable,
-        "nullable", "Nullable", "optional_int")));
+        "CheckedSetterComponent", &CheckedSetterComponent::nullable, "nullable", "Nullable", "optional_int")));
     REQUIRE((inspect.add_with_callbacks<CheckedSetterComponent, int>(
-        "CheckedSetterComponent", "throwing", "Throwing", "int",
+        "CheckedSetterComponent",
+        "throwing",
+        "Throwing",
+        "int",
         [](CheckedSetterComponent* object) { return object->value; },
         [](CheckedSetterComponent*, int) { throw std::runtime_error("setter refused value"); })));
 
@@ -311,36 +283,29 @@ TEST_CASE("checked C++ setters report conversion, access, and callback failures"
         return tc_value_int(static_cast<CheckedSetterComponent*>(object)->value);
     };
     REQUIRE(inspect.add_field(std::move(read_only)));
-    REQUIRE(commit_inspect_descriptor(
-        "CheckedSetterComponent", nullptr, std::move(inspect)));
+    REQUIRE(commit_inspect_descriptor("CheckedSetterComponent", nullptr, std::move(inspect)));
 
     CheckedSetterComponent object;
-    CHECK(tc_inspect_set_checked(
-        &object, "CheckedSetterComponent", "value", tc_value_int(11), nullptr));
+    CHECK(tc_inspect_set_checked(&object, "CheckedSetterComponent", "value", tc_value_int(11), nullptr));
     CHECK_EQ(object.value, 11);
 
     tc_value invalid = tc_value_string("not-an-int");
-    CHECK(!tc_inspect_set_checked(
-        &object, "CheckedSetterComponent", "value", invalid, nullptr));
+    CHECK(!tc_inspect_set_checked(&object, "CheckedSetterComponent", "value", invalid, nullptr));
     tc_value_free(&invalid);
     CHECK_EQ(object.value, 11);
 
-    CHECK(!tc_inspect_set_checked(
-        &object, "CheckedSetterComponent", "throwing", tc_value_int(12), nullptr));
-    CHECK(!tc_inspect_set_checked(
-        &object, "CheckedSetterComponent", "missing", tc_value_int(12), nullptr));
-    CHECK(!tc_inspect_set_checked(
-        &object, "CheckedSetterComponent", "read_only", tc_value_int(12), nullptr));
+    CHECK(!tc_inspect_set_checked(&object, "CheckedSetterComponent", "throwing", tc_value_int(12), nullptr));
+    CHECK(!tc_inspect_set_checked(&object, "CheckedSetterComponent", "missing", tc_value_int(12), nullptr));
+    CHECK(!tc_inspect_set_checked(&object, "CheckedSetterComponent", "read_only", tc_value_int(12), nullptr));
 
-    CHECK(tc_inspect_set_checked(
-        &object, "CheckedSetterComponent", "nullable", tc_value_nil(), nullptr));
+    CHECK(tc_inspect_set_checked(&object, "CheckedSetterComponent", "nullable", tc_value_nil(), nullptr));
     CHECK(!object.nullable.has_value());
 
     object.nullable = 21;
     tc_value nullable_payload = tc_value_dict_new();
     tc_value_dict_set(&nullable_payload, "nullable", tc_value_nil());
-    const tc_inspect_apply_result nullable_result = tc_inspect_deserialize_checked(
-        &object, "CheckedSetterComponent", &nullable_payload, nullptr);
+    const tc_inspect_apply_result nullable_result =
+        tc_inspect_deserialize_checked(&object, "CheckedSetterComponent", &nullable_payload, nullptr);
     CHECK_EQ(nullable_result.status, TC_INSPECT_APPLY_OK);
     CHECK_EQ(nullable_result.applied_fields, 1u);
     CHECK(!object.nullable.has_value());
@@ -357,17 +322,14 @@ TEST_CASE("C++ inspect registry roundtrips inherited fields") {
     tc_runtime_type_registry_unregister_type("CppDerivedComponent");
 
     tc::InspectFacetBuilder base("CppBaseComponent");
-    REQUIRE((base.add<CppBaseComponent, int>(
-        "CppBaseComponent", &CppBaseComponent::hp, "hp", "HP", "int")));
-    REQUIRE((base.add<CppBaseComponent, float>(
-        "CppBaseComponent", &CppBaseComponent::speed, "speed", "Speed", "float")));
-    REQUIRE(commit_inspect_descriptor(
-        "CppBaseComponent", nullptr, std::move(base)));
+    REQUIRE((base.add<CppBaseComponent, int>("CppBaseComponent", &CppBaseComponent::hp, "hp", "HP", "int")));
+    REQUIRE(
+        (base.add<CppBaseComponent, float>("CppBaseComponent", &CppBaseComponent::speed, "speed", "Speed", "float")));
+    REQUIRE(commit_inspect_descriptor("CppBaseComponent", nullptr, std::move(base)));
     tc::InspectFacetBuilder derived("CppDerivedComponent");
     REQUIRE((derived.add<CppDerivedComponent, std::string>(
         "CppDerivedComponent", &CppDerivedComponent::title, "title", "Title", "string")));
-    REQUIRE(commit_inspect_descriptor(
-        "CppDerivedComponent", "CppBaseComponent", std::move(derived)));
+    REQUIRE(commit_inspect_descriptor("CppDerivedComponent", "CppBaseComponent", std::move(derived)));
 
     CppDerivedComponent obj;
 
@@ -426,35 +388,31 @@ TEST_CASE("InspectRegistry stores type owner and parent in runtime type records"
     tc_runtime_type_registry_unregister_type("RuntimeTypeDerivedProbe");
 
     tc::InspectFacetBuilder base_inspect("RuntimeTypeBaseProbe");
-    CHECK((base_inspect.add<CppBaseComponent, int>(
-        &CppBaseComponent::hp,
-        tc::InspectFieldSpec{"RuntimeTypeBaseProbe", "hp", "HP", "int"}
-    )));
-    auto* base_descriptor = tc_runtime_type_descriptor_create(
-        "RuntimeTypeBaseProbe", "runtime_type_probe_module", nullptr);
+    CHECK((base_inspect.add<CppBaseComponent, int>(&CppBaseComponent::hp,
+                                                   tc::InspectFieldSpec{"RuntimeTypeBaseProbe", "hp", "HP", "int"})));
+    auto* base_descriptor =
+        tc_runtime_type_descriptor_create("RuntimeTypeBaseProbe", "runtime_type_probe_module", nullptr);
     REQUIRE(base_descriptor != nullptr);
     CHECK(base_inspect.attach_to(base_descriptor));
     CHECK(tc_runtime_type_registry_commit_descriptor(base_descriptor));
 
     tc::InspectFacetBuilder derived_inspect("RuntimeTypeDerivedProbe");
     CHECK((derived_inspect.add<CppDerivedComponent, std::string>(
-        &CppDerivedComponent::title,
-        tc::InspectFieldSpec{
-            "RuntimeTypeDerivedProbe", "title", "Title", "string"}
-    )));
+        &CppDerivedComponent::title, tc::InspectFieldSpec{"RuntimeTypeDerivedProbe", "title", "Title", "string"})));
     auto* derived_descriptor = tc_runtime_type_descriptor_create(
-        "RuntimeTypeDerivedProbe",
-        "runtime_type_probe_module",
-        "RuntimeTypeBaseProbe");
+        "RuntimeTypeDerivedProbe", "runtime_type_probe_module", "RuntimeTypeBaseProbe");
     REQUIRE(derived_descriptor != nullptr);
     CHECK(derived_inspect.attach_to(derived_descriptor));
     CHECK(tc_runtime_type_registry_commit_descriptor(derived_descriptor));
 
     CHECK(tc_runtime_type_registry_has_type("RuntimeTypeBaseProbe"));
     CHECK(tc_runtime_type_registry_has_type("RuntimeTypeDerivedProbe"));
-    CHECK_EQ(std::string(tc_runtime_type_registry_get_owner("RuntimeTypeBaseProbe")), std::string("runtime_type_probe_module"));
-    CHECK_EQ(std::string(tc_runtime_type_registry_get_owner("RuntimeTypeDerivedProbe")), std::string("runtime_type_probe_module"));
-    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent("RuntimeTypeDerivedProbe")), std::string("RuntimeTypeBaseProbe"));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_owner("RuntimeTypeBaseProbe")),
+             std::string("runtime_type_probe_module"));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_owner("RuntimeTypeDerivedProbe")),
+             std::string("runtime_type_probe_module"));
+    CHECK_EQ(std::string(tc_runtime_type_registry_get_parent("RuntimeTypeDerivedProbe")),
+             std::string("RuntimeTypeBaseProbe"));
     CHECK_EQ(inspect.owner_of("RuntimeTypeDerivedProbe"), std::string("runtime_type_probe_module"));
     CHECK_EQ(inspect.get_type_parent("RuntimeTypeDerivedProbe"), std::string("RuntimeTypeBaseProbe"));
     const char* stable_parent = tc_inspect_get_base_type("RuntimeTypeDerivedProbe");
@@ -482,8 +440,7 @@ TEST_CASE("Runtime type records keep tombstones while live instances are linked"
     first.value = 11;
     second.value = 29;
 
-    auto* descriptor = tc_runtime_type_descriptor_create(
-        type_name, "runtime_type_instance_test", nullptr);
+    auto* descriptor = tc_runtime_type_descriptor_create(type_name, "runtime_type_instance_test", nullptr);
     REQUIRE(descriptor != nullptr);
     CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK(tc_runtime_type_registry_link_instance(type_name, &first.link, &first));
@@ -492,11 +449,7 @@ TEST_CASE("Runtime type records keep tombstones while live instances are linked"
     CHECK(tc_runtime_type_registry_instance_is_current(&first.link));
 
     std::vector<int> values;
-    tc_runtime_type_registry_foreach_instance(
-        type_name,
-        collect_runtime_instance_probe,
-        &values
-    );
+    tc_runtime_type_registry_foreach_instance(type_name, collect_runtime_instance_probe, &values);
     REQUIRE_EQ(values.size(), 2u);
     CHECK_EQ(values[0], 11);
     CHECK_EQ(values[1], 29);
@@ -535,13 +488,7 @@ TEST_CASE("Owner cleanup removes facets but keeps live instance tombstones") {
     auto* descriptor = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
     REQUIRE(descriptor != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.instance_probe",
-        new int(5),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        descriptor, "termin.test.instance_probe", new int(5), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK(tc_runtime_type_registry_link_instance(type_name, &probe.link, &probe));
 
@@ -569,21 +516,16 @@ TEST_CASE("Runtime type facet prepare unload receives context and can refuse cle
 
     auto* descriptor = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
     REQUIRE(descriptor != nullptr);
-    CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.prepare_probe",
-        new int(10),
-        destroy_runtime_instance_probe_facet,
-        prepare_runtime_instance_probe_facet,
-        1
-    ));
+    CHECK(tc_runtime_type_descriptor_add_facet(descriptor,
+                                               "termin.test.prepare_probe",
+                                               new int(10),
+                                               destroy_runtime_instance_probe_facet,
+                                               prepare_runtime_instance_probe_facet,
+                                               1));
     CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     int context_marker = 32;
-    CHECK_EQ(
-        tc_runtime_type_registry_unregister_owner_with_context(owner, &context_marker),
-        1u
-    );
+    CHECK_EQ(tc_runtime_type_registry_unregister_owner_with_context(owner, &context_marker), 1u);
     CHECK_EQ(g_prepared_runtime_instance_probe_facets, 1);
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
     CHECK(!tc_runtime_type_registry_has_type(type_name));
@@ -592,14 +534,12 @@ TEST_CASE("Runtime type facet prepare unload receives context and can refuse cle
     tc_runtime_type_registry_unregister_type(refusing_type_name);
     descriptor = tc_runtime_type_descriptor_create(refusing_type_name, owner, nullptr);
     REQUIRE(descriptor != nullptr);
-    CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.prepare_refuse_probe",
-        new int(1),
-        destroy_runtime_instance_probe_facet,
-        refuse_runtime_instance_probe_facet,
-        1
-    ));
+    CHECK(tc_runtime_type_descriptor_add_facet(descriptor,
+                                               "termin.test.prepare_refuse_probe",
+                                               new int(1),
+                                               destroy_runtime_instance_probe_facet,
+                                               refuse_runtime_instance_probe_facet,
+                                               1));
     CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     CHECK_EQ(tc_runtime_type_registry_unregister_owner_with_context(owner, nullptr), 0u);
@@ -620,25 +560,21 @@ TEST_CASE("Runtime type owner unload prepares every record before atomic commit"
 
     auto* descriptor = tc_runtime_type_descriptor_create(accepted_type, owner, nullptr);
     REQUIRE(descriptor != nullptr);
-    CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.atomic_accept",
-        new int(1),
-        destroy_runtime_instance_probe_facet,
-        accept_runtime_instance_probe_facet,
-        1
-    ));
+    CHECK(tc_runtime_type_descriptor_add_facet(descriptor,
+                                               "termin.test.atomic_accept",
+                                               new int(1),
+                                               destroy_runtime_instance_probe_facet,
+                                               accept_runtime_instance_probe_facet,
+                                               1));
     CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
     descriptor = tc_runtime_type_descriptor_create(refused_type, owner, nullptr);
     REQUIRE(descriptor != nullptr);
-    CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.atomic_refuse",
-        new int(2),
-        destroy_runtime_instance_probe_facet,
-        refuse_runtime_instance_probe_facet,
-        1
-    ));
+    CHECK(tc_runtime_type_descriptor_add_facet(descriptor,
+                                               "termin.test.atomic_refuse",
+                                               new int(2),
+                                               destroy_runtime_instance_probe_facet,
+                                               refuse_runtime_instance_probe_facet,
+                                               1));
     CHECK(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     CHECK(!tc_runtime_type_registry_prepare_owner_unload(owner, nullptr));
@@ -664,28 +600,31 @@ TEST_CASE("Owned runtime factory context follows descriptor transactions exactly
     constexpr const char* owner = "owned_factory_test";
 
     OwnedFactoryCounters failed;
-    auto* descriptor = tc_runtime_type_descriptor_create(
-        "OwnedFactoryFailedCommit", owner, "MissingOwnedFactoryParent");
+    auto* descriptor =
+        tc_runtime_type_descriptor_create("OwnedFactoryFailedCommit", owner, "MissingOwnedFactoryParent");
     REQUIRE(descriptor != nullptr);
-    REQUIRE(tc_runtime_type_descriptor_add_facet(
-        descriptor, facet_id, make_owned_factory_probe(failed, 11),
-        destroy_owned_factory_probe_facet,
-        prepare_owned_factory_probe_facet, 1));
+    REQUIRE(tc_runtime_type_descriptor_add_facet(descriptor,
+                                                 facet_id,
+                                                 make_owned_factory_probe(failed, 11),
+                                                 destroy_owned_factory_probe_facet,
+                                                 prepare_owned_factory_probe_facet,
+                                                 1));
     CHECK_FALSE(tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK_EQ(failed.destroys, 1);
 
     OwnedFactoryCounters active;
-    descriptor = tc_runtime_type_descriptor_create(
-        "OwnedFactoryLifecycle", owner, nullptr);
+    descriptor = tc_runtime_type_descriptor_create("OwnedFactoryLifecycle", owner, nullptr);
     REQUIRE(descriptor != nullptr);
-    REQUIRE(tc_runtime_type_descriptor_add_facet(
-        descriptor, facet_id, make_owned_factory_probe(active, 23),
-        destroy_owned_factory_probe_facet,
-        prepare_owned_factory_probe_facet, 1));
+    REQUIRE(tc_runtime_type_descriptor_add_facet(descriptor,
+                                                 facet_id,
+                                                 make_owned_factory_probe(active, 23),
+                                                 destroy_owned_factory_probe_facet,
+                                                 prepare_owned_factory_probe_facet,
+                                                 1));
     REQUIRE(tc_runtime_type_registry_commit_descriptor(descriptor));
 
-    auto* facet = static_cast<OwnedFactoryFacet*>(
-        tc_runtime_type_registry_get_facet("OwnedFactoryLifecycle", facet_id));
+    auto* facet =
+        static_cast<OwnedFactoryFacet*>(tc_runtime_type_registry_get_facet("OwnedFactoryLifecycle", facet_id));
     REQUIRE(facet != nullptr);
     int created = 0;
     CHECK(tc_runtime_owned_factory_invoke(&facet->factory, nullptr, &created));
@@ -693,20 +632,20 @@ TEST_CASE("Owned runtime factory context follows descriptor transactions exactly
     CHECK_EQ(active.creates, 1);
 
     bool allow_unload = false;
-    CHECK_FALSE(tc_runtime_type_registry_unregister_type_with_context(
-        "OwnedFactoryLifecycle", &allow_unload));
+    CHECK_FALSE(tc_runtime_type_registry_unregister_type_with_context("OwnedFactoryLifecycle", &allow_unload));
     CHECK(tc_runtime_type_registry_has_type("OwnedFactoryLifecycle"));
     CHECK_EQ(active.destroys, 0);
 
     OwnedFactoryCounters refused_replacement;
-    descriptor = tc_runtime_type_descriptor_create(
-        "OwnedFactoryLifecycle", owner, nullptr);
+    descriptor = tc_runtime_type_descriptor_create("OwnedFactoryLifecycle", owner, nullptr);
     REQUIRE(descriptor != nullptr);
     REQUIRE(tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor));
-    REQUIRE(tc_runtime_type_descriptor_add_facet(
-        descriptor, facet_id, make_owned_factory_probe(refused_replacement, 31),
-        destroy_owned_factory_probe_facet,
-        prepare_owned_factory_probe_facet, 1));
+    REQUIRE(tc_runtime_type_descriptor_add_facet(descriptor,
+                                                 facet_id,
+                                                 make_owned_factory_probe(refused_replacement, 31),
+                                                 destroy_owned_factory_probe_facet,
+                                                 prepare_owned_factory_probe_facet,
+                                                 1));
     g_refuse_owned_factory_replacement = true;
     CHECK_FALSE(tc_runtime_type_registry_commit_descriptor(descriptor));
     g_refuse_owned_factory_replacement = false;
@@ -714,21 +653,21 @@ TEST_CASE("Owned runtime factory context follows descriptor transactions exactly
     CHECK_EQ(refused_replacement.destroys, 1);
 
     OwnedFactoryCounters replacement;
-    descriptor = tc_runtime_type_descriptor_create(
-        "OwnedFactoryLifecycle", owner, nullptr);
+    descriptor = tc_runtime_type_descriptor_create("OwnedFactoryLifecycle", owner, nullptr);
     REQUIRE(descriptor != nullptr);
     REQUIRE(tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor));
-    REQUIRE(tc_runtime_type_descriptor_add_facet(
-        descriptor, facet_id, make_owned_factory_probe(replacement, 47),
-        destroy_owned_factory_probe_facet,
-        prepare_owned_factory_probe_facet, 1));
+    REQUIRE(tc_runtime_type_descriptor_add_facet(descriptor,
+                                                 facet_id,
+                                                 make_owned_factory_probe(replacement, 47),
+                                                 destroy_owned_factory_probe_facet,
+                                                 prepare_owned_factory_probe_facet,
+                                                 1));
     REQUIRE(tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK_EQ(active.destroys, 1);
     CHECK_EQ(replacement.destroys, 0);
 
     allow_unload = true;
-    CHECK(tc_runtime_type_registry_unregister_type_with_context(
-        "OwnedFactoryLifecycle", &allow_unload));
+    CHECK(tc_runtime_type_registry_unregister_type_with_context("OwnedFactoryLifecycle", &allow_unload));
     CHECK_EQ(replacement.destroys, 1);
 }
 
@@ -738,21 +677,18 @@ TEST_CASE("Runtime type bindings are record-owned and replaced transactionally")
     OwnedFactoryCounters first;
     OwnedFactoryCounters second;
 
-    auto* descriptor = tc_runtime_type_descriptor_create(
-        type_name, "owned_binding_test", nullptr);
+    auto* descriptor = tc_runtime_type_descriptor_create(type_name, "owned_binding_test", nullptr);
     REQUIRE(descriptor != nullptr);
     REQUIRE(tc_runtime_type_registry_commit_descriptor(descriptor));
 
     auto* first_context = new OwnedFactoryContext{&first, 3};
     REQUIRE(tc_runtime_type_registry_set_binding(
-        type_name, binding_id, first_context,
-        destroy_owned_factory_probe_context));
+        type_name, binding_id, first_context, destroy_owned_factory_probe_context));
     CHECK_EQ(tc_runtime_type_registry_get_binding(type_name, binding_id), first_context);
 
     auto* second_context = new OwnedFactoryContext{&second, 5};
     REQUIRE(tc_runtime_type_registry_set_binding(
-        type_name, binding_id, second_context,
-        destroy_owned_factory_probe_context));
+        type_name, binding_id, second_context, destroy_owned_factory_probe_context));
     CHECK_EQ(first.destroys, 1);
     CHECK_EQ(second.destroys, 0);
     CHECK_EQ(tc_runtime_type_registry_get_binding(type_name, binding_id), second_context);
@@ -771,21 +707,9 @@ TEST_CASE("Runtime type descriptor rejects partial and duplicate facets atomical
     auto* descriptor = tc_runtime_type_descriptor_create(type_name, "descriptor_owner", nullptr);
     REQUIRE(descriptor != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.descriptor",
-        new int(1),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        descriptor, "termin.test.descriptor", new int(1), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(!tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.descriptor",
-        new int(2),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        descriptor, "termin.test.descriptor", new int(2), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
     CHECK(!tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 2);
@@ -794,20 +718,10 @@ TEST_CASE("Runtime type descriptor rejects partial and duplicate facets atomical
 
     const char* invalid_abi_type = "RuntimeTypeDescriptorInvalidAbi";
     tc_runtime_type_registry_unregister_type(invalid_abi_type);
-    auto* invalid_abi = tc_runtime_type_descriptor_create(
-        invalid_abi_type,
-        "descriptor_owner",
-        nullptr
-    );
+    auto* invalid_abi = tc_runtime_type_descriptor_create(invalid_abi_type, "descriptor_owner", nullptr);
     REQUIRE(invalid_abi != nullptr);
     CHECK(!tc_runtime_type_descriptor_add_facet(
-        invalid_abi,
-        "termin.test.invalid_abi",
-        new int(8),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        0
-    ));
+        invalid_abi, "termin.test.invalid_abi", new int(8), destroy_runtime_instance_probe_facet, nullptr, 0));
     CHECK(!tc_runtime_type_registry_commit_descriptor(invalid_abi));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 3);
     CHECK(!tc_runtime_type_registry_has_type(invalid_abi_type));
@@ -818,20 +732,11 @@ TEST_CASE("Runtime type descriptor validation leaves no missing-parent shell") {
     tc_runtime_type_registry_unregister_type(type_name);
     g_destroyed_runtime_instance_probe_facets = 0;
 
-    auto* descriptor = tc_runtime_type_descriptor_create(
-        type_name,
-        "descriptor_owner",
-        "RuntimeTypeDescriptorAbsentParent"
-    );
+    auto* descriptor =
+        tc_runtime_type_descriptor_create(type_name, "descriptor_owner", "RuntimeTypeDescriptorAbsentParent");
     REQUIRE(descriptor != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        descriptor,
-        "termin.test.missing_parent",
-        new int(3),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        descriptor, "termin.test.missing_parent", new int(3), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(!tc_runtime_type_registry_commit_descriptor(descriptor));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
     tc_runtime_type_record_info info;
@@ -848,13 +753,7 @@ TEST_CASE("Runtime type descriptor rejects active replacement and preserves old 
     auto* first = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
     REQUIRE(first != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        first,
-        "termin.test.active",
-        new int(4),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        first, "termin.test.active", new int(4), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(tc_runtime_type_registry_commit_descriptor(first));
     void* old_payload = tc_runtime_type_registry_get_facet(type_name, "termin.test.active");
     REQUIRE(old_payload != nullptr);
@@ -862,13 +761,7 @@ TEST_CASE("Runtime type descriptor rejects active replacement and preserves old 
     auto* replacement = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
     REQUIRE(replacement != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        replacement,
-        "termin.test.active",
-        new int(5),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        replacement, "termin.test.active", new int(5), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(!tc_runtime_type_registry_commit_descriptor(replacement));
     CHECK_EQ(g_destroyed_runtime_instance_probe_facets, 1);
     CHECK(tc_runtime_type_registry_get_facet(type_name, "termin.test.active") == old_payload);
@@ -886,13 +779,7 @@ TEST_CASE("Runtime type descriptor replaces compatible tombstone and preserves i
     auto* first = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
     REQUIRE(first != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        first,
-        "termin.test.old_callback",
-        new int(6),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        first, "termin.test.old_callback", new int(6), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(tc_runtime_type_registry_commit_descriptor(first));
 
     RuntimeInstanceProbe old_instance;
@@ -911,13 +798,7 @@ TEST_CASE("Runtime type descriptor replaces compatible tombstone and preserves i
     auto* replacement = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
     REQUIRE(replacement != nullptr);
     CHECK(tc_runtime_type_descriptor_add_facet(
-        replacement,
-        "termin.test.new_callback",
-        new int(7),
-        destroy_runtime_instance_probe_facet,
-        nullptr,
-        1
-    ));
+        replacement, "termin.test.new_callback", new int(7), destroy_runtime_instance_probe_facet, nullptr, 1));
     CHECK(tc_runtime_type_registry_commit_descriptor(replacement));
 
     tc_runtime_type_record_info current_info;
@@ -996,8 +877,12 @@ TEST_CASE("Inspect facet builder validates and publishes callbacks atomically") 
         info.path = "value";
         info.label = "Value";
         info.kind = "int";
-        info.getter = [token](void*) { return tc_value_int(*token); };
-        info.setter = [](void*, tc_value, void*) { return true; };
+        info.getter = [token](void*) {
+            return tc_value_int(*token);
+        };
+        info.setter = [](void*, tc_value, void*) {
+            return true;
+        };
         CHECK(builder.add_field(std::move(info)));
 
         auto* descriptor = tc_runtime_type_descriptor_create(type_name, owner, nullptr);
@@ -1025,12 +910,16 @@ TEST_CASE("Inspect facet builder validates and publishes callbacks atomically") 
     tc::InspectFieldInfo first;
     first.path = "duplicate";
     first.kind = "int";
-    first.getter = [](void*) { return tc_value_int(1); };
+    first.getter = [](void*) {
+        return tc_value_int(1);
+    };
     CHECK(duplicate.add_field(std::move(first)));
     tc::InspectFieldInfo second;
     second.path = "duplicate";
     second.kind = "int";
-    second.getter = [](void*) { return tc_value_int(2); };
+    second.getter = [](void*) {
+        return tc_value_int(2);
+    };
     CHECK(!duplicate.add_field(std::move(second)));
     auto* rejected = tc_runtime_type_descriptor_create(rejected_type, owner, nullptr);
     REQUIRE(rejected != nullptr);
@@ -1087,15 +976,13 @@ TEST_CASE("C++ inspect choices support string enum fields") {
     tc_runtime_type_registry_unregister_type("CppChoiceComponent");
 
     tc::InspectFacetBuilder inspect("CppChoiceComponent");
-    REQUIRE((tc::stage_inspect_field_choices<CppChoiceComponent, int>(
-        inspect,
-        &CppChoiceComponent::numeric_mode,
-        "CppChoiceComponent",
-        "numeric_mode",
-        "Numeric Mode",
-        "enum",
-        {{"0", "Zero"}, {"1", "One"}}
-    )));
+    REQUIRE((tc::stage_inspect_field_choices<CppChoiceComponent, int>(inspect,
+                                                                      &CppChoiceComponent::numeric_mode,
+                                                                      "CppChoiceComponent",
+                                                                      "numeric_mode",
+                                                                      "Numeric Mode",
+                                                                      "enum",
+                                                                      {{"0", "Zero"}, {"1", "One"}})));
     REQUIRE((tc::stage_inspect_field_choices<CppChoiceComponent, std::string>(
         inspect,
         &CppChoiceComponent::string_mode,
@@ -1103,16 +990,16 @@ TEST_CASE("C++ inspect choices support string enum fields") {
         "string_mode",
         "String Mode",
         "enum",
-        {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}}
-    )));
+        {{"average", "Average"}, {"min", "Min"}, {"max", "Max"}})));
     REQUIRE((inspect.add_with_accessor_choices<CppChoiceComponent, int>(
-        "CppChoiceComponent", "accessor_mode", "Accessor Mode", "enum",
+        "CppChoiceComponent",
+        "accessor_mode",
+        "Accessor Mode",
+        "enum",
         [](CppChoiceComponent* self) -> int { return self->accessor_mode; },
         [](CppChoiceComponent* self, int value) { self->accessor_mode = value; },
-        {{"0", "Zero"}, {"2", "Two"}}
-    )));
-    REQUIRE(commit_inspect_descriptor(
-        "CppChoiceComponent", nullptr, std::move(inspect)));
+        {{"0", "Zero"}, {"2", "Two"}})));
+    REQUIRE(commit_inspect_descriptor("CppChoiceComponent", nullptr, std::move(inspect)));
 
     CppChoiceComponent obj;
 

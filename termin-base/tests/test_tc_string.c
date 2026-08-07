@@ -12,12 +12,7 @@ typedef struct InternVisitState {
     size_t max_depth_seen;
 } InternVisitState;
 
-static void visit_intern_string(
-    const char* string,
-    size_t bucket_index,
-    size_t depth_in_bucket,
-    void* user_data
-) {
+static void visit_intern_string(const char* string, size_t bucket_index, size_t depth_in_bucket, void* user_data) {
     (void)bucket_index;
     InternVisitState* state = (InternVisitState*)user_data;
     ++state->count;

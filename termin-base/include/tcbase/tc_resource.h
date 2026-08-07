@@ -1,11 +1,11 @@
 // tc_resource.h - Common resource header for mesh, texture, etc.
 #pragma once
 
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
 #include "tc_log.h"
 #include "tc_uuid.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,10 +16,7 @@ extern "C" {
 // lazy-load routing.
 typedef bool (*tc_resource_loader_fn)(const char* uuid, void* user_data);
 
-TCBASE_API void tc_resource_set_loader(
-    tc_resource_loader_fn callback,
-    void* user_data
-);
+TCBASE_API void tc_resource_set_loader(tc_resource_loader_fn callback, void* user_data);
 TCBASE_API void tc_resource_clear_loader(void);
 TCBASE_API bool tc_resource_request_load(const char* uuid);
 
@@ -29,12 +26,12 @@ TCBASE_API bool tc_resource_request_load(const char* uuid);
 // Place this as the FIRST field in resource structs for consistent layout.
 
 typedef struct tc_resource_header {
-    char uuid[TC_UUID_SIZE];        // unique identifier
-    const char* name;               // human-readable name (interned string)
-    uint32_t version;               // incremented on data change (for GPU sync)
-    uint32_t ref_count;             // reference count for ownership
-    uint32_t pool_index;            // index in resource pool (for GPUContext lookup)
-    uint8_t is_loaded;              // true if data is loaded
+    char uuid[TC_UUID_SIZE]; // unique identifier
+    const char* name;        // human-readable name (interned string)
+    uint32_t version;        // incremented on data change (for GPU sync)
+    uint32_t ref_count;      // reference count for ownership
+    uint32_t pool_index;     // index in resource pool (for GPUContext lookup)
+    uint8_t is_loaded;       // true if data is loaded
     uint8_t _pad[3];
 } tc_resource_header;
 
@@ -43,23 +40,17 @@ typedef struct tc_resource_header {
 // ============================================================================
 
 // Initialize resource header with UUID
-static inline void tc_resource_copy_uuid(
-    char* dst,
-    size_t dst_size,
-    const char* uuid,
-    const char* context
-) {
-    if (!dst || dst_size == 0) return;
+static inline void tc_resource_copy_uuid(char* dst, size_t dst_size, const char* uuid, const char* context) {
+    if (!dst || dst_size == 0)
+        return;
     if (uuid && uuid[0] != '\0') {
         size_t len = strlen(uuid);
         if (len >= dst_size) {
-            tc_log_warn(
-                "%s: UUID '%s' is too long (%zu bytes), truncating to %u bytes",
-                context && context[0] ? context : "tc_resource_copy_uuid",
-                uuid,
-                len,
-                (unsigned)(dst_size - 1)
-            );
+            tc_log_warn("%s: UUID '%s' is too long (%zu bytes), truncating to %u bytes",
+                        context && context[0] ? context : "tc_resource_copy_uuid",
+                        uuid,
+                        len,
+                        (unsigned)(dst_size - 1));
             len = dst_size - 1;
         }
         memcpy(dst, uuid, len);
@@ -69,12 +60,9 @@ static inline void tc_resource_copy_uuid(
     }
 }
 
-static inline void tc_resource_header_set_uuid(
-    tc_resource_header* header,
-    const char* uuid,
-    const char* context
-) {
-    if (!header) return;
+static inline void tc_resource_header_set_uuid(tc_resource_header* header, const char* uuid, const char* context) {
+    if (!header)
+        return;
     tc_resource_copy_uuid(header->uuid, sizeof(header->uuid), uuid, context);
 }
 
@@ -90,7 +78,8 @@ static inline void tc_resource_header_init(tc_resource_header* header, const cha
 
 // Trigger process-wide UUID loading when the resource is not loaded.
 static inline bool tc_resource_header_ensure_loaded(tc_resource_header* header) {
-    if (header->is_loaded) return true;
+    if (header->is_loaded)
+        return true;
 
     bool success = tc_resource_request_load(header->uuid);
     if (success) {

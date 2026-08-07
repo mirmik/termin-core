@@ -2,14 +2,20 @@
 #ifndef TC_POSE2_H
 #define TC_POSE2_H
 
-#include <tcbase/tc_types.h>
 #include "geom/tc_vec2.h"
 #include <math.h>
+#include <tcbase/tc_types.h>
 
 #ifdef __cplusplus
-    #define TC_POSE2(ang_, lin_) tc_pose2{ang_, lin_}
+#define TC_POSE2(ang_, lin_)                                                                                           \
+    tc_pose2 {                                                                                                         \
+        ang_, lin_                                                                                                     \
+    }
 #else
-    #define TC_POSE2(ang_, lin_) (tc_pose2){ang_, lin_}
+#define TC_POSE2(ang_, lin_)                                                                                           \
+    (tc_pose2) {                                                                                                       \
+        ang_, lin_                                                                                                     \
+    }
 #endif
 
 #ifdef __cplusplus
@@ -53,10 +59,7 @@ TC_C_STATIC_INLINE tc_vec2 tc_pose2_inverse_transform_vector(tc_pose2 p, tc_vec2
 }
 
 TC_C_STATIC_INLINE tc_pose2 tc_pose2_mul(tc_pose2 parent, tc_pose2 child) {
-    return TC_POSE2(
-        parent.ang + child.ang,
-        tc_vec2_add(parent.lin, tc_pose2_rotate_vector(parent, child.lin))
-    );
+    return TC_POSE2(parent.ang + child.ang, tc_vec2_add(parent.lin, tc_pose2_rotate_vector(parent, child.lin)));
 }
 
 TC_C_STATIC_INLINE tc_pose2 tc_pose2_inverse(tc_pose2 p) {
@@ -74,10 +77,7 @@ TC_C_STATIC_INLINE tc_pose2 tc_pose2_translation(double x, double y) {
 }
 
 TC_C_STATIC_INLINE tc_pose2 tc_pose2_lerp(tc_pose2 a, tc_pose2 b, double t) {
-    return TC_POSE2(
-        a.ang + (b.ang - a.ang) * t,
-        tc_vec2_lerp(a.lin, b.lin, t)
-    );
+    return TC_POSE2(a.ang + (b.ang - a.ang) * t, tc_vec2_lerp(a.lin, b.lin, t));
 }
 
 TC_C_STATIC_INLINE void tc_pose2_normalize_angle(tc_pose2* p) {

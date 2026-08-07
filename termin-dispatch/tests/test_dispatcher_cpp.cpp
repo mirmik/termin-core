@@ -8,22 +8,22 @@
 
 namespace {
 
-struct RacePayload {
-    std::atomic<int>* callbacks;
-    std::atomic<int>* disposals;
-};
+    struct RacePayload {
+        std::atomic<int>* callbacks;
+        std::atomic<int>* disposals;
+    };
 
-tc_dispatch_callback_result invoke_race_payload(void* user_data) {
-    auto* payload = static_cast<RacePayload*>(user_data);
-    payload->callbacks->fetch_add(1, std::memory_order_relaxed);
-    return TC_DISPATCH_CALLBACK_OK;
-}
+    tc_dispatch_callback_result invoke_race_payload(void* user_data) {
+        auto* payload = static_cast<RacePayload*>(user_data);
+        payload->callbacks->fetch_add(1, std::memory_order_relaxed);
+        return TC_DISPATCH_CALLBACK_OK;
+    }
 
-void dispose_race_payload(void* user_data) {
-    auto* payload = static_cast<RacePayload*>(user_data);
-    payload->disposals->fetch_add(1, std::memory_order_relaxed);
-    delete payload;
-}
+    void dispose_race_payload(void* user_data) {
+        auto* payload = static_cast<RacePayload*>(user_data);
+        payload->disposals->fetch_add(1, std::memory_order_relaxed);
+        delete payload;
+    }
 
 } // namespace
 
@@ -37,9 +37,8 @@ int main() {
     for (int producer = 0; producer < producer_count; ++producer) {
         producers.emplace_back([&] {
             for (int index = 0; index < work_per_producer; ++index) {
-                const termin::DeferredCall call = dispatcher.defer([&] {
-                    executed.fetch_add(1, std::memory_order_relaxed);
-                });
+                const termin::DeferredCall call =
+                    dispatcher.defer([&] { executed.fetch_add(1, std::memory_order_relaxed); });
                 assert(call);
             }
         });
@@ -50,24 +49,11 @@ int main() {
     assert(dispatcher.pending_count() == producer_count * work_per_producer);
 
     std::atomic<size_t> drained{0};
-    std::thread first_drain([&] {
-        drained.fetch_add(
-            dispatcher.drain(700).executed,
-            std::memory_order_relaxed
-        );
-    });
-    std::thread second_drain([&] {
-        drained.fetch_add(
-            dispatcher.drain(700).executed,
-            std::memory_order_relaxed
-        );
-    });
+    std::thread first_drain([&] { drained.fetch_add(dispatcher.drain(700).executed, std::memory_order_relaxed); });
+    std::thread second_drain([&] { drained.fetch_add(dispatcher.drain(700).executed, std::memory_order_relaxed); });
     first_drain.join();
     second_drain.join();
-    drained.fetch_add(
-        dispatcher.drain().executed,
-        std::memory_order_relaxed
-    );
+    drained.fetch_add(dispatcher.drain().executed, std::memory_order_relaxed);
     assert(drained == producer_count * work_per_producer);
     assert(executed == producer_count * work_per_producer);
 
@@ -88,11 +74,8 @@ int main() {
         std::atomic<int> callbacks{0};
         std::atomic<int> disposals{0};
         std::atomic<bool> start{false};
-        termin::DeferredCall raced = dispatcher.post(
-            &invoke_race_payload,
-            &dispose_race_payload,
-            new RacePayload{&callbacks, &disposals}
-        );
+        termin::DeferredCall raced =
+            dispatcher.post(&invoke_race_payload, &dispose_race_payload, new RacePayload{&callbacks, &disposals});
         assert(raced);
 
         std::thread canceller([&] {
@@ -114,9 +97,7 @@ int main() {
     }
 
     int after_failure = 0;
-    assert(dispatcher.defer([] {
-        throw std::runtime_error("expected test failure");
-    }));
+    assert(dispatcher.defer([] { throw std::runtime_error("expected test failure"); }));
     assert(dispatcher.defer([&] { ++after_failure; }));
     const termin::DispatchStats failure_stats = dispatcher.drain();
     assert(failure_stats.executed == 2);

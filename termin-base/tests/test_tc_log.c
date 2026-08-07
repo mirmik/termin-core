@@ -2,8 +2,8 @@
 
 #include "guard_c.h"
 
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 static int g_callback_count = 0;
@@ -13,12 +13,7 @@ static char g_callback_message[TC_LOG_MESSAGE_CAPACITY];
 static void capture_callback(tc_log_level level, const char* message) {
     g_callback_count += 1;
     g_callback_level = level;
-    snprintf(
-        g_callback_message,
-        sizeof(g_callback_message),
-        "%s",
-        message ? message : ""
-    );
+    snprintf(g_callback_message, sizeof(g_callback_message), "%s", message ? message : "");
 }
 
 static void reset_logging(void) {

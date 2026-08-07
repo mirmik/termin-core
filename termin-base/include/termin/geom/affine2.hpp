@@ -44,10 +44,7 @@ inline tc_affine2f tc_affine2f::shear(float x_by_y, float y_by_x) {
     return tc_affine2f_shear(x_by_y, y_by_x);
 }
 
-inline tc_affine2f tc_affine2f::trs(
-    const tc_vec2f& translation,
-    float radians,
-    const tc_vec2f& scale) {
+inline tc_affine2f tc_affine2f::trs(const tc_vec2f& translation, float radians, const tc_vec2f& scale) {
     return tc_affine2f_trs(translation, radians, scale);
 }
 
@@ -85,25 +82,17 @@ inline bool tc_affine2f::try_inverse(tc_affine2f& out, float epsilon) const {
 
 namespace termin {
 
-using Affine2f = ::tc_affine2f;
+    using Affine2f = ::tc_affine2f;
 
-static_assert(
-    std::is_same<Affine2f, ::tc_affine2f>::value,
-    "termin::Affine2f must alias tc_affine2f");
-static_assert(
-    std::is_standard_layout<Affine2f>::value,
-    "Affine2f must stay ABI-friendly");
-static_assert(
-    std::is_trivially_copyable<Affine2f>::value,
-    "Affine2f must stay trivially copyable");
-static_assert(
-    sizeof(Affine2f) == sizeof(float) * 6,
-    "Affine2f must stay a packed six-float value");
-static_assert(offsetof(Affine2f, m00) == sizeof(float) * 0, "Affine2f.m00 offset changed");
-static_assert(offsetof(Affine2f, m01) == sizeof(float) * 1, "Affine2f.m01 offset changed");
-static_assert(offsetof(Affine2f, m10) == sizeof(float) * 2, "Affine2f.m10 offset changed");
-static_assert(offsetof(Affine2f, m11) == sizeof(float) * 3, "Affine2f.m11 offset changed");
-static_assert(offsetof(Affine2f, tx) == sizeof(float) * 4, "Affine2f.tx offset changed");
-static_assert(offsetof(Affine2f, ty) == sizeof(float) * 5, "Affine2f.ty offset changed");
+    static_assert(std::is_same<Affine2f, ::tc_affine2f>::value, "termin::Affine2f must alias tc_affine2f");
+    static_assert(std::is_standard_layout<Affine2f>::value, "Affine2f must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<Affine2f>::value, "Affine2f must stay trivially copyable");
+    static_assert(sizeof(Affine2f) == sizeof(float) * 6, "Affine2f must stay a packed six-float value");
+    static_assert(offsetof(Affine2f, m00) == sizeof(float) * 0, "Affine2f.m00 offset changed");
+    static_assert(offsetof(Affine2f, m01) == sizeof(float) * 1, "Affine2f.m01 offset changed");
+    static_assert(offsetof(Affine2f, m10) == sizeof(float) * 2, "Affine2f.m10 offset changed");
+    static_assert(offsetof(Affine2f, m11) == sizeof(float) * 3, "Affine2f.m11 offset changed");
+    static_assert(offsetof(Affine2f, tx) == sizeof(float) * 4, "Affine2f.tx offset changed");
+    static_assert(offsetof(Affine2f, ty) == sizeof(float) * 5, "Affine2f.ty offset changed");
 
 } // namespace termin

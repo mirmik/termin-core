@@ -2,8 +2,8 @@
 #ifndef TCBASE_BINDING_TYPES_H
 #define TCBASE_BINDING_TYPES_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,9 +38,9 @@ typedef struct tc_handle {
 } tc_handle;
 
 #ifdef __cplusplus
-    #define TC_HANDLE_INVALID (tc_handle{UINT32_MAX, 0})
+#define TC_HANDLE_INVALID (tc_handle{UINT32_MAX, 0})
 #else
-    #define TC_HANDLE_INVALID ((tc_handle){UINT32_MAX, 0})
+#define TC_HANDLE_INVALID ((tc_handle){UINT32_MAX, 0})
 #endif
 
 static inline bool tc_handle_is_invalid(tc_handle h) {
@@ -53,11 +53,17 @@ static inline bool tc_handle_eq(tc_handle a, tc_handle b) {
 #endif
 
 #ifndef TC_DEFINE_HANDLE
-#define TC_DEFINE_HANDLE(name) \
-    typedef tc_handle name; \
-    static inline name name##_invalid(void) { return TC_HANDLE_INVALID; } \
-    static inline bool name##_is_invalid(name h) { return tc_handle_is_invalid(h); } \
-    static inline bool name##_eq(name a, name b) { return tc_handle_eq(a, b); }
+#define TC_DEFINE_HANDLE(name)                                                                                         \
+    typedef tc_handle name;                                                                                            \
+    static inline name name##_invalid(void) {                                                                          \
+        return TC_HANDLE_INVALID;                                                                                      \
+    }                                                                                                                  \
+    static inline bool name##_is_invalid(name h) {                                                                     \
+        return tc_handle_is_invalid(h);                                                                                \
+    }                                                                                                                  \
+    static inline bool name##_eq(name a, name b) {                                                                     \
+        return tc_handle_eq(a, b);                                                                                     \
+    }
 #endif
 
 // ============================================================================

@@ -1,9 +1,7 @@
 #include "common.hpp"
 
-namespace termin
-{
-    void bind_spatial_inertia3(nb::module_& module)
-    {
+namespace termin {
+    void bind_spatial_inertia3(nb::module_& module) {
         nb::class_<SpatialInertia3>(module, "SpatialInertia3")
             .def(nb::init<>())
             .def_rw("mass", &SpatialInertia3::mass)
@@ -16,7 +14,6 @@ namespace termin
             .def("kinetic_energy", &SpatialInertia3::kinetic_energy)
             .def("rotated_by", &SpatialInertia3::rotated_by)
             .def("transformed_by", &SpatialInertia3::transformed_by)
-            .def("inverse_transformed_by",
-                 &SpatialInertia3::inverse_transformed_by);
+            .def("inverse_transformed_by", &SpatialInertia3::inverse_transformed_by);
     }
 } // namespace termin

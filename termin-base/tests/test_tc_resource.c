@@ -1,6 +1,6 @@
 #include "guard_c.h"
-#include <tcbase/tc_resource.h>
 #include <string.h>
+#include <tcbase/tc_resource.h>
 
 typedef struct loader_probe {
     char observed_uuid[TC_UUID_SIZE];
@@ -11,12 +11,7 @@ typedef struct loader_probe {
 static bool probe_loader(const char* uuid, void* user_data) {
     loader_probe* probe = (loader_probe*)user_data;
     probe->calls++;
-    tc_resource_copy_uuid(
-        probe->observed_uuid,
-        sizeof(probe->observed_uuid),
-        uuid,
-        "probe_loader"
-    );
+    tc_resource_copy_uuid(probe->observed_uuid, sizeof(probe->observed_uuid), uuid, "probe_loader");
     return probe->result;
 }
 

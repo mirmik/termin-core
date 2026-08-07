@@ -1,7 +1,7 @@
 // tc_resource_map.c - Generic hashmap for resources by UUID
-#include <tcbase/tc_resource_map.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tcbase/tc_resource_map.h>
 
 // Cross-platform strdup
 #ifdef _WIN32
@@ -14,9 +14,9 @@
 // Internal structures
 // ============================================================================
 
-#define ENTRY_EMPTY   0
+#define ENTRY_EMPTY 0
 #define ENTRY_OCCUPIED 1
-#define ENTRY_DELETED  2
+#define ENTRY_DELETED 2
 
 typedef struct {
     char* key;
@@ -57,7 +57,8 @@ static bool map_resize(tc_resource_map* map, size_t new_capacity);
 
 tc_resource_map* tc_resource_map_new(tc_resource_free_fn destructor) {
     tc_resource_map* map = (tc_resource_map*)calloc(1, sizeof(tc_resource_map));
-    if (!map) return NULL;
+    if (!map)
+        return NULL;
 
     size_t cap = 16;
     map->entries = (resource_entry*)calloc(cap, sizeof(resource_entry));
@@ -75,7 +76,8 @@ tc_resource_map* tc_resource_map_new(tc_resource_free_fn destructor) {
 }
 
 void tc_resource_map_free(tc_resource_map* map) {
-    if (!map) return;
+    if (!map)
+        return;
 
     // Free all resources
     if (map->entries) {
@@ -94,7 +96,8 @@ void tc_resource_map_free(tc_resource_map* map) {
 }
 
 void tc_resource_map_clear(tc_resource_map* map) {
-    if (!map) return;
+    if (!map)
+        return;
 
     for (size_t i = 0; i < map->capacity; i++) {
         if (map->entries[i].state == ENTRY_OCCUPIED) {
@@ -162,14 +165,14 @@ static bool map_resize(tc_resource_map* map, size_t new_capacity) {
 // ============================================================================
 
 bool tc_resource_map_add(tc_resource_map* map, const char* uuid, void* resource) {
-    if (!map || !uuid) return false;
+    if (!map || !uuid)
+        return false;
 
     char* owned_key = tc_strdup(uuid);
     if (!owned_key) {
         return false;
     }
-    if (!tc_resource_map_reserve(map, 1) ||
-        !tc_resource_map_add_owned_key(map, owned_key, resource)) {
+    if (!tc_resource_map_reserve(map, 1) || !tc_resource_map_add_owned_key(map, owned_key, resource)) {
         free(owned_key);
         return false;
     }
@@ -177,9 +180,9 @@ bool tc_resource_map_add(tc_resource_map* map, const char* uuid, void* resource)
 }
 
 bool tc_resource_map_reserve(tc_resource_map* map, size_t additional) {
-    if (!map) return false;
-    if (map->deleted > SIZE_MAX - map->count ||
-        additional > SIZE_MAX - map->count - map->deleted) {
+    if (!map)
+        return false;
+    if (map->deleted > SIZE_MAX - map->count || additional > SIZE_MAX - map->count - map->deleted) {
         return false;
     }
     size_t required_slots = map->count + map->deleted + additional;
@@ -199,7 +202,8 @@ bool tc_resource_map_reserve(tc_resource_map* map, size_t additional) {
 }
 
 bool tc_resource_map_add_owned_key(tc_resource_map* map, char* key, void* resource) {
-    if (!map || !key) return false;
+    if (!map || !key)
+        return false;
 
     // Check if already exists
     if (tc_resource_map_contains(map, key)) {
@@ -227,7 +231,8 @@ bool tc_resource_map_add_owned_key(tc_resource_map* map, char* key, void* resour
             map->count++;
             return true;
         } else if (e->state == ENTRY_DELETED) {
-            if (first_deleted == SIZE_MAX) first_deleted = probe;
+            if (first_deleted == SIZE_MAX)
+                first_deleted = probe;
         }
     }
 
@@ -235,7 +240,8 @@ bool tc_resource_map_add_owned_key(tc_resource_map* map, char* key, void* resour
 }
 
 bool tc_resource_map_replace(tc_resource_map* map, const char* uuid, void* resource) {
-    if (!map || !uuid) return false;
+    if (!map || !uuid)
+        return false;
 
     uint64_t hash = hash_string(uuid);
     size_t mask = map->capacity - 1;
@@ -260,7 +266,8 @@ bool tc_resource_map_replace(tc_resource_map* map, const char* uuid, void* resou
 }
 
 void* tc_resource_map_get(const tc_resource_map* map, const char* uuid) {
-    if (!map || !uuid) return NULL;
+    if (!map || !uuid)
+        return NULL;
 
     uint64_t hash = hash_string(uuid);
     size_t mask = map->capacity - 1;
@@ -281,7 +288,8 @@ void* tc_resource_map_get(const tc_resource_map* map, const char* uuid) {
 }
 
 bool tc_resource_map_remove(tc_resource_map* map, const char* uuid) {
-    if (!map || !uuid) return false;
+    if (!map || !uuid)
+        return false;
 
     uint64_t hash = hash_string(uuid);
     size_t mask = map->capacity - 1;
@@ -322,12 +330,9 @@ size_t tc_resource_map_count(const tc_resource_map* map) {
 // Iteration
 // ============================================================================
 
-void tc_resource_map_foreach(
-    tc_resource_map* map,
-    tc_resource_iter_fn callback,
-    void* user_data
-) {
-    if (!map || !callback) return;
+void tc_resource_map_foreach(tc_resource_map* map, tc_resource_iter_fn callback, void* user_data) {
+    if (!map || !callback)
+        return;
 
     for (size_t i = 0; i < map->capacity; i++) {
         if (map->entries[i].state == ENTRY_OCCUPIED) {

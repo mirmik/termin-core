@@ -27,22 +27,18 @@ GUARD_C_TEST(test_tc_tensor_owned_contiguous) {
 
 GUARD_C_TEST(test_tc_tensor_borrowed_strided_copy) {
     float interleaved[] = {
-        1.0f, 10.0f,
-        2.0f, 20.0f,
-        3.0f, 30.0f,
+        1.0f,
+        10.0f,
+        2.0f,
+        20.0f,
+        3.0f,
+        30.0f,
     };
     size_t shape[2] = {3, 1};
     ptrdiff_t strides[2] = {8, 4};
 
     tc_tensor view = tc_tensor_empty();
-    GUARD_C_REQUIRE(tc_tensor_init_borrowed(
-        &view,
-        interleaved,
-        TC_DTYPE_F32,
-        2,
-        shape,
-        strides,
-        TC_TENSOR_READONLY));
+    GUARD_C_REQUIRE(tc_tensor_init_borrowed(&view, interleaved, TC_DTYPE_F32, 2, shape, strides, TC_TENSOR_READONLY));
 
     GUARD_C_CHECK(tc_tensor_is_valid(&view));
     GUARD_C_CHECK(tc_tensor_is_readonly(&view));

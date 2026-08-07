@@ -11,216 +11,206 @@ extern "C" {
 
 namespace tc {
 
-// ============================================================================
-// C++ language vtable callbacks for C dispatcher
-// ============================================================================
+    // ============================================================================
+    // C++ language vtable callbacks for C dispatcher
+    // ============================================================================
 
-static bool cpp_has(const char* kind_name, void* ctx) {
-    (void)ctx;
-    return KindRegistryCpp::instance().has(kind_name);
-}
-
-static tc_value cpp_serialize(const char* kind_name, const tc_value* input, void* ctx) {
-    (void)kind_name;
-    (void)ctx;
-    // For C++ kinds, actual serialization is done via KindRegistryCpp::serialize()
-    // which works with std::any. This callback is pass-through since the value
-    // is already serialized by the time it reaches the C API.
-    if (!input) return tc_value_nil();
-    return tc_value_copy(input);
-}
-
-static tc_value cpp_deserialize(const char* kind_name, const tc_value* input, void* context, void* ctx) {
-    (void)ctx;
-    (void)context;
-    if (!input || !kind_name) return tc_value_nil();
-
-    // vec3: pass-through list [x, y, z]
-    if (strcmp(kind_name, "vec3") == 0) {
-        if (input->type == TC_VALUE_LIST && input->data.list.count >= 3) {
-            return tc_value_copy(input);
-        }
-        return tc_value_nil();
+    static bool cpp_has(const char* kind_name, void* ctx) {
+        (void)ctx;
+        return KindRegistryCpp::instance().has(kind_name);
     }
 
-    // quat: pass-through list [w, x, y, z]
-    if (strcmp(kind_name, "quat") == 0) {
-        if (input->type == TC_VALUE_LIST && input->data.list.count >= 4) {
-            return tc_value_copy(input);
-        }
-        return tc_value_nil();
+    static tc_value cpp_serialize(const char* kind_name, const tc_value* input, void* ctx) {
+        (void)kind_name;
+        (void)ctx;
+        // For C++ kinds, actual serialization is done via KindRegistryCpp::serialize()
+        // which works with std::any. This callback is pass-through since the value
+        // is already serialized by the time it reaches the C API.
+        if (!input)
+            return tc_value_nil();
+        return tc_value_copy(input);
     }
 
-    // Default: pass-through
-    return tc_value_copy(input);
-}
+    static tc_value cpp_deserialize(const char* kind_name, const tc_value* input, void* context, void* ctx) {
+        (void)ctx;
+        (void)context;
+        if (!input || !kind_name)
+            return tc_value_nil();
 
-static size_t cpp_list(const char** out_names, size_t max_count, void* ctx) {
-    (void)out_names;
-    (void)max_count;
-    (void)ctx;
-    auto kinds = KindRegistryCpp::instance().kinds();
-    // Note: returning pointers to temporary strings is unsafe for this API.
-    // For now, we just return the count. Caller should use KindRegistryCpp::kinds() directly.
-    return kinds.size();
-}
-
-static bool g_cpp_kind_vtable_initialized = false;
-static bool g_cpp_kind_builtins_registered = false;
-
-static void init_cpp_lang_vtable() {
-    if (g_cpp_kind_vtable_initialized) return;
-    g_cpp_kind_vtable_initialized = true;
-
-    static tc_kind_lang_registry cpp_registry = {
-        cpp_has,
-        cpp_serialize,
-        cpp_deserialize,
-        cpp_list,
-        nullptr
-    };
-
-    tc_kind_set_lang_registry(TC_KIND_LANG_CPP, &cpp_registry);
-}
-
-// Singleton
-// ============================================================================
-
-KindRegistryCpp& KindRegistryCpp::instance() {
-    static KindRegistryCpp inst;
-
-    // Ensure vtable is registered on first access
-    init_cpp_lang_vtable();
-
-    // Register builtin kinds on first access
-    if (!g_cpp_kind_builtins_registered) {
-        g_cpp_kind_builtins_registered = true;
-        register_builtin_cpp_kinds();
-    }
-
-    return inst;
-}
-
-// ============================================================================
-// KindRegistryCpp methods (exported from DLL)
-// ============================================================================
-
-void KindRegistryCpp::register_kind(
-    const std::string& name,
-    std::function<tc_value(const std::any&)> serialize,
-    std::function<std::any(const tc_value*, void*)> deserialize
-) {
-    KindCpp kind;
-    kind.name = name;
-    kind.serialize = std::move(serialize);
-    kind.deserialize = std::move(deserialize);
-    _kinds[name] = std::move(kind);
-}
-
-KindCpp* KindRegistryCpp::get(const std::string& name) {
-    auto it = _kinds.find(name);
-    return it != _kinds.end() ? &it->second : nullptr;
-}
-
-const KindCpp* KindRegistryCpp::get(const std::string& name) const {
-    auto it = _kinds.find(name);
-    return it != _kinds.end() ? &it->second : nullptr;
-}
-
-bool KindRegistryCpp::has(const std::string& name) const {
-    return _kinds.find(name) != _kinds.end();
-}
-
-void KindRegistryCpp::mark_handle_kind(const std::string& name) {
-    auto it = _kinds.find(name);
-    if (it == _kinds.end()) {
-        throw std::runtime_error("cannot mark unregistered kind '" + name + "' as a handle");
-    }
-    it->second.is_handle = true;
-}
-
-std::vector<std::string> KindRegistryCpp::kinds() const {
-    std::vector<std::string> result;
-    result.reserve(_kinds.size());
-    for (const auto& [name, _] : _kinds) {
-        result.push_back(name);
-    }
-    return result;
-}
-
-void KindRegistryCpp::clear() {
-    _kinds.clear();
-}
-
-void reset_kind_registry_cpp() {
-    KindRegistryCpp::instance().clear();
-    g_cpp_kind_vtable_initialized = false;
-    g_cpp_kind_builtins_registered = false;
-}
-
-tc_value KindRegistryCpp::serialize(const std::string& kind_name, const std::any& value) const {
-    return serialize_field(kind_name, value, "", "");
-}
-
-tc_value KindRegistryCpp::serialize_field(
-    const std::string& kind_name,
-    const std::any& value,
-    const std::string& type_name,
-    const std::string& path
-) const {
-    auto* kind = get(kind_name);
-    if (!kind) {
-        tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' not registered in KindRegistryCpp", kind_name.c_str());
-        return tc_value_nil();
-    }
-    if (kind->serialize) {
-        try {
-            return kind->serialize(value);
-        } catch (const std::bad_any_cast& e) {
-            if (!type_name.empty() && !path.empty()) {
-                tc_log(
-                    TC_LOG_ERROR,
-                    "[Inspect] Field '%s.%s' kind '%s' cannot serialize C++ value type '%s': %s",
-                    type_name.c_str(),
-                    path.c_str(),
-                    kind_name.c_str(),
-                    value.has_value() ? value.type().name() : "<empty>",
-                    e.what());
-            } else {
-                tc_log(
-                    TC_LOG_ERROR,
-                    "[Inspect] Kind '%s' cannot serialize C++ value type '%s': %s",
-                    kind_name.c_str(),
-                    value.has_value() ? value.type().name() : "<empty>",
-                    e.what());
+        // vec3: pass-through list [x, y, z]
+        if (strcmp(kind_name, "vec3") == 0) {
+            if (input->type == TC_VALUE_LIST && input->data.list.count >= 3) {
+                return tc_value_copy(input);
             }
             return tc_value_nil();
         }
-    }
-    tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' has no serialize handler", kind_name.c_str());
-    return tc_value_nil();
-}
 
-std::any KindRegistryCpp::deserialize(const std::string& kind_name, const tc_value* data, void* context) const {
-    auto* kind = get(kind_name);
-    if (!kind) {
-        tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' not registered in KindRegistryCpp", kind_name.c_str());
-        return std::any{};
+        // quat: pass-through list [w, x, y, z]
+        if (strcmp(kind_name, "quat") == 0) {
+            if (input->type == TC_VALUE_LIST && input->data.list.count >= 4) {
+                return tc_value_copy(input);
+            }
+            return tc_value_nil();
+        }
+
+        // Default: pass-through
+        return tc_value_copy(input);
     }
-    if (!kind->deserialize) {
-        tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' has no deserialize handler", kind_name.c_str());
-        return std::any{};
+
+    static size_t cpp_list(const char** out_names, size_t max_count, void* ctx) {
+        (void)out_names;
+        (void)max_count;
+        (void)ctx;
+        auto kinds = KindRegistryCpp::instance().kinds();
+        // Note: returning pointers to temporary strings is unsafe for this API.
+        // For now, we just return the count. Caller should use KindRegistryCpp::kinds() directly.
+        return kinds.size();
     }
-    try {
-        return kind->deserialize(data, context);
-    } catch (const std::bad_any_cast& e) {
-        tc_log(
-            TC_LOG_ERROR,
-            "[Inspect] Kind '%s' produced incompatible C++ value during deserialize: %s",
-            kind_name.c_str(),
-            e.what());
-        return std::any{};
+
+    static bool g_cpp_kind_vtable_initialized = false;
+    static bool g_cpp_kind_builtins_registered = false;
+
+    static void init_cpp_lang_vtable() {
+        if (g_cpp_kind_vtable_initialized)
+            return;
+        g_cpp_kind_vtable_initialized = true;
+
+        static tc_kind_lang_registry cpp_registry = {cpp_has, cpp_serialize, cpp_deserialize, cpp_list, nullptr};
+
+        tc_kind_set_lang_registry(TC_KIND_LANG_CPP, &cpp_registry);
     }
-}
+
+    // Singleton
+    // ============================================================================
+
+    KindRegistryCpp& KindRegistryCpp::instance() {
+        static KindRegistryCpp inst;
+
+        // Ensure vtable is registered on first access
+        init_cpp_lang_vtable();
+
+        // Register builtin kinds on first access
+        if (!g_cpp_kind_builtins_registered) {
+            g_cpp_kind_builtins_registered = true;
+            register_builtin_cpp_kinds();
+        }
+
+        return inst;
+    }
+
+    // ============================================================================
+    // KindRegistryCpp methods (exported from DLL)
+    // ============================================================================
+
+    void KindRegistryCpp::register_kind(const std::string& name,
+                                        std::function<tc_value(const std::any&)> serialize,
+                                        std::function<std::any(const tc_value*, void*)> deserialize) {
+        KindCpp kind;
+        kind.name = name;
+        kind.serialize = std::move(serialize);
+        kind.deserialize = std::move(deserialize);
+        _kinds[name] = std::move(kind);
+    }
+
+    KindCpp* KindRegistryCpp::get(const std::string& name) {
+        auto it = _kinds.find(name);
+        return it != _kinds.end() ? &it->second : nullptr;
+    }
+
+    const KindCpp* KindRegistryCpp::get(const std::string& name) const {
+        auto it = _kinds.find(name);
+        return it != _kinds.end() ? &it->second : nullptr;
+    }
+
+    bool KindRegistryCpp::has(const std::string& name) const {
+        return _kinds.find(name) != _kinds.end();
+    }
+
+    void KindRegistryCpp::mark_handle_kind(const std::string& name) {
+        auto it = _kinds.find(name);
+        if (it == _kinds.end()) {
+            throw std::runtime_error("cannot mark unregistered kind '" + name + "' as a handle");
+        }
+        it->second.is_handle = true;
+    }
+
+    std::vector<std::string> KindRegistryCpp::kinds() const {
+        std::vector<std::string> result;
+        result.reserve(_kinds.size());
+        for (const auto& [name, _] : _kinds) {
+            result.push_back(name);
+        }
+        return result;
+    }
+
+    void KindRegistryCpp::clear() {
+        _kinds.clear();
+    }
+
+    void reset_kind_registry_cpp() {
+        KindRegistryCpp::instance().clear();
+        g_cpp_kind_vtable_initialized = false;
+        g_cpp_kind_builtins_registered = false;
+    }
+
+    tc_value KindRegistryCpp::serialize(const std::string& kind_name, const std::any& value) const {
+        return serialize_field(kind_name, value, "", "");
+    }
+
+    tc_value KindRegistryCpp::serialize_field(const std::string& kind_name,
+                                              const std::any& value,
+                                              const std::string& type_name,
+                                              const std::string& path) const {
+        auto* kind = get(kind_name);
+        if (!kind) {
+            tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' not registered in KindRegistryCpp", kind_name.c_str());
+            return tc_value_nil();
+        }
+        if (kind->serialize) {
+            try {
+                return kind->serialize(value);
+            } catch (const std::bad_any_cast& e) {
+                if (!type_name.empty() && !path.empty()) {
+                    tc_log(TC_LOG_ERROR,
+                           "[Inspect] Field '%s.%s' kind '%s' cannot serialize C++ value type '%s': %s",
+                           type_name.c_str(),
+                           path.c_str(),
+                           kind_name.c_str(),
+                           value.has_value() ? value.type().name() : "<empty>",
+                           e.what());
+                } else {
+                    tc_log(TC_LOG_ERROR,
+                           "[Inspect] Kind '%s' cannot serialize C++ value type '%s': %s",
+                           kind_name.c_str(),
+                           value.has_value() ? value.type().name() : "<empty>",
+                           e.what());
+                }
+                return tc_value_nil();
+            }
+        }
+        tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' has no serialize handler", kind_name.c_str());
+        return tc_value_nil();
+    }
+
+    std::any KindRegistryCpp::deserialize(const std::string& kind_name, const tc_value* data, void* context) const {
+        auto* kind = get(kind_name);
+        if (!kind) {
+            tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' not registered in KindRegistryCpp", kind_name.c_str());
+            return std::any{};
+        }
+        if (!kind->deserialize) {
+            tc_log(TC_LOG_WARN, "[Inspect] Kind '%s' has no deserialize handler", kind_name.c_str());
+            return std::any{};
+        }
+        try {
+            return kind->deserialize(data, context);
+        } catch (const std::bad_any_cast& e) {
+            tc_log(TC_LOG_ERROR,
+                   "[Inspect] Kind '%s' produced incompatible C++ value during deserialize: %s",
+                   kind_name.c_str(),
+                   e.what());
+            return std::any{};
+        }
+    }
 
 } // namespace tc

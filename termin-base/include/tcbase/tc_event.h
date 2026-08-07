@@ -1,9 +1,9 @@
 #ifndef TC_EVENT_H
 #define TC_EVENT_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #include <tcbase/tcbase_api.h>
 
@@ -32,12 +32,10 @@ typedef void (*tc_event_handler_fn)(const tc_event* event, void* user_data);
 TCBASE_API tc_event_bus* tc_event_bus_create(void);
 TCBASE_API void tc_event_bus_destroy(tc_event_bus* bus);
 
-TCBASE_API tc_event_subscription tc_event_bus_subscribe(
-    tc_event_bus* bus,
-    tc_event_type type,
-    tc_event_handler_fn handler,
-    void* user_data
-);
+TCBASE_API tc_event_subscription tc_event_bus_subscribe(tc_event_bus* bus,
+                                                        tc_event_type type,
+                                                        tc_event_handler_fn handler,
+                                                        void* user_data);
 
 TCBASE_API bool tc_event_bus_unsubscribe(tc_event_bus* bus, tc_event_subscription subscription);
 TCBASE_API void tc_event_bus_publish(tc_event_bus* bus, const tc_event* event);

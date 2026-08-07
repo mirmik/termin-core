@@ -1,112 +1,120 @@
 // tc_inspect_core_instance.cpp - Inspect core singleton, vtable wiring, and core init
 // Compiled into termin-inspect to keep a single core instance.
 
-#include "tc_inspect_cpp.hpp"
 #include "inspect/tc_kind_cpp.hpp"
+#include "tc_inspect_cpp.hpp"
 
 #ifdef _WIN32
-    #ifdef TERMIN_INSPECT_EXPORTS
-        #define TC_INSPECT_INIT_API __declspec(dllexport)
-    #else
-        #define TC_INSPECT_INIT_API __declspec(dllimport)
-    #endif
+#ifdef TERMIN_INSPECT_EXPORTS
+#define TC_INSPECT_INIT_API __declspec(dllexport)
 #else
-    #define TC_INSPECT_INIT_API
+#define TC_INSPECT_INIT_API __declspec(dllimport)
+#endif
+#else
+#define TC_INSPECT_INIT_API
 #endif
 
 namespace tc {
 
-InspectRegistry& InspectRegistry::instance() {
-    static InspectRegistry reg;
-    return reg;
-}
-
-static bool cpp_has_type(const char* type_name, void* ctx) {
-    (void)ctx;
-    if (!type_name) return false;
-    InspectRegistry& reg = InspectRegistry::instance();
-    return reg.has_type(type_name) && reg.get_type_backend(type_name) == TypeBackend::Cpp;
-}
-
-static const char* cpp_get_parent(const char* type_name, void* ctx) {
-    (void)ctx;
-    return InspectRegistry::instance().get_type_parent_symbol(type_name);
-}
-
-static size_t cpp_field_count(const char* type_name, void* ctx) {
-    (void)ctx;
-    return InspectRegistry::instance().all_fields_count(type_name);
-}
-
-static bool cpp_get_field(const char* type_name, size_t index, tc_field_info* out, void* ctx) {
-    (void)ctx;
-    const InspectFieldInfo* info = InspectRegistry::instance().get_field_by_index(type_name, index);
-    if (!info) return false;
-    info->fill_c_info(out);
-    return true;
-}
-
-static bool cpp_find_field(const char* type_name, const char* path, tc_field_info* out, void* ctx) {
-    (void)ctx;
-    const InspectFieldInfo* info = InspectRegistry::instance().find_field(type_name, path);
-    if (!info) return false;
-    info->fill_c_info(out);
-    return true;
-}
-
-static tc_value cpp_get(void* obj, const char* type_name, const char* path, void* ctx) {
-    (void)ctx;
-    return InspectRegistry::instance().get_tc_value(obj, type_name, path);
-}
-
-static bool cpp_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
-    (void)ctx;
-    try {
-        const bool applied = InspectRegistry::instance().set_tc_value(
-            obj, type_name ? type_name : "", path ? path : "", value, context);
-        if (!applied) {
-            tc_log(TC_LOG_ERROR, "[Inspect] C++ setter rejected value for type '%s' field '%s'",
-                   type_name ? type_name : "", path ? path : "");
-        }
-        return applied;
-    } catch (const std::exception& error) {
-        tc_log(TC_LOG_ERROR, "[Inspect] C++ set failed for type '%s' field '%s': %s",
-               type_name ? type_name : "", path ? path : "", error.what());
-        return false;
-    } catch (...) {
-        tc_log(TC_LOG_ERROR, "[Inspect] C++ set failed for type '%s' field '%s'",
-               type_name ? type_name : "", path ? path : "");
-        return false;
+    InspectRegistry& InspectRegistry::instance() {
+        static InspectRegistry reg;
+        return reg;
     }
-}
 
-static void cpp_action(void* obj, const char* type_name, const char* path, void* ctx) {
-    (void)ctx;
-    InspectContext inspect_context;
-    InspectRegistry::instance().action_field(obj, type_name, path, inspect_context);
-}
+    static bool cpp_has_type(const char* type_name, void* ctx) {
+        (void)ctx;
+        if (!type_name)
+            return false;
+        InspectRegistry& reg = InspectRegistry::instance();
+        return reg.has_type(type_name) && reg.get_type_backend(type_name) == TypeBackend::Cpp;
+    }
 
-static tc_value cpp_get_type_metadata(const char* type_name, void* ctx) {
-    (void)ctx;
-    return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
-}
+    static const char* cpp_get_parent(const char* type_name, void* ctx) {
+        (void)ctx;
+        return InspectRegistry::instance().get_type_parent_symbol(type_name);
+    }
 
-void init_cpp_inspect_vtable() {
-    static tc_inspect_lang_vtable cpp_vtable = {
-        cpp_has_type,
-        cpp_get_parent,
-        cpp_field_count,
-        cpp_get_field,
-        cpp_find_field,
-        cpp_get,
-        cpp_set,
-        cpp_action,
-        cpp_get_type_metadata,
-        nullptr
-    };
+    static size_t cpp_field_count(const char* type_name, void* ctx) {
+        (void)ctx;
+        return InspectRegistry::instance().all_fields_count(type_name);
+    }
 
-    tc_inspect_set_lang_vtable(TC_INSPECT_LANG_CPP, &cpp_vtable);
-}
+    static bool cpp_get_field(const char* type_name, size_t index, tc_field_info* out, void* ctx) {
+        (void)ctx;
+        const InspectFieldInfo* info = InspectRegistry::instance().get_field_by_index(type_name, index);
+        if (!info)
+            return false;
+        info->fill_c_info(out);
+        return true;
+    }
+
+    static bool cpp_find_field(const char* type_name, const char* path, tc_field_info* out, void* ctx) {
+        (void)ctx;
+        const InspectFieldInfo* info = InspectRegistry::instance().find_field(type_name, path);
+        if (!info)
+            return false;
+        info->fill_c_info(out);
+        return true;
+    }
+
+    static tc_value cpp_get(void* obj, const char* type_name, const char* path, void* ctx) {
+        (void)ctx;
+        return InspectRegistry::instance().get_tc_value(obj, type_name, path);
+    }
+
+    static bool cpp_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
+        (void)ctx;
+        try {
+            const bool applied = InspectRegistry::instance().set_tc_value(
+                obj, type_name ? type_name : "", path ? path : "", value, context);
+            if (!applied) {
+                tc_log(TC_LOG_ERROR,
+                       "[Inspect] C++ setter rejected value for type '%s' field '%s'",
+                       type_name ? type_name : "",
+                       path ? path : "");
+            }
+            return applied;
+        } catch (const std::exception& error) {
+            tc_log(TC_LOG_ERROR,
+                   "[Inspect] C++ set failed for type '%s' field '%s': %s",
+                   type_name ? type_name : "",
+                   path ? path : "",
+                   error.what());
+            return false;
+        } catch (...) {
+            tc_log(TC_LOG_ERROR,
+                   "[Inspect] C++ set failed for type '%s' field '%s'",
+                   type_name ? type_name : "",
+                   path ? path : "");
+            return false;
+        }
+    }
+
+    static void cpp_action(void* obj, const char* type_name, const char* path, void* ctx) {
+        (void)ctx;
+        InspectContext inspect_context;
+        InspectRegistry::instance().action_field(obj, type_name, path, inspect_context);
+    }
+
+    static tc_value cpp_get_type_metadata(const char* type_name, void* ctx) {
+        (void)ctx;
+        return InspectRegistry::instance().type_metadata(type_name ? type_name : "");
+    }
+
+    void init_cpp_inspect_vtable() {
+        static tc_inspect_lang_vtable cpp_vtable = {cpp_has_type,
+                                                    cpp_get_parent,
+                                                    cpp_field_count,
+                                                    cpp_get_field,
+                                                    cpp_find_field,
+                                                    cpp_get,
+                                                    cpp_set,
+                                                    cpp_action,
+                                                    cpp_get_type_metadata,
+                                                    nullptr};
+
+        tc_inspect_set_lang_vtable(TC_INSPECT_LANG_CPP, &cpp_vtable);
+    }
 
 } // namespace tc
 

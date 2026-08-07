@@ -34,7 +34,7 @@ typedef struct tc_dispatch_stats {
     bool internal_error;
 } tc_dispatch_stats;
 
-#define TC_DISPATCH_ALL ((size_t)-1)
+#define TC_DISPATCH_ALL ((size_t) - 1)
 
 TERMIN_DISPATCH_API tc_dispatch_ticket tc_dispatch_ticket_invalid(void);
 TERMIN_DISPATCH_API bool tc_dispatch_ticket_is_valid(tc_dispatch_ticket ticket);
@@ -47,22 +47,17 @@ TERMIN_DISPATCH_API tc_dispatcher* tc_dispatcher_create(void);
  * exactly once after execution, cancellation, discard, or dispatcher
  * destruction.
  */
-TERMIN_DISPATCH_API bool tc_dispatcher_post(
-    tc_dispatcher* dispatcher,
-    tc_dispatch_callback callback,
-    tc_dispatch_dispose dispose,
-    void* user_data,
-    tc_dispatch_ticket* out_ticket
-);
+TERMIN_DISPATCH_API bool tc_dispatcher_post(tc_dispatcher* dispatcher,
+                                            tc_dispatch_callback callback,
+                                            tc_dispatch_dispose dispose,
+                                            void* user_data,
+                                            tc_dispatch_ticket* out_ticket);
 
 /*
  * Cancel queued work. Returns false for stale, executing, completed, or
  * otherwise unknown tickets.
  */
-TERMIN_DISPATCH_API bool tc_dispatcher_cancel(
-    tc_dispatcher* dispatcher,
-    tc_dispatch_ticket ticket
-);
+TERMIN_DISPATCH_API bool tc_dispatcher_cancel(tc_dispatcher* dispatcher, tc_dispatch_ticket ticket);
 
 /*
  * Execute up to limit callbacks on the calling thread. TC_DISPATCH_ALL drains
@@ -72,10 +67,7 @@ TERMIN_DISPATCH_API bool tc_dispatcher_cancel(
  * Concurrent drain calls are serialized. A recursive drain from a callback
  * returns immediately with busy=true.
  */
-TERMIN_DISPATCH_API tc_dispatch_stats tc_dispatcher_drain(
-    tc_dispatcher* dispatcher,
-    size_t limit
-);
+TERMIN_DISPATCH_API tc_dispatch_stats tc_dispatcher_drain(tc_dispatcher* dispatcher, size_t limit);
 
 /* Reject future posts. Already queued work remains available to drain. */
 TERMIN_DISPATCH_API bool tc_dispatcher_close(tc_dispatcher* dispatcher);

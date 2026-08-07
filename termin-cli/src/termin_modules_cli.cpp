@@ -7,13 +7,13 @@
 
 namespace {
 
-std::vector<std::string> tail_args(int argc, char** argv) {
-    std::vector<std::string> result;
-    for (int i = 1; i < argc; ++i) {
-        result.emplace_back(argv[i]);
+    std::vector<std::string> tail_args(int argc, char** argv) {
+        std::vector<std::string> result;
+        for (int i = 1; i < argc; ++i) {
+            result.emplace_back(argv[i]);
+        }
+        return result;
     }
-    return result;
-}
 
 } // namespace
 

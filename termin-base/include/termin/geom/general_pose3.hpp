@@ -1,45 +1,35 @@
 #pragma once
 
+#include "pose3.hpp"
+#include "quat.hpp"
+#include "vec3.hpp"
 #include <cmath>
 #include <cstddef>
 #include <type_traits>
-#include "vec3.hpp"
-#include "quat.hpp"
-#include "pose3.hpp"
 
 inline tc_general_pose3 tc_general_pose3::identity() {
     return {};
 }
 
-inline tc_general_pose3 tc_general_pose3::compose_trs_projected(
-    const tc_general_pose3& other) const {
+inline tc_general_pose3 tc_general_pose3::compose_trs_projected(const tc_general_pose3& other) const {
     tc_vec3 scaled_child{scale.x * other.lin.x, scale.y * other.lin.y, scale.z * other.lin.z};
     tc_vec3 rotated_child = ang.rotate(scaled_child);
-    return {
-        ang * other.ang,
-        lin + rotated_child,
-        {scale.x * other.scale.x, scale.y * other.scale.y, scale.z * other.scale.z}
-    };
+    return {ang * other.ang,
+            lin + rotated_child,
+            {scale.x * other.scale.x, scale.y * other.scale.y, scale.z * other.scale.z}};
 }
 
-inline tc_general_pose3 tc_general_pose3::compose_trs_projected(
-    const tc_pose3& other) const {
+inline tc_general_pose3 tc_general_pose3::compose_trs_projected(const tc_pose3& other) const {
     tc_vec3 scaled_child{scale.x * other.lin.x, scale.y * other.lin.y, scale.z * other.lin.z};
     tc_vec3 rotated_child = ang.rotate(scaled_child);
-    return {
-        ang * other.ang,
-        lin + rotated_child,
-        scale
-    };
+    return {ang * other.ang, lin + rotated_child, scale};
 }
 
 inline tc_general_pose3 tc_general_pose3::inverse_trs_projected() const {
     tc_quat inv_ang = ang.inverse();
-    tc_vec3 inv_scale{
-        scale.x != 0.0 ? 1.0 / scale.x : 0.0,
-        scale.y != 0.0 ? 1.0 / scale.y : 0.0,
-        scale.z != 0.0 ? 1.0 / scale.z : 0.0
-    };
+    tc_vec3 inv_scale{scale.x != 0.0 ? 1.0 / scale.x : 0.0,
+                      scale.y != 0.0 ? 1.0 / scale.y : 0.0,
+                      scale.z != 0.0 ? 1.0 / scale.z : 0.0};
     tc_vec3 inv_lin = inv_ang.rotate(-lin);
     inv_lin.x *= inv_scale.x;
     inv_lin.y *= inv_scale.y;
@@ -66,11 +56,9 @@ inline tc_vec3 tc_general_pose3::rotate_point(const tc_vec3& p) const {
 }
 
 inline tc_vec3 tc_general_pose3::inverse_transform_point(const tc_vec3& p) const {
-    tc_vec3 inv_scale{
-        scale.x != 0.0 ? 1.0 / scale.x : 0.0,
-        scale.y != 0.0 ? 1.0 / scale.y : 0.0,
-        scale.z != 0.0 ? 1.0 / scale.z : 0.0
-    };
+    tc_vec3 inv_scale{scale.x != 0.0 ? 1.0 / scale.x : 0.0,
+                      scale.y != 0.0 ? 1.0 / scale.y : 0.0,
+                      scale.z != 0.0 ? 1.0 / scale.z : 0.0};
     tc_vec3 diff = p - lin;
     tc_vec3 rot = ang.inverse_rotate(diff);
     rot.x *= inv_scale.x;
@@ -80,11 +68,9 @@ inline tc_vec3 tc_general_pose3::inverse_transform_point(const tc_vec3& p) const
 }
 
 inline tc_vec3 tc_general_pose3::inverse_transform_vector(const tc_vec3& v) const {
-    tc_vec3 inv_scale{
-        scale.x != 0.0 ? 1.0 / scale.x : 0.0,
-        scale.y != 0.0 ? 1.0 / scale.y : 0.0,
-        scale.z != 0.0 ? 1.0 / scale.z : 0.0
-    };
+    tc_vec3 inv_scale{scale.x != 0.0 ? 1.0 / scale.x : 0.0,
+                      scale.y != 0.0 ? 1.0 / scale.y : 0.0,
+                      scale.z != 0.0 ? 1.0 / scale.z : 0.0};
     tc_vec3 rot = ang.inverse_rotate(v);
     rot.x *= inv_scale.x;
     rot.y *= inv_scale.y;
@@ -195,19 +181,39 @@ inline void tc_general_pose3::rotation_matrix(double* m) const {
 inline void tc_general_pose3::matrix4(double* m) const {
     double r[9];
     rotation_matrix(r);
-    m[0] = r[0] * scale.x; m[1] = r[3] * scale.x; m[2] = r[6] * scale.x; m[3] = 0.0;
-    m[4] = r[1] * scale.y; m[5] = r[4] * scale.y; m[6] = r[7] * scale.y; m[7] = 0.0;
-    m[8] = r[2] * scale.z; m[9] = r[5] * scale.z; m[10] = r[8] * scale.z; m[11] = 0.0;
-    m[12] = lin.x; m[13] = lin.y; m[14] = lin.z; m[15] = 1.0;
+    m[0] = r[0] * scale.x;
+    m[1] = r[3] * scale.x;
+    m[2] = r[6] * scale.x;
+    m[3] = 0.0;
+    m[4] = r[1] * scale.y;
+    m[5] = r[4] * scale.y;
+    m[6] = r[7] * scale.y;
+    m[7] = 0.0;
+    m[8] = r[2] * scale.z;
+    m[9] = r[5] * scale.z;
+    m[10] = r[8] * scale.z;
+    m[11] = 0.0;
+    m[12] = lin.x;
+    m[13] = lin.y;
+    m[14] = lin.z;
+    m[15] = 1.0;
 }
 
 inline void tc_general_pose3::matrix34(double* m) const {
     double r[9];
     rotation_matrix(r);
-    m[0] = r[0] * scale.x; m[1] = r[3] * scale.x; m[2] = r[6] * scale.x;
-    m[3] = r[1] * scale.y; m[4] = r[4] * scale.y; m[5] = r[7] * scale.y;
-    m[6] = r[2] * scale.z; m[7] = r[5] * scale.z; m[8] = r[8] * scale.z;
-    m[9] = lin.x; m[10] = lin.y; m[11] = lin.z;
+    m[0] = r[0] * scale.x;
+    m[1] = r[3] * scale.x;
+    m[2] = r[6] * scale.x;
+    m[3] = r[1] * scale.y;
+    m[4] = r[4] * scale.y;
+    m[5] = r[7] * scale.y;
+    m[6] = r[2] * scale.z;
+    m[7] = r[5] * scale.z;
+    m[8] = r[8] * scale.z;
+    m[9] = lin.x;
+    m[10] = lin.y;
+    m[11] = lin.z;
 }
 
 inline void tc_general_pose3::inverse_matrix4(double* m) const {
@@ -234,10 +240,22 @@ inline void tc_general_pose3::inverse_matrix4(double* m) const {
     double ty = -(m10 * lin.x + m11 * lin.y + m12 * lin.z);
     double tz = -(m20 * lin.x + m21 * lin.y + m22 * lin.z);
 
-    m[0] = m00; m[1] = m10; m[2] = m20; m[3] = 0.0;
-    m[4] = m01; m[5] = m11; m[6] = m21; m[7] = 0.0;
-    m[8] = m02; m[9] = m12; m[10] = m22; m[11] = 0.0;
-    m[12] = tx; m[13] = ty; m[14] = tz; m[15] = 1.0;
+    m[0] = m00;
+    m[1] = m10;
+    m[2] = m20;
+    m[3] = 0.0;
+    m[4] = m01;
+    m[5] = m11;
+    m[6] = m21;
+    m[7] = 0.0;
+    m[8] = m02;
+    m[9] = m12;
+    m[10] = m22;
+    m[11] = 0.0;
+    m[12] = tx;
+    m[13] = ty;
+    m[14] = tz;
+    m[15] = 1.0;
 }
 
 inline double tc_general_pose3::distance(const tc_general_pose3& other) const {
@@ -304,17 +322,14 @@ inline tc_general_pose3 tc_general_pose3::up(double d) {
     return move_z(d);
 }
 
-inline tc_general_pose3 tc_general_pose3::looking_at(
-    const tc_vec3& eye,
-    const tc_vec3& target,
-    const tc_vec3& up_vec) {
+inline tc_general_pose3 tc_general_pose3::looking_at(const tc_vec3& eye, const tc_vec3& target, const tc_vec3& up_vec) {
     tc_vec3 forward_vec = (target - eye).normalized();
     tc_vec3 right_vec = forward_vec.cross(up_vec).normalized();
     tc_vec3 up_corrected = right_vec.cross(forward_vec);
 
-    double r00 = right_vec.x,   r01 = forward_vec.x,   r02 = up_corrected.x;
-    double r10 = right_vec.y,   r11 = forward_vec.y,   r12 = up_corrected.y;
-    double r20 = right_vec.z,   r21 = forward_vec.z,   r22 = up_corrected.z;
+    double r00 = right_vec.x, r01 = forward_vec.x, r02 = up_corrected.x;
+    double r10 = right_vec.y, r11 = forward_vec.y, r12 = up_corrected.y;
+    double r20 = right_vec.z, r21 = forward_vec.z, r22 = up_corrected.z;
 
     double trace = r00 + r11 + r22;
     tc_quat q;
@@ -349,39 +364,27 @@ inline tc_general_pose3 tc_general_pose3::looking_at(
 
 namespace termin {
 
-using GeneralPose3 = ::tc_general_pose3;
+    using GeneralPose3 = ::tc_general_pose3;
 
-static_assert(std::is_same<GeneralPose3, ::tc_general_pose3>::value,
-              "termin::GeneralPose3 must alias tc_general_pose3");
-static_assert(std::is_standard_layout<GeneralPose3>::value,
-              "GeneralPose3 must stay ABI-friendly");
-static_assert(std::is_trivially_copyable<GeneralPose3>::value,
-              "GeneralPose3 must stay trivially copyable");
-static_assert(offsetof(GeneralPose3, ang) == 0, "GeneralPose3.ang offset changed");
-static_assert(offsetof(GeneralPose3, lin) == sizeof(Quat),
-              "GeneralPose3.lin offset changed");
-static_assert(offsetof(GeneralPose3, scale) == sizeof(Quat) + sizeof(Vec3),
-              "GeneralPose3.scale offset changed");
+    static_assert(std::is_same<GeneralPose3, ::tc_general_pose3>::value,
+                  "termin::GeneralPose3 must alias tc_general_pose3");
+    static_assert(std::is_standard_layout<GeneralPose3>::value, "GeneralPose3 must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<GeneralPose3>::value, "GeneralPose3 must stay trivially copyable");
+    static_assert(offsetof(GeneralPose3, ang) == 0, "GeneralPose3.ang offset changed");
+    static_assert(offsetof(GeneralPose3, lin) == sizeof(Quat), "GeneralPose3.lin offset changed");
+    static_assert(offsetof(GeneralPose3, scale) == sizeof(Quat) + sizeof(Vec3), "GeneralPose3.scale offset changed");
 
-inline GeneralPose3 lerp(const GeneralPose3& a, const GeneralPose3& b, double t) {
-    return {
-        slerp(a.ang, b.ang, t),
-        a.lin + (b.lin - a.lin) * t,
-        {a.scale.x + (b.scale.x - a.scale.x) * t,
-         a.scale.y + (b.scale.y - a.scale.y) * t,
-         a.scale.z + (b.scale.z - a.scale.z) * t}
-    };
-}
+    inline GeneralPose3 lerp(const GeneralPose3& a, const GeneralPose3& b, double t) {
+        return {slerp(a.ang, b.ang, t),
+                a.lin + (b.lin - a.lin) * t,
+                {a.scale.x + (b.scale.x - a.scale.x) * t,
+                 a.scale.y + (b.scale.y - a.scale.y) * t,
+                 a.scale.z + (b.scale.z - a.scale.z) * t}};
+    }
 
-inline GeneralPose3 compose_trs_projected(
-    const Pose3& a,
-    const GeneralPose3& b) {
-    Vec3 rotated_child = a.ang.rotate(b.lin);
-    return {
-        a.ang * b.ang,
-        a.lin + rotated_child,
-        b.scale
-    };
-}
+    inline GeneralPose3 compose_trs_projected(const Pose3& a, const GeneralPose3& b) {
+        Vec3 rotated_child = a.ang.rotate(b.lin);
+        return {a.ang * b.ang, a.lin + rotated_child, b.scale};
+    }
 
 } // namespace termin

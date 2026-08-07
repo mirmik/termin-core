@@ -2,15 +2,21 @@
 #ifndef TC_AABB_H
 #define TC_AABB_H
 
-#include <tcbase/tc_types.h>
 #include "geom/tc_pose.h"
 #include "geom/tc_vec3.h"
 #include <math.h>
+#include <tcbase/tc_types.h>
 
 #ifdef __cplusplus
-    #define TC_AABB(min_, max_) tc_aabb{min_, max_}
+#define TC_AABB(min_, max_)                                                                                            \
+    tc_aabb {                                                                                                          \
+        min_, max_                                                                                                     \
+    }
 #else
-    #define TC_AABB(min_, max_) (tc_aabb){min_, max_}
+#define TC_AABB(min_, max_)                                                                                            \
+    (tc_aabb) {                                                                                                        \
+        min_, max_                                                                                                     \
+    }
 #endif
 
 #ifdef __cplusplus
@@ -35,30 +41,22 @@ TC_C_STATIC_INLINE void tc_aabb_extend(tc_aabb* box, tc_vec3 point) {
 }
 
 TC_C_STATIC_INLINE bool tc_aabb_intersects(tc_aabb a, tc_aabb b) {
-    return a.max_point.x >= b.min_point.x && b.max_point.x >= a.min_point.x &&
-           a.max_point.y >= b.min_point.y && b.max_point.y >= a.min_point.y &&
-           a.max_point.z >= b.min_point.z && b.max_point.z >= a.min_point.z;
+    return a.max_point.x >= b.min_point.x && b.max_point.x >= a.min_point.x && a.max_point.y >= b.min_point.y &&
+           b.max_point.y >= a.min_point.y && a.max_point.z >= b.min_point.z && b.max_point.z >= a.min_point.z;
 }
 
 TC_C_STATIC_INLINE bool tc_aabb_contains(tc_aabb box, tc_vec3 point) {
-    return point.x >= box.min_point.x && point.x <= box.max_point.x &&
-           point.y >= box.min_point.y && point.y <= box.max_point.y &&
-           point.z >= box.min_point.z && point.z <= box.max_point.z;
+    return point.x >= box.min_point.x && point.x <= box.max_point.x && point.y >= box.min_point.y &&
+           point.y <= box.max_point.y && point.z >= box.min_point.z && point.z <= box.max_point.z;
 }
 
 TC_C_STATIC_INLINE tc_aabb tc_aabb_merge(tc_aabb a, tc_aabb b) {
-    return TC_AABB(
-        TC_VEC3(
-            fmin(a.min_point.x, b.min_point.x),
-            fmin(a.min_point.y, b.min_point.y),
-            fmin(a.min_point.z, b.min_point.z)
-        ),
-        TC_VEC3(
-            fmax(a.max_point.x, b.max_point.x),
-            fmax(a.max_point.y, b.max_point.y),
-            fmax(a.max_point.z, b.max_point.z)
-        )
-    );
+    return TC_AABB(TC_VEC3(fmin(a.min_point.x, b.min_point.x),
+                           fmin(a.min_point.y, b.min_point.y),
+                           fmin(a.min_point.z, b.min_point.z)),
+                   TC_VEC3(fmax(a.max_point.x, b.max_point.x),
+                           fmax(a.max_point.y, b.max_point.y),
+                           fmax(a.max_point.z, b.max_point.z)));
 }
 
 TC_C_STATIC_INLINE tc_vec3 tc_aabb_center(tc_aabb box) {
@@ -74,11 +72,9 @@ TC_C_STATIC_INLINE tc_vec3 tc_aabb_half_size(tc_aabb box) {
 }
 
 TC_C_STATIC_INLINE tc_vec3 tc_aabb_project_point(tc_aabb box, tc_vec3 point) {
-    return TC_VEC3(
-        fmin(fmax(point.x, box.min_point.x), box.max_point.x),
-        fmin(fmax(point.y, box.min_point.y), box.max_point.y),
-        fmin(fmax(point.z, box.min_point.z), box.max_point.z)
-    );
+    return TC_VEC3(fmin(fmax(point.x, box.min_point.x), box.max_point.x),
+                   fmin(fmax(point.y, box.min_point.y), box.max_point.y),
+                   fmin(fmax(point.z, box.min_point.z), box.max_point.z));
 }
 
 TC_C_STATIC_INLINE double tc_aabb_surface_area(tc_aabb box) {
@@ -116,10 +112,8 @@ TC_C_STATIC_INLINE tc_aabb tc_aabb_from_points(const tc_vec3* points, size_t cou
 TC_C_STATIC_INLINE tc_aabb tc_aabb_transform_by_pose3(tc_aabb box, tc_pose3 pose) {
     tc_vec3 corners[8];
     tc_aabb_get_corners(box, corners);
-    tc_aabb result = tc_aabb_new(
-        tc_pose3_transform_point(pose, corners[0]),
-        tc_pose3_transform_point(pose, corners[0])
-    );
+    tc_aabb result =
+        tc_aabb_new(tc_pose3_transform_point(pose, corners[0]), tc_pose3_transform_point(pose, corners[0]));
     for (size_t i = 1; i < 8; ++i) {
         tc_aabb_extend(&result, tc_pose3_transform_point(pose, corners[i]));
     }
@@ -129,10 +123,8 @@ TC_C_STATIC_INLINE tc_aabb tc_aabb_transform_by_pose3(tc_aabb box, tc_pose3 pose
 TC_C_STATIC_INLINE tc_aabb tc_aabb_transform_by_gpose(tc_aabb box, tc_general_pose3 pose) {
     tc_vec3 corners[8];
     tc_aabb_get_corners(box, corners);
-    tc_aabb result = tc_aabb_new(
-        tc_gpose_transform_point(pose, corners[0]),
-        tc_gpose_transform_point(pose, corners[0])
-    );
+    tc_aabb result =
+        tc_aabb_new(tc_gpose_transform_point(pose, corners[0]), tc_gpose_transform_point(pose, corners[0]));
     for (size_t i = 1; i < 8; ++i) {
         tc_aabb_extend(&result, tc_gpose_transform_point(pose, corners[i]));
     }

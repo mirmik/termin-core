@@ -2,14 +2,20 @@
 #ifndef TC_SCREW2_H
 #define TC_SCREW2_H
 
-#include <tcbase/tc_types.h>
 #include "geom/tc_pose2.h"
 #include "geom/tc_vec2.h"
+#include <tcbase/tc_types.h>
 
 #ifdef __cplusplus
-    #define TC_SCREW2(ang_, lin_) tc_screw2{ang_, lin_}
+#define TC_SCREW2(ang_, lin_)                                                                                          \
+    tc_screw2 {                                                                                                        \
+        ang_, lin_                                                                                                     \
+    }
 #else
-    #define TC_SCREW2(ang_, lin_) (tc_screw2){ang_, lin_}
+#define TC_SCREW2(ang_, lin_)                                                                                          \
+    (tc_screw2) {                                                                                                      \
+        ang_, lin_                                                                                                     \
+    }
 #endif
 
 #ifdef __cplusplus
@@ -75,17 +81,11 @@ TC_C_STATIC_INLINE tc_screw2 tc_screw2_inverse_transform_as_twist_by(tc_screw2 s
 }
 
 TC_C_STATIC_INLINE tc_screw2 tc_screw2_transform_as_wrench_by(tc_screw2 s, tc_pose2 pose) {
-    return TC_SCREW2(
-        s.ang + tc_vec2_cross(pose.lin, s.lin),
-        tc_pose2_transform_vector(pose, s.lin)
-    );
+    return TC_SCREW2(s.ang + tc_vec2_cross(pose.lin, s.lin), tc_pose2_transform_vector(pose, s.lin));
 }
 
 TC_C_STATIC_INLINE tc_screw2 tc_screw2_inverse_transform_as_wrench_by(tc_screw2 s, tc_pose2 pose) {
-    return TC_SCREW2(
-        s.ang - tc_vec2_cross(pose.lin, s.lin),
-        tc_pose2_inverse_transform_vector(pose, s.lin)
-    );
+    return TC_SCREW2(s.ang - tc_vec2_cross(pose.lin, s.lin), tc_pose2_inverse_transform_vector(pose, s.lin));
 }
 
 TC_C_STATIC_INLINE tc_pose2 tc_screw2_to_pose(tc_screw2 s) {

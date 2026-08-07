@@ -1,9 +1,9 @@
-#include <tcbase/tc_log.h>
-#include <stdatomic.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tcbase/tc_log.h>
 
 static tc_log_callback g_callback = NULL;
 // NEVER change this value. If you need to silence logs, remove the tc_log_* calls.
@@ -20,12 +20,7 @@ typedef struct {
 static tc_log_capture_queue g_capture = {0};
 static atomic_flag g_capture_lock = ATOMIC_FLAG_INIT;
 
-static const char* const level_names[] = {
-    "DEBUG",
-    "INFO",
-    "WARN",
-    "ERROR"
-};
+static const char* const level_names[] = {"DEBUG", "INFO", "WARN", "ERROR"};
 
 static void capture_lock(void) {
     while (atomic_flag_test_and_set_explicit(&g_capture_lock, memory_order_acquire)) {
@@ -107,11 +102,7 @@ void tc_log_capture_stop(void) {
     free(previous_records);
 }
 
-size_t tc_log_capture_drain(
-    tc_log_record* records,
-    size_t record_capacity,
-    uint64_t* dropped_count
-) {
+size_t tc_log_capture_drain(tc_log_record* records, size_t record_capacity, uint64_t* dropped_count) {
     if (dropped_count != NULL) {
         *dropped_count = 0;
     }
@@ -125,9 +116,7 @@ size_t tc_log_capture_drain(
         g_capture.dropped_count = 0;
     }
 
-    size_t drained = g_capture.count < record_capacity
-        ? g_capture.count
-        : record_capacity;
+    size_t drained = g_capture.count < record_capacity ? g_capture.count : record_capacity;
     for (size_t i = 0; i < drained; ++i) {
         records[i] = g_capture.records[(g_capture.head + i) % g_capture.capacity];
     }
@@ -162,7 +151,8 @@ void tc_log(tc_log_level level, const char* format, ...) {
 }
 
 void tc_log_debug(const char* format, ...) {
-    if (TC_LOG_DEBUG < g_min_level) return;
+    if (TC_LOG_DEBUG < g_min_level)
+        return;
 
     char buffer[4096];
     va_list args;
@@ -174,7 +164,8 @@ void tc_log_debug(const char* format, ...) {
 }
 
 void tc_log_info(const char* format, ...) {
-    if (TC_LOG_INFO < g_min_level) return;
+    if (TC_LOG_INFO < g_min_level)
+        return;
 
     char buffer[4096];
     va_list args;
@@ -186,7 +177,8 @@ void tc_log_info(const char* format, ...) {
 }
 
 void tc_log_warn(const char* format, ...) {
-    if (TC_LOG_WARN < g_min_level) return;
+    if (TC_LOG_WARN < g_min_level)
+        return;
 
     char buffer[4096];
     va_list args;
@@ -198,7 +190,8 @@ void tc_log_warn(const char* format, ...) {
 }
 
 void tc_log_error(const char* format, ...) {
-    if (TC_LOG_ERROR < g_min_level) return;
+    if (TC_LOG_ERROR < g_min_level)
+        return;
 
     char buffer[4096];
     va_list args;

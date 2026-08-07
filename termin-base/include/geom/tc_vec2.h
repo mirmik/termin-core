@@ -2,13 +2,19 @@
 #ifndef TC_VEC2_H
 #define TC_VEC2_H
 
-#include <tcbase/tc_types.h>
 #include <math.h>
+#include <tcbase/tc_types.h>
 
 #ifdef __cplusplus
-    #define TC_VEC2(x, y) tc_vec2{x, y}
+#define TC_VEC2(x, y)                                                                                                  \
+    tc_vec2 {                                                                                                          \
+        x, y                                                                                                           \
+    }
 #else
-    #define TC_VEC2(x, y) (tc_vec2){x, y}
+#define TC_VEC2(x, y)                                                                                                  \
+    (tc_vec2) {                                                                                                        \
+        x, y                                                                                                           \
+    }
 #endif
 
 #ifdef __cplusplus

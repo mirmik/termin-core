@@ -1,10 +1,10 @@
 // tc_pool.h - Generic object pool with generation tracking
 #pragma once
 
-#include <tcbase/tcbase_api.h>
-#include <tcbase/tc_binding_types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tcbase/tc_binding_types.h>
+#include <tcbase/tcbase_api.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,9 +14,9 @@ extern "C" {
 // Pool slot state
 // ============================================================================
 
-#define TC_SLOT_FREE     0
+#define TC_SLOT_FREE 0
 #define TC_SLOT_OCCUPIED 1
-#define TC_SLOT_RETIRED  2
+#define TC_SLOT_RETIRED 2
 
 // Persistent state owned by a registry whose pool can be destroyed and
 // recreated while old public handles may still exist. Zero-initialization is
@@ -33,15 +33,15 @@ typedef struct tc_pool_generation_epoch {
 // ============================================================================
 
 typedef struct tc_pool {
-    void* data;              // Array of items (type-specific)
-    uint32_t* generations;   // Generation per slot
-    uint8_t* states;         // TC_SLOT_FREE or TC_SLOT_OCCUPIED
-    uint32_t* free_list;     // Indices of free slots
-    uint32_t capacity;       // Total slots
-    uint32_t count;          // Occupied slots
-    uint32_t free_count;     // Free slots in free_list
-    size_t item_size;        // Size of each item
-    uint32_t max_capacity;   // Hard slot limit (UINT32_MAX when unbounded)
+    void* data;            // Array of items (type-specific)
+    uint32_t* generations; // Generation per slot
+    uint8_t* states;       // TC_SLOT_FREE or TC_SLOT_OCCUPIED
+    uint32_t* free_list;   // Indices of free slots
+    uint32_t capacity;     // Total slots
+    uint32_t count;        // Occupied slots
+    uint32_t free_count;   // Free slots in free_list
+    size_t item_size;      // Size of each item
+    uint32_t max_capacity; // Hard slot limit (UINT32_MAX when unbounded)
     uint32_t initial_generation;
     bool allocate_low_indices_first;
     const char* name;
@@ -55,7 +55,7 @@ typedef void* (*tc_pool_allocate_fn)(size_t size, void* user_data);
 typedef void (*tc_pool_deallocate_fn)(void* ptr, void* user_data);
 
 typedef struct tc_pool_config {
-    uint32_t max_capacity;  // 0 means UINT32_MAX.
+    uint32_t max_capacity; // 0 means UINT32_MAX.
     uint32_t initial_generation;
     bool allocate_low_indices_first;
     const char* name;
@@ -74,21 +74,15 @@ TCBASE_API bool tc_pool_init(tc_pool* pool, size_t item_size, uint32_t initial_c
 
 // Initialize a process-lifetime registry pool whose handles must remain stale
 // across tc_pool_free() followed by another initialization with the same epoch.
-TCBASE_API bool tc_pool_init_rebootstrap(
-    tc_pool* pool,
-    size_t item_size,
-    uint32_t initial_capacity,
-    tc_pool_generation_epoch* generation_epoch
-);
+TCBASE_API bool tc_pool_init_rebootstrap(tc_pool* pool,
+                                         size_t item_size,
+                                         uint32_t initial_capacity,
+                                         tc_pool_generation_epoch* generation_epoch);
 
 // Initialize a configured pool. Custom allocation is transactional: init/grow
 // either publishes all replacement arrays or leaves the pool unchanged.
-TCBASE_API bool tc_pool_init_ex(
-    tc_pool* pool,
-    size_t item_size,
-    uint32_t initial_capacity,
-    const tc_pool_config* config
-);
+TCBASE_API bool
+tc_pool_init_ex(tc_pool* pool, size_t item_size, uint32_t initial_capacity, const tc_pool_config* config);
 
 // Free pool resources
 TCBASE_API void tc_pool_free(tc_pool* pool);
@@ -115,11 +109,7 @@ TCBASE_API void* tc_pool_get(const tc_pool* pool, tc_handle h);
 // Resolve a handle at a public dereference boundary. Unlike tc_pool_get(),
 // this reports an invalid/stale handle with the resource type and handle
 // coordinates. Deliberate probes must keep using tc_pool_is_valid().
-TCBASE_API void* tc_pool_get_checked(
-    const tc_pool* pool,
-    tc_handle h,
-    const char* resource_type
-);
+TCBASE_API void* tc_pool_get_checked(const tc_pool* pool, tc_handle h, const char* resource_type);
 
 // Get pointer to item by index (no validation - use carefully!)
 static inline void* tc_pool_get_unchecked(const tc_pool* pool, uint32_t index) {

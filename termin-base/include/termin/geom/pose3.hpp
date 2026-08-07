@@ -1,8 +1,8 @@
 #pragma once
 
-#include "vec3.hpp"
-#include "quat.hpp"
 #include "mat44.hpp"
+#include "quat.hpp"
+#include "vec3.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -13,10 +13,7 @@ inline tc_pose3 tc_pose3::identity() {
 }
 
 inline tc_pose3 tc_pose3::operator*(const tc_pose3& other) const {
-    return {
-        ang * other.ang,
-        lin + ang.rotate(other.lin)
-    };
+    return {ang * other.ang, lin + ang.rotate(other.lin)};
 }
 
 inline tc_pose3 tc_pose3::inverse() const {
@@ -131,10 +128,22 @@ inline void tc_pose3::rotation_matrix(double* m) const {
 inline void tc_pose3::as_matrix(double* m) const {
     double rot[9];
     ang.to_matrix(rot);
-    m[0] = rot[0]; m[1] = rot[3]; m[2] = rot[6]; m[3] = 0;
-    m[4] = rot[1]; m[5] = rot[4]; m[6] = rot[7]; m[7] = 0;
-    m[8] = rot[2]; m[9] = rot[5]; m[10] = rot[8]; m[11] = 0;
-    m[12] = lin.x; m[13] = lin.y; m[14] = lin.z; m[15] = 1;
+    m[0] = rot[0];
+    m[1] = rot[3];
+    m[2] = rot[6];
+    m[3] = 0;
+    m[4] = rot[1];
+    m[5] = rot[4];
+    m[6] = rot[7];
+    m[7] = 0;
+    m[8] = rot[2];
+    m[9] = rot[5];
+    m[10] = rot[8];
+    m[11] = 0;
+    m[12] = lin.x;
+    m[13] = lin.y;
+    m[14] = lin.z;
+    m[15] = 1;
 }
 
 inline termin::Mat44 tc_pose3::as_mat44() const {
@@ -171,10 +180,7 @@ inline tc_pose3 tc_pose3::rotate_z(double angle) {
     return rotation(tc_vec3::unit_z(), angle);
 }
 
-inline tc_pose3 tc_pose3::looking_at(
-    const tc_vec3& eye,
-    const tc_vec3& target,
-    const tc_vec3& up) {
+inline tc_pose3 tc_pose3::looking_at(const tc_vec3& eye, const tc_vec3& target, const tc_vec3& up) {
     tc_vec3 forward = (target - eye).normalized();
     tc_vec3 right = forward.cross(up).normalized();
     tc_vec3 up_corrected = right.cross(forward);
@@ -188,36 +194,16 @@ inline tc_pose3 tc_pose3::looking_at(
 
     if (trace > 0) {
         double s = 0.5 / std::sqrt(trace + 1.0);
-        q = tc_quat(
-            (m21 - m12) * s,
-            (m02 - m20) * s,
-            (m10 - m01) * s,
-            0.25 / s
-        );
+        q = tc_quat((m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s);
     } else if (m00 > m11 && m00 > m22) {
         double s = 2.0 * std::sqrt(1.0 + m00 - m11 - m22);
-        q = tc_quat(
-            0.25 * s,
-            (m01 + m10) / s,
-            (m02 + m20) / s,
-            (m21 - m12) / s
-        );
+        q = tc_quat(0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s);
     } else if (m11 > m22) {
         double s = 2.0 * std::sqrt(1.0 + m11 - m00 - m22);
-        q = tc_quat(
-            (m01 + m10) / s,
-            0.25 * s,
-            (m12 + m21) / s,
-            (m02 - m20) / s
-        );
+        q = tc_quat((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s);
     } else {
         double s = 2.0 * std::sqrt(1.0 + m22 - m00 - m11);
-        q = tc_quat(
-            (m02 + m20) / s,
-            (m12 + m21) / s,
-            0.25 * s,
-            (m10 - m01) / s
-        );
+        q = tc_quat((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s);
     }
 
     return {q.normalized(), eye};
@@ -231,12 +217,10 @@ inline tc_pose3 tc_pose3::from_euler(double roll, double pitch, double yaw) {
     double cy = std::cos(yaw * 0.5);
     double sy = std::sin(yaw * 0.5);
 
-    tc_quat q(
-        sr * cp * cy - cr * sp * sy,
-        cr * sp * cy + sr * cp * sy,
-        cr * cp * sy - sr * sp * cy,
-        cr * cp * cy + sr * sp * sy
-    );
+    tc_quat q(sr * cp * cy - cr * sp * sy,
+              cr * sp * cy + sr * cp * sy,
+              cr * cp * sy - sr * sp * cy,
+              cr * cp * cy + sr * sp * sy);
     return {q, tc_vec3::zero()};
 }
 
@@ -274,19 +258,16 @@ inline tc_pose3 tc_pose3::copy() const {
 
 namespace termin {
 
-using Pose3 = ::tc_pose3;
+    using Pose3 = ::tc_pose3;
 
-static_assert(std::is_same<Pose3, ::tc_pose3>::value, "termin::Pose3 must alias tc_pose3");
-static_assert(std::is_standard_layout<Pose3>::value, "Pose3 must stay ABI-friendly");
-static_assert(std::is_trivially_copyable<Pose3>::value, "Pose3 must stay trivially copyable");
-static_assert(offsetof(Pose3, ang) == 0, "Pose3.ang offset changed");
-static_assert(offsetof(Pose3, lin) == sizeof(Quat), "Pose3.lin offset changed");
+    static_assert(std::is_same<Pose3, ::tc_pose3>::value, "termin::Pose3 must alias tc_pose3");
+    static_assert(std::is_standard_layout<Pose3>::value, "Pose3 must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<Pose3>::value, "Pose3 must stay trivially copyable");
+    static_assert(offsetof(Pose3, ang) == 0, "Pose3.ang offset changed");
+    static_assert(offsetof(Pose3, lin) == sizeof(Quat), "Pose3.lin offset changed");
 
-inline Pose3 lerp(const Pose3& p1, const Pose3& p2, double t) {
-    return {
-        slerp(p1.ang, p2.ang, t),
-        p1.lin + (p2.lin - p1.lin) * t
-    };
-}
+    inline Pose3 lerp(const Pose3& p1, const Pose3& p2, double t) {
+        return {slerp(p1.ang, p2.ang, t), p1.lin + (p2.lin - p1.lin) * t};
+    }
 
 } // namespace termin

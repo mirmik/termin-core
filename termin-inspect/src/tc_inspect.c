@@ -2,10 +2,10 @@
 // C is a dispatcher only - routes calls to language-specific vtables
 #include "inspect/tc_inspect.h"
 #include "inspect/tc_kind.h"
-#include <tcbase/tc_log.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
+#include <tcbase/tc_log.h>
 
 // Cross-platform strdup
 #ifdef _WIN32
@@ -20,20 +20,23 @@
 // Parse parameterized kind
 // ============================================================================
 
-bool tc_kind_parse(const char* kind, char* container, size_t container_size,
-                   char* element, size_t element_size) {
-    if (!kind) return false;
+bool tc_kind_parse(const char* kind, char* container, size_t container_size, char* element, size_t element_size) {
+    if (!kind)
+        return false;
 
     const char* bracket = strchr(kind, '[');
-    if (!bracket) return false;
+    if (!bracket)
+        return false;
 
     const char* end_bracket = strrchr(kind, ']');
-    if (!end_bracket || end_bracket <= bracket) return false;
+    if (!end_bracket || end_bracket <= bracket)
+        return false;
 
     size_t container_len = bracket - kind;
     size_t element_len = end_bracket - bracket - 1;
 
-    if (container_len >= container_size || element_len >= element_size) return false;
+    if (container_len >= container_size || element_len >= element_size)
+        return false;
 
     strncpy(container, kind, container_len);
     container[container_len] = '\0';
@@ -70,7 +73,8 @@ const tc_inspect_lang_vtable* tc_inspect_get_lang_vtable(tc_inspect_lang lang) {
 // ============================================================================
 
 bool tc_inspect_has_type(const char* type_name) {
-    if (!type_name) return false;
+    if (!type_name)
+        return false;
     for (int i = 0; i < TC_INSPECT_LANG_COUNT; i++) {
         if (g_vtables[i].has_type && g_vtables[i].has_type(type_name, g_vtables[i].ctx)) {
             return true;
@@ -80,7 +84,8 @@ bool tc_inspect_has_type(const char* type_name) {
 }
 
 tc_inspect_lang tc_inspect_type_lang(const char* type_name) {
-    if (!type_name) return TC_INSPECT_LANG_COUNT;
+    if (!type_name)
+        return TC_INSPECT_LANG_COUNT;
     for (int i = 0; i < TC_INSPECT_LANG_COUNT; i++) {
         if (g_vtables[i].has_type && g_vtables[i].has_type(type_name, g_vtables[i].ctx)) {
             return (tc_inspect_lang)i;
@@ -110,7 +115,8 @@ size_t tc_inspect_field_count(const char* type_name) {
 }
 
 bool tc_inspect_get_field_info(const char* type_name, size_t index, tc_field_info* out) {
-    if (!out) return false;
+    if (!out)
+        return false;
     tc_inspect_lang lang = tc_inspect_type_lang(type_name);
     if (lang < TC_INSPECT_LANG_COUNT && g_vtables[lang].get_field) {
         return g_vtables[lang].get_field(type_name, index, out, g_vtables[lang].ctx);
@@ -119,7 +125,8 @@ bool tc_inspect_get_field_info(const char* type_name, size_t index, tc_field_inf
 }
 
 bool tc_inspect_find_field_info(const char* type_name, const char* path, tc_field_info* out) {
-    if (!out) return false;
+    if (!out)
+        return false;
     tc_inspect_lang lang = tc_inspect_type_lang(type_name);
     if (lang < TC_INSPECT_LANG_COUNT && g_vtables[lang].find_field) {
         return g_vtables[lang].find_field(type_name, path, out, g_vtables[lang].ctx);
@@ -142,11 +149,16 @@ tc_value tc_inspect_get_type_metadata(const char* type_name) {
 tc_value tc_inspect_get(void* obj, const char* type_name, const char* path) {
     tc_inspect_lang lang = tc_inspect_type_lang(type_name);
     if (lang >= TC_INSPECT_LANG_COUNT) {
-        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_get: type '%s' not found in any language vtable", type_name ? type_name : "null");
+        tc_log(TC_LOG_WARN,
+               "[Inspect] tc_inspect_get: type '%s' not found in any language vtable",
+               type_name ? type_name : "null");
         return tc_value_nil();
     }
     if (!g_vtables[lang].get) {
-        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_get: no getter for type '%s' (lang=%d)", type_name ? type_name : "null", lang);
+        tc_log(TC_LOG_WARN,
+               "[Inspect] tc_inspect_get: no getter for type '%s' (lang=%d)",
+               type_name ? type_name : "null",
+               lang);
         return tc_value_nil();
     }
     return g_vtables[lang].get(obj, type_name, path, g_vtables[lang].ctx);
@@ -163,11 +175,16 @@ bool tc_inspect_set_checked(void* obj, const char* type_name, const char* path, 
     }
     tc_inspect_lang lang = tc_inspect_type_lang(type_name);
     if (lang >= TC_INSPECT_LANG_COUNT) {
-        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set: type '%s' not found in any language vtable", type_name ? type_name : "null");
+        tc_log(TC_LOG_WARN,
+               "[Inspect] tc_inspect_set: type '%s' not found in any language vtable",
+               type_name ? type_name : "null");
         return false;
     }
     if (!g_vtables[lang].set) {
-        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_set: no setter for type '%s' (lang=%d)", type_name ? type_name : "null", lang);
+        tc_log(TC_LOG_WARN,
+               "[Inspect] tc_inspect_set: no setter for type '%s' (lang=%d)",
+               type_name ? type_name : "null",
+               lang);
         return false;
     }
     return g_vtables[lang].set(obj, type_name, path, value, context, g_vtables[lang].ctx);
@@ -190,11 +207,14 @@ tc_value tc_inspect_serialize(void* obj, const char* type_name) {
     size_t count = tc_inspect_field_count(type_name);
     for (size_t i = 0; i < count; i++) {
         tc_field_info f;
-        if (!tc_inspect_get_field_info(type_name, i, &f)) continue;
-        if (!f.is_serializable) continue;
+        if (!tc_inspect_get_field_info(type_name, i, &f))
+            continue;
+        if (!f.is_serializable)
+            continue;
 
         tc_value val = tc_inspect_get(obj, type_name, f.path);
-        if (val.type == TC_VALUE_NIL) continue;
+        if (val.type == TC_VALUE_NIL)
+            continue;
 
         // Try tc_kind serialization
         if (tc_kind_exists(f.kind)) {
@@ -215,7 +235,9 @@ tc_value tc_inspect_serialize(void* obj, const char* type_name) {
 
 void tc_inspect_deserialize(void* obj, const char* type_name, const tc_value* data, void* context) {
     if (!obj) {
-        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_deserialize: obj is NULL for type '%s'", type_name ? type_name : "unknown");
+        tc_log(TC_LOG_WARN,
+               "[Inspect] tc_inspect_deserialize: obj is NULL for type '%s'",
+               type_name ? type_name : "unknown");
         return;
     }
     if (!type_name) {
@@ -227,7 +249,10 @@ void tc_inspect_deserialize(void* obj, const char* type_name, const tc_value* da
         return;
     }
     if (data->type != TC_VALUE_DICT) {
-        tc_log(TC_LOG_WARN, "[Inspect] tc_inspect_deserialize: data is not a dict for type '%s' (got type %d)", type_name, data->type);
+        tc_log(TC_LOG_WARN,
+               "[Inspect] tc_inspect_deserialize: data is not a dict for type '%s' (got type %d)",
+               type_name,
+               data->type);
         return;
     }
 
@@ -239,11 +264,14 @@ void tc_inspect_deserialize(void* obj, const char* type_name, const tc_value* da
 
     for (size_t i = 0; i < count; i++) {
         tc_field_info f;
-        if (!tc_inspect_get_field_info(type_name, i, &f)) continue;
-        if (!f.is_serializable) continue;
+        if (!tc_inspect_get_field_info(type_name, i, &f))
+            continue;
+        if (!f.is_serializable)
+            continue;
 
         tc_value* field_data = tc_value_dict_get((tc_value*)data, f.path);
-        if (!field_data || field_data->type == TC_VALUE_NIL) continue;
+        if (!field_data || field_data->type == TC_VALUE_NIL)
+            continue;
 
         // Try tc_kind deserialization
         if (tc_kind_exists(f.kind)) {
@@ -260,8 +288,8 @@ void tc_inspect_deserialize(void* obj, const char* type_name, const tc_value* da
     }
 }
 
-tc_inspect_apply_result tc_inspect_deserialize_checked(
-    void* obj, const char* type_name, const tc_value* data, void* context) {
+tc_inspect_apply_result
+tc_inspect_deserialize_checked(void* obj, const char* type_name, const tc_value* data, void* context) {
     tc_inspect_apply_result result = {TC_INSPECT_APPLY_OK, 0, NULL};
     if (!obj || !type_name || !data || data->type != TC_VALUE_DICT) {
         result.status = TC_INSPECT_APPLY_INVALID_ARGUMENT;

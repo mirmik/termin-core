@@ -17,12 +17,10 @@ typedef struct tc_intern_string_stats {
     size_t max_bucket_depth;
 } tc_intern_string_stats;
 
-typedef void (*tc_intern_string_foreach_fn)(
-    const char* string,
-    size_t bucket_index,
-    size_t depth_in_bucket,
-    void* user_data
-);
+typedef void (*tc_intern_string_foreach_fn)(const char* string,
+                                            size_t bucket_index,
+                                            size_t depth_in_bucket,
+                                            void* user_data);
 
 // Intern a string in the process-wide table. Returned pointers are stable until
 // tc_intern_cleanup() and can be compared by pointer for canonical identity.

@@ -23,13 +23,15 @@ static const char* mock_get_parent(const char* type_name, void* ctx) {
 
 static size_t mock_field_count(const char* type_name, void* ctx) {
     (void)ctx;
-    if (!type_name || strcmp(type_name, "MockDispatchType") != 0) return 0;
+    if (!type_name || strcmp(type_name, "MockDispatchType") != 0)
+        return 0;
     return 1;
 }
 
 static bool mock_get_field(const char* type_name, size_t index, tc_field_info* out, void* ctx) {
     (void)ctx;
-    if (!out || !type_name || strcmp(type_name, "MockDispatchType") != 0 || index != 0) return false;
+    if (!out || !type_name || strcmp(type_name, "MockDispatchType") != 0 || index != 0)
+        return false;
     out->path = "value";
     out->label = "Value";
     out->kind = "int";
@@ -45,49 +47,57 @@ static bool mock_get_field(const char* type_name, size_t index, tc_field_info* o
 
 static bool mock_find_field(const char* type_name, const char* path, tc_field_info* out, void* ctx) {
     (void)ctx;
-    if (!out || !type_name || !path) return false;
-    if (strcmp(type_name, "MockDispatchType") != 0) return false;
-    if (strcmp(path, "value") != 0) return false;
+    if (!out || !type_name || !path)
+        return false;
+    if (strcmp(type_name, "MockDispatchType") != 0)
+        return false;
+    if (strcmp(path, "value") != 0)
+        return false;
     return mock_get_field(type_name, 0, out, ctx);
 }
 
 static tc_value mock_get(void* obj, const char* type_name, const char* path, void* ctx) {
     (void)ctx;
-    if (!obj || !type_name || !path) return tc_value_nil();
-    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0) return tc_value_nil();
+    if (!obj || !type_name || !path)
+        return tc_value_nil();
+    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0)
+        return tc_value_nil();
     return tc_value_int(((mock_dispatch_obj*)obj)->value);
 }
 
 static bool mock_set(void* obj, const char* type_name, const char* path, tc_value value, void* context, void* ctx) {
     (void)context;
     (void)ctx;
-    if (!obj || !type_name || !path) return false;
-    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0) return false;
-    if (value.type != TC_VALUE_INT) return false;
+    if (!obj || !type_name || !path)
+        return false;
+    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0)
+        return false;
+    if (value.type != TC_VALUE_INT)
+        return false;
     ((mock_dispatch_obj*)obj)->value = value.data.i;
     return true;
 }
 
 static void mock_action(void* obj, const char* type_name, const char* path, void* ctx) {
     (void)ctx;
-    if (!obj || !type_name || !path) return;
-    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0) return;
+    if (!obj || !type_name || !path)
+        return;
+    if (strcmp(type_name, "MockDispatchType") != 0 || strcmp(path, "value") != 0)
+        return;
     ((mock_dispatch_obj*)obj)->action_called = 1;
 }
 
 GUARD_C_TEST(test_inspect_dispatcher) {
-    tc_inspect_lang_vtable vtable = {
-        mock_has_type,
-        mock_get_parent,
-        mock_field_count,
-        mock_get_field,
-        mock_find_field,
-        mock_get,
-        mock_set,
-        mock_action,
-        NULL,
-        NULL
-    };
+    tc_inspect_lang_vtable vtable = {mock_has_type,
+                                     mock_get_parent,
+                                     mock_field_count,
+                                     mock_get_field,
+                                     mock_find_field,
+                                     mock_get,
+                                     mock_set,
+                                     mock_action,
+                                     NULL,
+                                     NULL};
 
     tc_inspect_set_lang_vtable(TC_INSPECT_LANG_C, &vtable);
     GUARD_C_CHECK(tc_inspect_has_type("MockDispatchType"));

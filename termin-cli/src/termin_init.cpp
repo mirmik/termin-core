@@ -8,8 +8,7 @@
 int main(int argc, char** argv) {
     try {
         termin_cli::python_backend::configure_environment();
-        std::vector<std::string> command =
-            termin_cli::python_backend::python_module_command("termin.project.init_cli");
+        std::vector<std::string> command = termin_cli::python_backend::python_module_command("termin.project.init_cli");
         for (int index = 1; index < argc; ++index) {
             command.emplace_back(argv[index]);
         }

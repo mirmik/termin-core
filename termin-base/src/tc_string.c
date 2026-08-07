@@ -32,10 +32,7 @@ static int tc_intern_init_table(void) {
         return 1;
     }
 
-    g_intern_buckets = (tc_intern_entry**)calloc(
-        TC_INTERN_INITIAL_BUCKET_COUNT,
-        sizeof(tc_intern_entry*)
-    );
+    g_intern_buckets = (tc_intern_entry**)calloc(TC_INTERN_INITIAL_BUCKET_COUNT, sizeof(tc_intern_entry*));
     if (!g_intern_buckets) {
         tc_log_error("tc_intern_string: failed to allocate initial string intern table");
         return 0;
@@ -52,16 +49,11 @@ static int tc_intern_grow_table(void) {
         return 0;
     }
 
-    tc_intern_entry** new_buckets = (tc_intern_entry**)calloc(
-        new_bucket_count,
-        sizeof(tc_intern_entry*)
-    );
+    tc_intern_entry** new_buckets = (tc_intern_entry**)calloc(new_bucket_count, sizeof(tc_intern_entry*));
     if (!new_buckets) {
-        tc_log_error(
-            "tc_intern_string: failed to grow intern table from %zu to %zu buckets",
-            g_intern_bucket_count,
-            new_bucket_count
-        );
+        tc_log_error("tc_intern_string: failed to grow intern table from %zu to %zu buckets",
+                     g_intern_bucket_count,
+                     new_bucket_count);
         return 0;
     }
 

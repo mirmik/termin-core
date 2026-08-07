@@ -63,28 +63,18 @@ TCBASE_API const char* tc_dtype_name(tc_dtype dtype);
 
 TCBASE_API tc_tensor tc_tensor_empty(void);
 
-TCBASE_API bool tc_tensor_init_borrowed(
-    tc_tensor* tensor,
-    void* data,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    const ptrdiff_t* strides,
-    uint32_t flags
-);
+TCBASE_API bool tc_tensor_init_borrowed(tc_tensor* tensor,
+                                        void* data,
+                                        tc_dtype dtype,
+                                        uint8_t ndim,
+                                        const size_t* shape,
+                                        const ptrdiff_t* strides,
+                                        uint32_t flags);
 
-TCBASE_API bool tc_tensor_init_external(
-    tc_tensor* tensor,
-    const tc_tensor_external_desc* desc
-);
+TCBASE_API bool tc_tensor_init_external(tc_tensor* tensor, const tc_tensor_external_desc* desc);
 
-TCBASE_API bool tc_tensor_init_owned(
-    tc_tensor* tensor,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    uint32_t flags
-);
+TCBASE_API bool
+tc_tensor_init_owned(tc_tensor* tensor, tc_dtype dtype, uint8_t ndim, const size_t* shape, uint32_t flags);
 
 TCBASE_API void tc_tensor_free(tc_tensor* tensor);
 
@@ -94,12 +84,7 @@ TCBASE_API bool tc_tensor_is_c_contiguous(const tc_tensor* tensor);
 
 TCBASE_API size_t tc_tensor_element_count(const tc_tensor* tensor);
 TCBASE_API size_t tc_tensor_contiguous_byte_size(const tc_tensor* tensor);
-TCBASE_API bool tc_tensor_make_c_strides(
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    ptrdiff_t* out_strides
-);
+TCBASE_API bool tc_tensor_make_c_strides(tc_dtype dtype, uint8_t ndim, const size_t* shape, ptrdiff_t* out_strides);
 
 TCBASE_API bool tc_tensor_copy_contiguous(tc_tensor* dst, const tc_tensor* src);
 

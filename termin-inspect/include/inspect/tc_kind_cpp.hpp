@@ -4,18 +4,18 @@
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4251) // STL members in dllexport classes
+#pragma warning(disable : 4251) // STL members in dllexport classes
 #endif
 
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <functional>
-#include <stdexcept>
 #include <any>
 #include <cerrno>
 #include <cstdlib>
+#include <functional>
 #include <limits>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 extern "C" {
 #include "inspect/tc_inspect.h"
@@ -25,321 +25,320 @@ extern "C" {
 
 // DLL export/import macros for termin-inspect C++ core
 #ifdef _WIN32
-    #ifdef TERMIN_INSPECT_CPP_EXPORTS
-        #define TC_KIND_CPP_API __declspec(dllexport)
-    #else
-        #define TC_KIND_CPP_API __declspec(dllimport)
-    #endif
+#ifdef TERMIN_INSPECT_CPP_EXPORTS
+#define TC_KIND_CPP_API __declspec(dllexport)
 #else
-    #define TC_KIND_CPP_API __attribute__((visibility("default")))
+#define TC_KIND_CPP_API __declspec(dllimport)
+#endif
+#else
+#define TC_KIND_CPP_API __attribute__((visibility("default")))
 #endif
 
 namespace tc {
 
-// C++ kind handler - uses std::any and tc_value for serialization
-struct KindCpp {
-    std::string name;
-    std::function<tc_value(const std::any&)> serialize;
-    std::function<std::any(const tc_value*, void*)> deserialize;
-    bool is_handle = false;
+    // C++ kind handler - uses std::any and tc_value for serialization
+    struct KindCpp {
+        std::string name;
+        std::function<tc_value(const std::any&)> serialize;
+        std::function<std::any(const tc_value*, void*)> deserialize;
+        bool is_handle = false;
 
-    bool is_valid() const {
-        return serialize && deserialize;
-    }
-};
-
-// C++ Kind Registry - manages C++ serialization handlers
-// This is separate from the C tc_kind_handler system.
-// Python layer (KindPython) can be added on top.
-class TC_KIND_CPP_API KindRegistryCpp {
-    std::unordered_map<std::string, KindCpp> _kinds;
-
-public:
-    // Singleton - defined in tc_kind_cpp.cpp
-    static KindRegistryCpp& instance();
-
-    // Register C++ handler
-    void register_kind(
-        const std::string& name,
-        std::function<tc_value(const std::any&)> serialize,
-        std::function<std::any(const tc_value*, void*)> deserialize
-    );
-
-    // Get handler (returns nullptr if not found)
-    KindCpp* get(const std::string& name);
-    const KindCpp* get(const std::string& name) const;
-
-    bool has(const std::string& name) const;
-    void mark_handle_kind(const std::string& name);
-
-    // Get all registered kind names
-    std::vector<std::string> kinds() const;
-
-    // Clear registered C++ handlers.
-    void clear();
-
-    // Serialize value (caller owns returned tc_value)
-    tc_value serialize(const std::string& kind_name, const std::any& value) const;
-
-    // Serialize a registered field while retaining schema context for diagnostics.
-    tc_value serialize_field(
-        const std::string& kind_name,
-        const std::any& value,
-        const std::string& type_name,
-        const std::string& path
-    ) const;
-
-    // Deserialize value
-    std::any deserialize(const std::string& kind_name, const tc_value* data, void* context = nullptr) const;
-};
-
-TC_KIND_CPP_API void reset_kind_registry_cpp();
-
-// Helper to get int from tc_value (handles both INT and DOUBLE)
-inline int tc_value_to_int(const tc_value* v) {
-    if (v->type == TC_VALUE_INT) return static_cast<int>(v->data.i);
-    if (v->type == TC_VALUE_DOUBLE) return static_cast<int>(v->data.d);
-    if (v->type == TC_VALUE_FLOAT) return static_cast<int>(v->data.f);
-    if (v->type == TC_VALUE_STRING && v->data.s) {
-        char* end = nullptr;
-        errno = 0;
-        long parsed = std::strtol(v->data.s, &end, 10);
-        if (end != v->data.s && *end == '\0' && errno != ERANGE &&
-            parsed >= std::numeric_limits<int>::min() &&
-            parsed <= std::numeric_limits<int>::max()) {
-            return static_cast<int>(parsed);
+        bool is_valid() const {
+            return serialize && deserialize;
         }
-        tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to int", v->data.s);
-        throw std::invalid_argument("cannot convert tc_value string to int");
+    };
+
+    // C++ Kind Registry - manages C++ serialization handlers
+    // This is separate from the C tc_kind_handler system.
+    // Python layer (KindPython) can be added on top.
+    class TC_KIND_CPP_API KindRegistryCpp {
+        std::unordered_map<std::string, KindCpp> _kinds;
+
+    public:
+        // Singleton - defined in tc_kind_cpp.cpp
+        static KindRegistryCpp& instance();
+
+        // Register C++ handler
+        void register_kind(const std::string& name,
+                           std::function<tc_value(const std::any&)> serialize,
+                           std::function<std::any(const tc_value*, void*)> deserialize);
+
+        // Get handler (returns nullptr if not found)
+        KindCpp* get(const std::string& name);
+        const KindCpp* get(const std::string& name) const;
+
+        bool has(const std::string& name) const;
+        void mark_handle_kind(const std::string& name);
+
+        // Get all registered kind names
+        std::vector<std::string> kinds() const;
+
+        // Clear registered C++ handlers.
+        void clear();
+
+        // Serialize value (caller owns returned tc_value)
+        tc_value serialize(const std::string& kind_name, const std::any& value) const;
+
+        // Serialize a registered field while retaining schema context for diagnostics.
+        tc_value serialize_field(const std::string& kind_name,
+                                 const std::any& value,
+                                 const std::string& type_name,
+                                 const std::string& path) const;
+
+        // Deserialize value
+        std::any deserialize(const std::string& kind_name, const tc_value* data, void* context = nullptr) const;
+    };
+
+    TC_KIND_CPP_API void reset_kind_registry_cpp();
+
+    // Helper to get int from tc_value (handles both INT and DOUBLE)
+    inline int tc_value_to_int(const tc_value* v) {
+        if (v->type == TC_VALUE_INT)
+            return static_cast<int>(v->data.i);
+        if (v->type == TC_VALUE_DOUBLE)
+            return static_cast<int>(v->data.d);
+        if (v->type == TC_VALUE_FLOAT)
+            return static_cast<int>(v->data.f);
+        if (v->type == TC_VALUE_STRING && v->data.s) {
+            char* end = nullptr;
+            errno = 0;
+            long parsed = std::strtol(v->data.s, &end, 10);
+            if (end != v->data.s && *end == '\0' && errno != ERANGE && parsed >= std::numeric_limits<int>::min() &&
+                parsed <= std::numeric_limits<int>::max()) {
+                return static_cast<int>(parsed);
+            }
+            tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to int", v->data.s);
+            throw std::invalid_argument("cannot convert tc_value string to int");
+        }
+        tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert tc_value type %d to int", v->type);
+        throw std::invalid_argument("cannot convert tc_value to int");
     }
-    tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert tc_value type %d to int", v->type);
-    throw std::invalid_argument("cannot convert tc_value to int");
-}
 
-// Helper to get double from tc_value
-inline double tc_value_to_double(const tc_value* v) {
-    if (v->type == TC_VALUE_DOUBLE) return v->data.d;
-    if (v->type == TC_VALUE_FLOAT) return static_cast<double>(v->data.f);
-    if (v->type == TC_VALUE_INT) return static_cast<double>(v->data.i);
-    return 0.0;
-}
+    // Helper to get double from tc_value
+    inline double tc_value_to_double(const tc_value* v) {
+        if (v->type == TC_VALUE_DOUBLE)
+            return v->data.d;
+        if (v->type == TC_VALUE_FLOAT)
+            return static_cast<double>(v->data.f);
+        if (v->type == TC_VALUE_INT)
+            return static_cast<double>(v->data.i);
+        return 0.0;
+    }
 
-// Helper to get string from tc_value
-inline std::string tc_value_to_string(const tc_value* v) {
-    if (v->type == TC_VALUE_STRING && v->data.s) return v->data.s;
-    return "";
-}
+    // Helper to get string from tc_value
+    inline std::string tc_value_to_string(const tc_value* v) {
+        if (v->type == TC_VALUE_STRING && v->data.s)
+            return v->data.s;
+        return "";
+    }
 
-// Register builtin C++ kinds (bool, int, float, double, string)
-inline void register_builtin_cpp_kinds() {
-    auto& reg = KindRegistryCpp::instance();
+    // Register builtin C++ kinds (bool, int, float, double, string)
+    inline void register_builtin_cpp_kinds() {
+        auto& reg = KindRegistryCpp::instance();
 
-    // bool
-    reg.register_kind("bool",
-        [](const std::any& v) { return tc_value_bool(std::any_cast<bool>(v)); },
-        [](const tc_value* v, void*) -> std::any { return v->data.b; }
-    );
-    reg.register_kind("checkbox",
-        [](const std::any& v) { return tc_value_bool(std::any_cast<bool>(v)); },
-        [](const tc_value* v, void*) -> std::any { return v->data.b; }
-    );
+        // bool
+        reg.register_kind(
+            "bool",
+            [](const std::any& v) { return tc_value_bool(std::any_cast<bool>(v)); },
+            [](const tc_value* v, void*) -> std::any { return v->data.b; });
+        reg.register_kind(
+            "checkbox",
+            [](const std::any& v) { return tc_value_bool(std::any_cast<bool>(v)); },
+            [](const tc_value* v, void*) -> std::any { return v->data.b; });
 
-    // int
-    reg.register_kind("int",
-        [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
-    );
-    reg.register_kind("uint32",
-        [](const std::any& v) {
-            return tc_value_int(static_cast<int64_t>(std::any_cast<unsigned int>(v)));
-        },
-        [](const tc_value* v, void*) -> std::any {
-            uint64_t parsed = 0;
-            if (v->type == TC_VALUE_INT && v->data.i >= 0) {
-                parsed = static_cast<uint64_t>(v->data.i);
-            } else if (v->type == TC_VALUE_STRING && v->data.s) {
-                char* end = nullptr;
-                errno = 0;
-                const unsigned long long raw = std::strtoull(v->data.s, &end, 10);
-                if (end == v->data.s || *end != '\0' || errno == ERANGE) {
-                    tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to uint32", v->data.s);
+        // int
+        reg.register_kind(
+            "int",
+            [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); });
+        reg.register_kind(
+            "uint32",
+            [](const std::any& v) { return tc_value_int(static_cast<int64_t>(std::any_cast<unsigned int>(v))); },
+            [](const tc_value* v, void*) -> std::any {
+                uint64_t parsed = 0;
+                if (v->type == TC_VALUE_INT && v->data.i >= 0) {
+                    parsed = static_cast<uint64_t>(v->data.i);
+                } else if (v->type == TC_VALUE_STRING && v->data.s) {
+                    char* end = nullptr;
+                    errno = 0;
+                    const unsigned long long raw = std::strtoull(v->data.s, &end, 10);
+                    if (end == v->data.s || *end != '\0' || errno == ERANGE) {
+                        tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert string '%s' to uint32", v->data.s);
+                        return std::any{};
+                    }
+                    parsed = static_cast<uint64_t>(raw);
+                } else {
+                    tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert tc_value type %d to uint32", v->type);
                     return std::any{};
                 }
-                parsed = static_cast<uint64_t>(raw);
-            } else {
-                tc_log(TC_LOG_ERROR, "[Inspect] Cannot convert tc_value type %d to uint32", v->type);
-                return std::any{};
-            }
-            if (parsed > static_cast<uint64_t>(std::numeric_limits<unsigned int>::max())) {
-                tc_log(TC_LOG_ERROR, "[Inspect] uint32 value is out of range");
-                return std::any{};
-            }
-            return static_cast<unsigned int>(parsed);
-        }
-    );
-    reg.register_kind("slider_int",
-        [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
-    );
-    // enum (C++ uses int for enum-like fields with choices)
-    reg.register_kind("enum",
-        [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
-    );
-    // navmesh_area is stored as an int; projects provide display names.
-    reg.register_kind("navmesh_area",
-        [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); }
-    );
-
-    // float
-    reg.register_kind("float",
-        [](const std::any& v) { return tc_value_float(std::any_cast<float>(v)); },
-        [](const tc_value* v, void*) -> std::any { return static_cast<float>(tc_value_to_double(v)); }
-    );
-    reg.register_kind("slider",
-        [](const std::any& v) { return tc_value_float(std::any_cast<float>(v)); },
-        [](const tc_value* v, void*) -> std::any { return static_cast<float>(tc_value_to_double(v)); }
-    );
-    reg.register_kind("drag_float",
-        [](const std::any& v) { return tc_value_float(std::any_cast<float>(v)); },
-        [](const tc_value* v, void*) -> std::any { return static_cast<float>(tc_value_to_double(v)); }
-    );
-
-    // double
-    reg.register_kind("double",
-        [](const std::any& v) { return tc_value_double(std::any_cast<double>(v)); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_double(v); }
-    );
-
-    // string
-    reg.register_kind("string",
-        [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
-    );
-    reg.register_kind("text",
-        [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
-    );
-    reg.register_kind("multiline_text",
-        [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
-    );
-
-    reg.register_kind("list[string]",
-        [](const std::any& v) -> tc_value {
-            const auto& strings = std::any_cast<const std::vector<std::string>&>(v);
-            tc_value list = tc_value_list_new();
-            for (const auto& item : strings) {
-                tc_value_list_push(&list, tc_value_string(item.c_str()));
-            }
-            return list;
-        },
-        [](const tc_value* v, void*) -> std::any {
-            std::vector<std::string> result;
-            if (v && v->type == TC_VALUE_LIST) {
-                result.reserve(v->data.list.count);
-                for (size_t i = 0; i < v->data.list.count; i++) {
-                    result.push_back(tc_value_to_string(&v->data.list.items[i]));
+                if (parsed > static_cast<uint64_t>(std::numeric_limits<unsigned int>::max())) {
+                    tc_log(TC_LOG_ERROR, "[Inspect] uint32 value is out of range");
+                    return std::any{};
                 }
-            }
-            return result;
-        }
-    );
+                return static_cast<unsigned int>(parsed);
+            });
+        reg.register_kind(
+            "slider_int",
+            [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); });
+        // enum (C++ uses int for enum-like fields with choices)
+        reg.register_kind(
+            "enum",
+            [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); });
+        // navmesh_area is stored as an int; projects provide display names.
+        reg.register_kind(
+            "navmesh_area",
+            [](const std::any& v) { return tc_value_int(std::any_cast<int>(v)); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_int(v); });
 
-    reg.register_kind("clip_selector",
-        [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
-    );
+        // float
+        reg.register_kind(
+            "float",
+            [](const std::any& v) { return tc_value_float(std::any_cast<float>(v)); },
+            [](const tc_value* v, void*) -> std::any { return static_cast<float>(tc_value_to_double(v)); });
+        reg.register_kind(
+            "slider",
+            [](const std::any& v) { return tc_value_float(std::any_cast<float>(v)); },
+            [](const tc_value* v, void*) -> std::any { return static_cast<float>(tc_value_to_double(v)); });
+        reg.register_kind(
+            "drag_float",
+            [](const std::any& v) { return tc_value_float(std::any_cast<float>(v)); },
+            [](const tc_value* v, void*) -> std::any { return static_cast<float>(tc_value_to_double(v)); });
 
-    // agent_type (string-based, used for navmesh agent type selection)
-    reg.register_kind("agent_type",
-        [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
-        [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); }
-    );
+        // double
+        reg.register_kind(
+            "double",
+            [](const std::any& v) { return tc_value_double(std::any_cast<double>(v)); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_double(v); });
 
-    // vec3 - serialized as list [x, y, z]
-    reg.register_kind("vec3",
-        [](const std::any& v) -> tc_value {
-            auto vec = std::any_cast<tc_vec3>(v);
-            tc_value list = tc_value_list_new();
-            tc_value_list_push(&list, tc_value_double(vec.x));
-            tc_value_list_push(&list, tc_value_double(vec.y));
-            tc_value_list_push(&list, tc_value_double(vec.z));
-            return list;
-        },
-        [](const tc_value* v, void*) -> std::any {
-            tc_vec3 result = {0, 0, 0};
-            if (v->type == TC_VALUE_LIST && v->data.list.count >= 3) {
-                result.x = tc_value_to_double(&v->data.list.items[0]);
-                result.y = tc_value_to_double(&v->data.list.items[1]);
-                result.z = tc_value_to_double(&v->data.list.items[2]);
-            }
-            return result;
-        }
-    );
+        // string
+        reg.register_kind(
+            "string",
+            [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); });
+        reg.register_kind(
+            "text",
+            [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); });
+        reg.register_kind(
+            "multiline_text",
+            [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); });
 
-    reg.register_kind("list[vec3]",
-        [](const std::any& v) -> tc_value {
-            const auto& points = std::any_cast<const std::vector<tc_vec3>&>(v);
-            tc_value list = tc_value_list_new();
-            for (const tc_vec3& point : points) {
-                tc_value item = tc_value_list_new();
-                tc_value_list_push(&item, tc_value_double(point.x));
-                tc_value_list_push(&item, tc_value_double(point.y));
-                tc_value_list_push(&item, tc_value_double(point.z));
-                tc_value_list_push(&list, item);
-            }
-            return list;
-        },
-        [](const tc_value* v, void*) -> std::any {
-            std::vector<tc_vec3> result;
-            if (v && v->type == TC_VALUE_LIST) {
-                result.reserve(v->data.list.count);
-                for (size_t i = 0; i < v->data.list.count; i++) {
-                    const tc_value* item = &v->data.list.items[i];
-                    tc_vec3 point = {0, 0, 0};
-                    if (item->type == TC_VALUE_LIST && item->data.list.count >= 3) {
-                        point.x = tc_value_to_double(&item->data.list.items[0]);
-                        point.y = tc_value_to_double(&item->data.list.items[1]);
-                        point.z = tc_value_to_double(&item->data.list.items[2]);
-                    } else {
-                        tc_log(TC_LOG_ERROR, "[Inspect] list[vec3] item %zu is not a 3-component list", i);
+        reg.register_kind(
+            "list[string]",
+            [](const std::any& v) -> tc_value {
+                const auto& strings = std::any_cast<const std::vector<std::string>&>(v);
+                tc_value list = tc_value_list_new();
+                for (const auto& item : strings) {
+                    tc_value_list_push(&list, tc_value_string(item.c_str()));
+                }
+                return list;
+            },
+            [](const tc_value* v, void*) -> std::any {
+                std::vector<std::string> result;
+                if (v && v->type == TC_VALUE_LIST) {
+                    result.reserve(v->data.list.count);
+                    for (size_t i = 0; i < v->data.list.count; i++) {
+                        result.push_back(tc_value_to_string(&v->data.list.items[i]));
                     }
-                    result.push_back(point);
                 }
-            }
-            return result;
-        }
-    );
+                return result;
+            });
 
-    // quat - serialized as list [w, x, y, z]
-    reg.register_kind("quat",
-        [](const std::any& v) -> tc_value {
-            auto q = std::any_cast<tc_quat>(v);
-            tc_value list = tc_value_list_new();
-            tc_value_list_push(&list, tc_value_double(q.w));
-            tc_value_list_push(&list, tc_value_double(q.x));
-            tc_value_list_push(&list, tc_value_double(q.y));
-            tc_value_list_push(&list, tc_value_double(q.z));
-            return list;
-        },
-        [](const tc_value* v, void*) -> std::any {
-            tc_quat result = {0, 0, 0, 1};
-            if (v->type == TC_VALUE_LIST && v->data.list.count >= 4) {
-                result.w = tc_value_to_double(&v->data.list.items[0]);
-                result.x = tc_value_to_double(&v->data.list.items[1]);
-                result.y = tc_value_to_double(&v->data.list.items[2]);
-                result.z = tc_value_to_double(&v->data.list.items[3]);
-            }
-            return result;
-        }
-    );
-}
+        reg.register_kind(
+            "clip_selector",
+            [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); });
 
-// Helper to register handle types that have serialize_to_value() and deserialize_from() methods
-template<typename H>
-void register_cpp_handle_kind(const std::string& kind_name);
+        // agent_type (string-based, used for navmesh agent type selection)
+        reg.register_kind(
+            "agent_type",
+            [](const std::any& v) { return tc_value_string(std::any_cast<std::string>(v).c_str()); },
+            [](const tc_value* v, void*) -> std::any { return tc_value_to_string(v); });
+
+        // vec3 - serialized as list [x, y, z]
+        reg.register_kind(
+            "vec3",
+            [](const std::any& v) -> tc_value {
+                auto vec = std::any_cast<tc_vec3>(v);
+                tc_value list = tc_value_list_new();
+                tc_value_list_push(&list, tc_value_double(vec.x));
+                tc_value_list_push(&list, tc_value_double(vec.y));
+                tc_value_list_push(&list, tc_value_double(vec.z));
+                return list;
+            },
+            [](const tc_value* v, void*) -> std::any {
+                tc_vec3 result = {0, 0, 0};
+                if (v->type == TC_VALUE_LIST && v->data.list.count >= 3) {
+                    result.x = tc_value_to_double(&v->data.list.items[0]);
+                    result.y = tc_value_to_double(&v->data.list.items[1]);
+                    result.z = tc_value_to_double(&v->data.list.items[2]);
+                }
+                return result;
+            });
+
+        reg.register_kind(
+            "list[vec3]",
+            [](const std::any& v) -> tc_value {
+                const auto& points = std::any_cast<const std::vector<tc_vec3>&>(v);
+                tc_value list = tc_value_list_new();
+                for (const tc_vec3& point : points) {
+                    tc_value item = tc_value_list_new();
+                    tc_value_list_push(&item, tc_value_double(point.x));
+                    tc_value_list_push(&item, tc_value_double(point.y));
+                    tc_value_list_push(&item, tc_value_double(point.z));
+                    tc_value_list_push(&list, item);
+                }
+                return list;
+            },
+            [](const tc_value* v, void*) -> std::any {
+                std::vector<tc_vec3> result;
+                if (v && v->type == TC_VALUE_LIST) {
+                    result.reserve(v->data.list.count);
+                    for (size_t i = 0; i < v->data.list.count; i++) {
+                        const tc_value* item = &v->data.list.items[i];
+                        tc_vec3 point = {0, 0, 0};
+                        if (item->type == TC_VALUE_LIST && item->data.list.count >= 3) {
+                            point.x = tc_value_to_double(&item->data.list.items[0]);
+                            point.y = tc_value_to_double(&item->data.list.items[1]);
+                            point.z = tc_value_to_double(&item->data.list.items[2]);
+                        } else {
+                            tc_log(TC_LOG_ERROR, "[Inspect] list[vec3] item %zu is not a 3-component list", i);
+                        }
+                        result.push_back(point);
+                    }
+                }
+                return result;
+            });
+
+        // quat - serialized as list [w, x, y, z]
+        reg.register_kind(
+            "quat",
+            [](const std::any& v) -> tc_value {
+                auto q = std::any_cast<tc_quat>(v);
+                tc_value list = tc_value_list_new();
+                tc_value_list_push(&list, tc_value_double(q.w));
+                tc_value_list_push(&list, tc_value_double(q.x));
+                tc_value_list_push(&list, tc_value_double(q.y));
+                tc_value_list_push(&list, tc_value_double(q.z));
+                return list;
+            },
+            [](const tc_value* v, void*) -> std::any {
+                tc_quat result = {0, 0, 0, 1};
+                if (v->type == TC_VALUE_LIST && v->data.list.count >= 4) {
+                    result.w = tc_value_to_double(&v->data.list.items[0]);
+                    result.x = tc_value_to_double(&v->data.list.items[1]);
+                    result.y = tc_value_to_double(&v->data.list.items[2]);
+                    result.z = tc_value_to_double(&v->data.list.items[3]);
+                }
+                return result;
+            });
+    }
+
+    // Helper to register handle types that have serialize_to_value() and deserialize_from() methods
+    template <typename H> void register_cpp_handle_kind(const std::string& kind_name);
 
 } // namespace tc
 

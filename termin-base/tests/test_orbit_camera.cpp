@@ -6,11 +6,11 @@
 
 namespace {
 
-bool near(float a, float b, float eps = 1.0e-4f) {
-    return std::abs(a - b) <= eps;
-}
+    bool near(float a, float b, float eps = 1.0e-4f) {
+        return std::abs(a - b) <= eps;
+    }
 
-}  // namespace
+} // namespace
 
 TEST_CASE("OrbitCamera default eye matches tcplot convention") {
     termin::OrbitCamera camera;

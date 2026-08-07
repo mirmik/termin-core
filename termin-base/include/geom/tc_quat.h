@@ -2,15 +2,21 @@
 #ifndef TC_QUAT_H
 #define TC_QUAT_H
 
-#include <tcbase/tc_types.h>
 #include "geom/tc_vec3.h"
 #include <math.h>
+#include <tcbase/tc_types.h>
 
 // C/C++ compatible struct initialization
 #ifdef __cplusplus
-    #define TC_QUAT(x, y, z, w) tc_quat{x, y, z, w}
+#define TC_QUAT(x, y, z, w)                                                                                            \
+    tc_quat {                                                                                                          \
+        x, y, z, w                                                                                                     \
+    }
 #else
-    #define TC_QUAT(x, y, z, w) (tc_quat){x, y, z, w}
+#define TC_QUAT(x, y, z, w)                                                                                            \
+    (tc_quat) {                                                                                                        \
+        x, y, z, w                                                                                                     \
+    }
 #endif
 
 #ifdef __cplusplus
@@ -46,12 +52,10 @@ TC_C_STATIC_INLINE tc_quat tc_quat_from_euler(double x, double y, double z) {
     double cy = cos(y * 0.5), sy = sin(y * 0.5);
     double cz = cos(z * 0.5), sz = sin(z * 0.5);
 
-    return TC_QUAT(
-        sx * cy * cz - cx * sy * sz,
-        cx * sy * cz + sx * cy * sz,
-        cx * cy * sz - sx * sy * cz,
-        cx * cy * cz + sx * sy * sz
-    );
+    return TC_QUAT(sx * cy * cz - cx * sy * sz,
+                   cx * sy * cz + sx * cy * sz,
+                   cx * cy * sz - sx * sy * cz,
+                   cx * cy * cz + sx * sy * sz);
 }
 
 // ============================================================================
@@ -59,12 +63,10 @@ TC_C_STATIC_INLINE tc_quat tc_quat_from_euler(double x, double y, double z) {
 // ============================================================================
 
 TC_C_STATIC_INLINE tc_quat tc_quat_mul(tc_quat a, tc_quat b) {
-    return TC_QUAT(
-        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
-    );
+    return TC_QUAT(a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                   a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                   a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+                   a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z);
 }
 
 TC_C_STATIC_INLINE tc_quat tc_quat_conjugate(tc_quat q) {
@@ -81,14 +83,16 @@ TC_C_STATIC_INLINE double tc_quat_length(tc_quat q) {
 
 TC_C_STATIC_INLINE tc_quat tc_quat_normalize(tc_quat q) {
     double len = tc_quat_length(q);
-    if (len < 1e-12) return tc_quat_identity();
+    if (len < 1e-12)
+        return tc_quat_identity();
     double inv = 1.0 / len;
     return TC_QUAT(q.x * inv, q.y * inv, q.z * inv, q.w * inv);
 }
 
 TC_C_STATIC_INLINE tc_quat tc_quat_inverse(tc_quat q) {
     double len_sq = tc_quat_length_sq(q);
-    if (len_sq < 1e-12) return tc_quat_identity();
+    if (len_sq < 1e-12)
+        return tc_quat_identity();
     double inv = 1.0 / len_sq;
     return TC_QUAT(-q.x * inv, -q.y * inv, -q.z * inv, q.w * inv);
 }
@@ -105,10 +109,7 @@ TC_C_STATIC_INLINE tc_vec3 tc_quat_rotate(tc_quat q, tc_vec3 v) {
     tc_vec3 uv = tc_vec3_cross(u, v);
     tc_vec3 uuv = tc_vec3_cross(u, uv);
 
-    return tc_vec3_add(v, tc_vec3_add(
-        tc_vec3_scale(uv, 2.0 * s),
-        tc_vec3_scale(uuv, 2.0)
-    ));
+    return tc_vec3_add(v, tc_vec3_add(tc_vec3_scale(uv, 2.0 * s), tc_vec3_scale(uuv, 2.0)));
 }
 
 // ============================================================================
@@ -117,12 +118,7 @@ TC_C_STATIC_INLINE tc_vec3 tc_quat_rotate(tc_quat q, tc_vec3 v) {
 
 TC_C_STATIC_INLINE tc_quat tc_quat_lerp(tc_quat a, tc_quat b, double t) {
     // Simple linear interpolation (not normalized)
-    return TC_QUAT(
-        a.x + (b.x - a.x) * t,
-        a.y + (b.y - a.y) * t,
-        a.z + (b.z - a.z) * t,
-        a.w + (b.w - a.w) * t
-    );
+    return TC_QUAT(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
 }
 
 TC_C_STATIC_INLINE tc_quat tc_quat_nlerp(tc_quat a, tc_quat b, double t) {
@@ -151,12 +147,7 @@ TC_C_STATIC_INLINE tc_quat tc_quat_slerp(tc_quat a, tc_quat b, double t) {
     double wa = sin((1 - t) * theta) / sin_theta;
     double wb = sin(t * theta) / sin_theta;
 
-    return TC_QUAT(
-        wa * a.x + wb * b.x,
-        wa * a.y + wb * b.y,
-        wa * a.z + wb * b.z,
-        wa * a.w + wb * b.w
-    );
+    return TC_QUAT(wa * a.x + wb * b.x, wa * a.y + wb * b.y, wa * a.z + wb * b.z, wa * a.w + wb * b.w);
 }
 
 // ============================================================================

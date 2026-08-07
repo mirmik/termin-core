@@ -12,11 +12,14 @@
 #endif
 
 static bool list_ensure_capacity(tc_value_list* list, size_t needed) {
-    if (!list) return false;
-    if (list->capacity >= needed) return true;
+    if (!list)
+        return false;
+    if (list->capacity >= needed)
+        return true;
 
     size_t new_cap = list->capacity == 0 ? 4 : list->capacity * 2;
-    while (new_cap < needed) new_cap *= 2;
+    while (new_cap < needed)
+        new_cap *= 2;
 
     tc_value* new_items = (tc_value*)realloc(list->items, new_cap * sizeof(tc_value));
     if (!new_items) {
@@ -30,11 +33,14 @@ static bool list_ensure_capacity(tc_value_list* list, size_t needed) {
 }
 
 static bool dict_ensure_capacity(tc_value_dict* dict, size_t needed) {
-    if (!dict) return false;
-    if (dict->capacity >= needed) return true;
+    if (!dict)
+        return false;
+    if (dict->capacity >= needed)
+        return true;
 
     size_t new_cap = dict->capacity == 0 ? 8 : dict->capacity * 2;
-    while (new_cap < needed) new_cap *= 2;
+    while (new_cap < needed)
+        new_cap *= 2;
 
     tc_value_dict_entry* new_entries =
         (tc_value_dict_entry*)realloc(dict->entries, new_cap * sizeof(tc_value_dict_entry));
@@ -99,7 +105,8 @@ tc_value tc_value_dict_new(void) {
 }
 
 void tc_value_free(tc_value* v) {
-    if (!v) return;
+    if (!v)
+        return;
 
     switch (v->type) {
     case TC_VALUE_STRING:
@@ -128,7 +135,8 @@ void tc_value_free(tc_value* v) {
 }
 
 tc_value tc_value_copy(const tc_value* v) {
-    if (!v) return tc_value_nil();
+    if (!v)
+        return tc_value_nil();
 
     tc_value copy = *v;
     switch (v->type) {
@@ -151,8 +159,7 @@ tc_value tc_value_copy(const tc_value* v) {
         copy.data.dict.count = v->data.dict.count;
         copy.data.dict.capacity = v->data.dict.count;
         if (v->data.dict.count > 0) {
-            copy.data.dict.entries =
-                (tc_value_dict_entry*)malloc(v->data.dict.count * sizeof(tc_value_dict_entry));
+            copy.data.dict.entries = (tc_value_dict_entry*)malloc(v->data.dict.count * sizeof(tc_value_dict_entry));
             for (size_t i = 0; i < v->data.dict.count; i++) {
                 copy.data.dict.entries[i].key = tc_strdup(v->data.dict.entries[i].key);
                 copy.data.dict.entries[i].value = (tc_value*)malloc(sizeof(tc_value));
@@ -168,9 +175,12 @@ tc_value tc_value_copy(const tc_value* v) {
 }
 
 bool tc_value_equals(const tc_value* a, const tc_value* b) {
-    if (a == b) return true;
-    if (!a || !b) return false;
-    if (a->type != b->type) return false;
+    if (a == b)
+        return true;
+    if (!a || !b)
+        return false;
+    if (a->type != b->type)
+        return false;
 
     switch (a->type) {
     case TC_VALUE_NIL:
@@ -184,21 +194,27 @@ bool tc_value_equals(const tc_value* a, const tc_value* b) {
     case TC_VALUE_DOUBLE:
         return a->data.d == b->data.d;
     case TC_VALUE_STRING:
-        if (!a->data.s || !b->data.s) return a->data.s == b->data.s;
+        if (!a->data.s || !b->data.s)
+            return a->data.s == b->data.s;
         return strcmp(a->data.s, b->data.s) == 0;
     case TC_VALUE_LIST:
-        if (a->data.list.count != b->data.list.count) return false;
+        if (a->data.list.count != b->data.list.count)
+            return false;
         for (size_t i = 0; i < a->data.list.count; i++) {
-            if (!tc_value_equals(&a->data.list.items[i], &b->data.list.items[i])) return false;
+            if (!tc_value_equals(&a->data.list.items[i], &b->data.list.items[i]))
+                return false;
         }
         return true;
     case TC_VALUE_DICT:
-        if (a->data.dict.count != b->data.dict.count) return false;
+        if (a->data.dict.count != b->data.dict.count)
+            return false;
         for (size_t i = 0; i < a->data.dict.count; i++) {
             const char* key = a->data.dict.entries[i].key;
             tc_value* rhs = tc_value_dict_get((tc_value*)b, key);
-            if (!rhs) return false;
-            if (!tc_value_equals(a->data.dict.entries[i].value, rhs)) return false;
+            if (!rhs)
+                return false;
+            if (!tc_value_equals(a->data.dict.entries[i].value, rhs))
+                return false;
         }
         return true;
     default:
@@ -220,13 +236,16 @@ void tc_value_list_push(tc_value* list, tc_value item) {
 }
 
 tc_value* tc_value_list_get(tc_value* list, size_t index) {
-    if (!list || list->type != TC_VALUE_LIST) return NULL;
-    if (index >= list->data.list.count) return NULL;
+    if (!list || list->type != TC_VALUE_LIST)
+        return NULL;
+    if (index >= list->data.list.count)
+        return NULL;
     return &list->data.list.items[index];
 }
 
 size_t tc_value_list_size(const tc_value* list) {
-    if (!list || list->type != TC_VALUE_LIST) return 0;
+    if (!list || list->type != TC_VALUE_LIST)
+        return 0;
     return list->data.list.count;
 }
 
@@ -272,7 +291,8 @@ void tc_value_dict_set(tc_value* dict, const char* key, tc_value item) {
 }
 
 tc_value* tc_value_dict_get(tc_value* dict, const char* key) {
-    if (!dict || dict->type != TC_VALUE_DICT || !key) return NULL;
+    if (!dict || dict->type != TC_VALUE_DICT || !key)
+        return NULL;
     for (size_t i = 0; i < dict->data.dict.count; i++) {
         if (strcmp(dict->data.dict.entries[i].key, key) == 0) {
             return dict->data.dict.entries[i].value;
@@ -286,13 +306,17 @@ bool tc_value_dict_has(const tc_value* dict, const char* key) {
 }
 
 size_t tc_value_dict_size(const tc_value* dict) {
-    if (!dict || dict->type != TC_VALUE_DICT) return 0;
+    if (!dict || dict->type != TC_VALUE_DICT)
+        return 0;
     return dict->data.dict.count;
 }
 
 tc_value* tc_value_dict_get_at(tc_value* dict, size_t index, const char** out_key) {
-    if (!dict || dict->type != TC_VALUE_DICT) return NULL;
-    if (index >= dict->data.dict.count) return NULL;
-    if (out_key) *out_key = dict->data.dict.entries[index].key;
+    if (!dict || dict->type != TC_VALUE_DICT)
+        return NULL;
+    if (index >= dict->data.dict.count)
+        return NULL;
+    if (out_key)
+        *out_key = dict->data.dict.entries[index].key;
     return dict->data.dict.entries[index].value;
 }

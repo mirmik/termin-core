@@ -3,54 +3,58 @@
 
 #include <stdint.h>
 
-//#ifndef _MSC_VER
-//#include "endian.h"
-//#endif
+// #ifndef _MSC_VER
+// #include "endian.h"
+// #endif
 
-static inline uint8_t HIHALF(uint8_t byte) { return (byte >> 4) & 0x0F; }
-static inline uint8_t LOHALF(uint8_t byte) { return byte & 0x0F; }
+static inline uint8_t HIHALF(uint8_t byte) {
+    return (byte >> 4) & 0x0F;
+}
+static inline uint8_t LOHALF(uint8_t byte) {
+    return byte & 0x0F;
+}
 
-//#ifndef BYTE_ORDER
-//#	define BYTE_ORDER __LITTLE_ENDIAN
-//#endif
+// #ifndef BYTE_ORDER
+// #	define BYTE_ORDER __LITTLE_ENDIAN
+// #endif
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 
-#define INT16_HI(arg) *((uint8_t *)&arg + 0)
-#define INT16_LO(arg) *((uint8_t *)&arg + 1)
+#define INT16_HI(arg) *((uint8_t*)&arg + 0)
+#define INT16_LO(arg) *((uint8_t*)&arg + 1)
 
-#define INT32_HHI(arg) *((uint8_t *)&arg + 0)
-#define INT32_HLO(arg) *((uint8_t *)&arg + 1)
-#define INT32_LHI(arg) *((uint8_t *)&arg + 2)
-#define INT32_LLO(arg) *((uint8_t *)&arg + 3)
+#define INT32_HHI(arg) *((uint8_t*)&arg + 0)
+#define INT32_HLO(arg) *((uint8_t*)&arg + 1)
+#define INT32_LHI(arg) *((uint8_t*)&arg + 2)
+#define INT32_LLO(arg) *((uint8_t*)&arg + 3)
 
-#define INT64_HHHI(arg) *((uint8_t *)&arg + 0)
-#define INT64_HHLO(arg) *((uint8_t *)&arg + 1)
-#define INT64_HLHI(arg) *((uint8_t *)&arg + 2)
-#define INT64_HLLO(arg) *((uint8_t *)&arg + 3)
-#define INT64_LHHI(arg) *((uint8_t *)&arg + 4)
-#define INT64_LHLO(arg) *((uint8_t *)&arg + 5)
-#define INT64_LLHI(arg) *((uint8_t *)&arg + 6)
-#define INT64_LLLO(arg) *((uint8_t *)&arg + 7)
+#define INT64_HHHI(arg) *((uint8_t*)&arg + 0)
+#define INT64_HHLO(arg) *((uint8_t*)&arg + 1)
+#define INT64_HLHI(arg) *((uint8_t*)&arg + 2)
+#define INT64_HLLO(arg) *((uint8_t*)&arg + 3)
+#define INT64_LHHI(arg) *((uint8_t*)&arg + 4)
+#define INT64_LHLO(arg) *((uint8_t*)&arg + 5)
+#define INT64_LLHI(arg) *((uint8_t*)&arg + 6)
+#define INT64_LLLO(arg) *((uint8_t*)&arg + 7)
 
 #elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 
-#define INT16_HI(arg) *((uint8_t *)&arg + 1)
-#define INT16_LO(arg) *((uint8_t *)&arg + 0)
+#define INT16_HI(arg) *((uint8_t*)&arg + 1)
+#define INT16_LO(arg) *((uint8_t*)&arg + 0)
 
-#define INT32_HHI(arg) *((uint8_t *)&arg + 3)
-#define INT32_HLO(arg) *((uint8_t *)&arg + 2)
-#define INT32_LHI(arg) *((uint8_t *)&arg + 1)
-#define INT32_LLO(arg) *((uint8_t *)&arg + 0)
+#define INT32_HHI(arg) *((uint8_t*)&arg + 3)
+#define INT32_HLO(arg) *((uint8_t*)&arg + 2)
+#define INT32_LHI(arg) *((uint8_t*)&arg + 1)
+#define INT32_LLO(arg) *((uint8_t*)&arg + 0)
 
-#define INT64_HHHI(arg) *((uint8_t *)&arg + 7)
-#define INT64_HHLO(arg) *((uint8_t *)&arg + 6)
-#define INT64_HLHI(arg) *((uint8_t *)&arg + 5)
-#define INT64_HLLO(arg) *((uint8_t *)&arg + 4)
-#define INT64_LHHI(arg) *((uint8_t *)&arg + 3)
-#define INT64_LHLO(arg) *((uint8_t *)&arg + 2)
-#define INT64_LLHI(arg) *((uint8_t *)&arg + 1)
-#define INT64_LLLO(arg) *((uint8_t *)&arg + 0)
+#define INT64_HHHI(arg) *((uint8_t*)&arg + 7)
+#define INT64_HHLO(arg) *((uint8_t*)&arg + 6)
+#define INT64_HLHI(arg) *((uint8_t*)&arg + 5)
+#define INT64_HLLO(arg) *((uint8_t*)&arg + 4)
+#define INT64_LHHI(arg) *((uint8_t*)&arg + 3)
+#define INT64_LHLO(arg) *((uint8_t*)&arg + 2)
+#define INT64_LLHI(arg) *((uint8_t*)&arg + 1)
+#define INT64_LLLO(arg) *((uint8_t*)&arg + 0)
 
 #endif
 

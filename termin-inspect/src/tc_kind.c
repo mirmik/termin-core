@@ -24,7 +24,8 @@ const tc_kind_lang_registry* tc_kind_get_lang_registry(tc_kind_lang lang) {
 }
 
 bool tc_kind_exists(const char* name) {
-    if (!name) return false;
+    if (!name)
+        return false;
 
     for (int i = 0; i < TC_KIND_LANG_COUNT; i++) {
         if (g_registries[i].has) {

@@ -17,28 +17,22 @@ inline void tc_aabb::extend(const tc_vec3& point) {
 }
 
 inline bool tc_aabb::intersects(const tc_aabb& other) const {
-    return max_point.x >= other.min_point.x && other.max_point.x >= min_point.x &&
-           max_point.y >= other.min_point.y && other.max_point.y >= min_point.y &&
-           max_point.z >= other.min_point.z && other.max_point.z >= min_point.z;
+    return max_point.x >= other.min_point.x && other.max_point.x >= min_point.x && max_point.y >= other.min_point.y &&
+           other.max_point.y >= min_point.y && max_point.z >= other.min_point.z && other.max_point.z >= min_point.z;
 }
 
 inline bool tc_aabb::contains(const tc_vec3& point) const {
-    return point.x >= min_point.x && point.x <= max_point.x &&
-           point.y >= min_point.y && point.y <= max_point.y &&
+    return point.x >= min_point.x && point.x <= max_point.x && point.y >= min_point.y && point.y <= max_point.y &&
            point.z >= min_point.z && point.z <= max_point.z;
 }
 
 inline tc_aabb tc_aabb::merge(const tc_aabb& other) const {
-    return {
-        tc_vec3(
-            std::min(min_point.x, other.min_point.x),
-            std::min(min_point.y, other.min_point.y),
-            std::min(min_point.z, other.min_point.z)),
-        tc_vec3(
-            std::max(max_point.x, other.max_point.x),
-            std::max(max_point.y, other.max_point.y),
-            std::max(max_point.z, other.max_point.z))
-    };
+    return {tc_vec3(std::min(min_point.x, other.min_point.x),
+                    std::min(min_point.y, other.min_point.y),
+                    std::min(min_point.z, other.min_point.z)),
+            tc_vec3(std::max(max_point.x, other.max_point.x),
+                    std::max(max_point.y, other.max_point.y),
+                    std::max(max_point.z, other.max_point.z))};
 }
 
 inline tc_vec3 tc_aabb::center() const {
@@ -54,11 +48,9 @@ inline tc_vec3 tc_aabb::half_size() const {
 }
 
 inline tc_vec3 tc_aabb::project_point(const tc_vec3& point) const {
-    return tc_vec3(
-        std::clamp(point.x, min_point.x, max_point.x),
-        std::clamp(point.y, min_point.y, max_point.y),
-        std::clamp(point.z, min_point.z, max_point.z)
-    );
+    return tc_vec3(std::clamp(point.x, min_point.x, max_point.x),
+                   std::clamp(point.y, min_point.y, max_point.y),
+                   std::clamp(point.z, min_point.z, max_point.z));
 }
 
 inline double tc_aabb::surface_area() const {
@@ -117,14 +109,14 @@ inline void tc_aabb::get_corners(tc_vec3* out_corners) const {
 
 namespace termin {
 
-using AABB = ::tc_aabb;
+    using AABB = ::tc_aabb;
 
-static_assert(std::is_same<AABB, ::tc_aabb>::value, "termin::AABB must alias tc_aabb");
-static_assert(std::is_standard_layout<AABB>::value, "AABB must stay ABI-friendly");
-static_assert(std::is_trivially_copyable<AABB>::value, "AABB must stay trivially copyable");
-static_assert(sizeof(AABB) == sizeof(Vec3) * 2, "AABB must stay two Vec3 values");
-static_assert(alignof(AABB) == alignof(Vec3), "AABB alignment must match Vec3");
-static_assert(offsetof(AABB, min_point) == 0, "AABB.min_point offset changed");
-static_assert(offsetof(AABB, max_point) == sizeof(Vec3), "AABB.max_point offset changed");
+    static_assert(std::is_same<AABB, ::tc_aabb>::value, "termin::AABB must alias tc_aabb");
+    static_assert(std::is_standard_layout<AABB>::value, "AABB must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<AABB>::value, "AABB must stay trivially copyable");
+    static_assert(sizeof(AABB) == sizeof(Vec3) * 2, "AABB must stay two Vec3 values");
+    static_assert(alignof(AABB) == alignof(Vec3), "AABB alignment must match Vec3");
+    static_assert(offsetof(AABB, min_point) == 0, "AABB.min_point offset changed");
+    static_assert(offsetof(AABB, max_point) == sizeof(Vec3), "AABB.max_point offset changed");
 
 } // namespace termin

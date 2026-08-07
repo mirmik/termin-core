@@ -2,18 +2,30 @@
 #ifndef TC_POSE_H
 #define TC_POSE_H
 
-#include <tcbase/tc_types.h>
-#include "geom/tc_vec3.h"
 #include "geom/tc_quat.h"
+#include "geom/tc_vec3.h"
+#include <tcbase/tc_types.h>
 
 // C/C++ compatible struct initialization
 // Layout: ang first, then lin (matches C++ Pose3/GeneralPose3)
 #ifdef __cplusplus
-    #define TC_POSE3(rot, pos) tc_pose3{rot, pos}
-    #define TC_GPOSE(rot, pos, scl) tc_general_pose3{rot, pos, scl}
+#define TC_POSE3(rot, pos)                                                                                             \
+    tc_pose3 {                                                                                                         \
+        rot, pos                                                                                                       \
+    }
+#define TC_GPOSE(rot, pos, scl)                                                                                        \
+    tc_general_pose3 {                                                                                                 \
+        rot, pos, scl                                                                                                  \
+    }
 #else
-    #define TC_POSE3(rot, pos) (tc_pose3){rot, pos}
-    #define TC_GPOSE(rot, pos, scl) (tc_general_pose3){rot, pos, scl}
+#define TC_POSE3(rot, pos)                                                                                             \
+    (tc_pose3) {                                                                                                       \
+        rot, pos                                                                                                       \
+    }
+#define TC_GPOSE(rot, pos, scl)                                                                                        \
+    (tc_general_pose3) {                                                                                               \
+        rot, pos, scl                                                                                                  \
+    }
 #endif
 
 #ifdef __cplusplus
@@ -42,18 +54,12 @@ TC_C_STATIC_INLINE tc_pose3 tc_pose3_from_rotation(tc_quat rot) {
 
 // Composition: parent * child
 TC_C_STATIC_INLINE tc_pose3 tc_pose3_mul(tc_pose3 parent, tc_pose3 child) {
-    return TC_POSE3(
-        tc_quat_mul(parent.ang, child.ang),
-        tc_vec3_add(parent.lin, tc_quat_rotate(parent.ang, child.lin))
-    );
+    return TC_POSE3(tc_quat_mul(parent.ang, child.ang), tc_vec3_add(parent.lin, tc_quat_rotate(parent.ang, child.lin)));
 }
 
 TC_C_STATIC_INLINE tc_pose3 tc_pose3_inverse(tc_pose3 p) {
     tc_quat inv_rot = tc_quat_inverse(p.ang);
-    return TC_POSE3(
-        inv_rot,
-        tc_quat_rotate(inv_rot, tc_vec3_neg(p.lin))
-    );
+    return TC_POSE3(inv_rot, tc_quat_rotate(inv_rot, tc_vec3_neg(p.lin)));
 }
 
 TC_C_STATIC_INLINE tc_vec3 tc_pose3_transform_point(tc_pose3 p, tc_vec3 point) {
@@ -85,18 +91,13 @@ TC_C_STATIC_INLINE tc_pose3 tc_gpose_to_pose(tc_general_pose3 gp) {
 }
 
 // Projected TRS composition. The exact affine product can contain shear.
-TC_C_STATIC_INLINE tc_general_pose3 tc_gpose_compose_trs_projected(
-    tc_general_pose3 parent,
-    tc_general_pose3 child
-) {
+TC_C_STATIC_INLINE tc_general_pose3 tc_gpose_compose_trs_projected(tc_general_pose3 parent, tc_general_pose3 child) {
     tc_vec3 scaled_child = tc_vec3_mul(parent.scale, child.lin);
     tc_vec3 rotated_child = tc_quat_rotate(parent.ang, scaled_child);
 
-    return TC_GPOSE(
-        tc_quat_mul(parent.ang, child.ang),
-        tc_vec3_add(parent.lin, rotated_child),
-        tc_vec3_mul(parent.scale, child.scale)
-    );
+    return TC_GPOSE(tc_quat_mul(parent.ang, child.ang),
+                    tc_vec3_add(parent.lin, rotated_child),
+                    tc_vec3_mul(parent.scale, child.scale));
 }
 
 // Projected TRS inverse. The exact affine inverse can contain shear.
@@ -150,8 +151,8 @@ TC_C_STATIC_INLINE void tc_pose3_to_matrix(tc_pose3 p, double* out) {
     out[7] = 0.0;
 
     // Column 2
-    out[8]  = 2.0 * (xz + wy);
-    out[9]  = 2.0 * (yz - wx);
+    out[8] = 2.0 * (xz + wy);
+    out[9] = 2.0 * (yz - wx);
     out[10] = 1.0 - 2.0 * (xx + yy);
     out[11] = 0.0;
 
@@ -189,8 +190,8 @@ TC_C_STATIC_INLINE void tc_gpose_to_mat44(tc_general_pose3 p, tc_mat44* out) {
     out->m[7] = 0.0;
 
     // Column 2
-    out->m[8]  = sz * 2.0 * (xz + wy);
-    out->m[9]  = sz * 2.0 * (yz - wx);
+    out->m[8] = sz * 2.0 * (xz + wy);
+    out->m[9] = sz * 2.0 * (yz - wx);
     out->m[10] = sz * (1.0 - 2.0 * (xx + yy));
     out->m[11] = 0.0;
 
@@ -203,11 +204,7 @@ TC_C_STATIC_INLINE void tc_gpose_to_mat44(tc_general_pose3 p, tc_mat44* out) {
 
 // Interpolation
 TC_C_STATIC_INLINE tc_general_pose3 tc_gpose_lerp(tc_general_pose3 a, tc_general_pose3 b, double t) {
-    return TC_GPOSE(
-        tc_quat_slerp(a.ang, b.ang, t),
-        tc_vec3_lerp(a.lin, b.lin, t),
-        tc_vec3_lerp(a.scale, b.scale, t)
-    );
+    return TC_GPOSE(tc_quat_slerp(a.ang, b.ang, t), tc_vec3_lerp(a.lin, b.lin, t), tc_vec3_lerp(a.scale, b.scale, t));
 }
 
 #ifdef __cplusplus

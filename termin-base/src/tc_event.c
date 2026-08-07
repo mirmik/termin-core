@@ -1,7 +1,7 @@
-#include <tcbase/tc_event.h>
-#include <tcbase/tc_string.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tcbase/tc_event.h>
+#include <tcbase/tc_string.h>
 
 typedef struct tc_event_subscription_record {
     uint64_t id;
@@ -20,39 +20,36 @@ struct tc_event_bus {
 
 tc_event_bus* tc_event_bus_create(void) {
     tc_event_bus* bus = (tc_event_bus*)calloc(1, sizeof(tc_event_bus));
-    if (!bus) return NULL;
+    if (!bus)
+        return NULL;
     bus->next_id = 1;
     return bus;
 }
 
 void tc_event_bus_destroy(tc_event_bus* bus) {
-    if (!bus) return;
+    if (!bus)
+        return;
     free(bus->records);
     free(bus);
 }
 
 static bool tc_event_bus_grow(tc_event_bus* bus) {
     size_t new_capacity = bus->capacity == 0 ? 8 : bus->capacity * 2;
-    tc_event_subscription_record* new_records = (tc_event_subscription_record*)realloc(
-        bus->records,
-        new_capacity * sizeof(tc_event_subscription_record)
-    );
-    if (!new_records) return false;
-    memset(new_records + bus->capacity, 0,
-           (new_capacity - bus->capacity) * sizeof(tc_event_subscription_record));
+    tc_event_subscription_record* new_records =
+        (tc_event_subscription_record*)realloc(bus->records, new_capacity * sizeof(tc_event_subscription_record));
+    if (!new_records)
+        return false;
+    memset(new_records + bus->capacity, 0, (new_capacity - bus->capacity) * sizeof(tc_event_subscription_record));
     bus->records = new_records;
     bus->capacity = new_capacity;
     return true;
 }
 
-tc_event_subscription tc_event_bus_subscribe(
-    tc_event_bus* bus,
-    tc_event_type type,
-    tc_event_handler_fn handler,
-    void* user_data
-) {
+tc_event_subscription
+tc_event_bus_subscribe(tc_event_bus* bus, tc_event_type type, tc_event_handler_fn handler, void* user_data) {
     tc_event_subscription invalid = {0};
-    if (!bus || !type || !handler) return invalid;
+    if (!bus || !type || !handler)
+        return invalid;
 
     if (bus->count >= bus->capacity && !tc_event_bus_grow(bus)) {
         return invalid;
@@ -74,7 +71,8 @@ tc_event_subscription tc_event_bus_subscribe(
 }
 
 bool tc_event_bus_unsubscribe(tc_event_bus* bus, tc_event_subscription subscription) {
-    if (!bus || !tc_event_subscription_valid(subscription)) return false;
+    if (!bus || !tc_event_subscription_valid(subscription))
+        return false;
 
     for (size_t i = 0; i < bus->count; ++i) {
         tc_event_subscription_record* record = &bus->records[i];
@@ -90,7 +88,8 @@ bool tc_event_bus_unsubscribe(tc_event_bus* bus, tc_event_subscription subscript
 }
 
 void tc_event_bus_publish(tc_event_bus* bus, const tc_event* event) {
-    if (!bus || !event || !event->type) return;
+    if (!bus || !event || !event->type)
+        return;
 
     tc_event_type type = tc_intern_string(event->type);
     for (size_t i = 0; i < bus->count; ++i) {

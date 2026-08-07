@@ -3,51 +3,51 @@
 
 namespace tc {
 
-tc_value trent_to_tc_value(const nos::trent& t) {
-    if (t.is_nil()) {
+    tc_value trent_to_tc_value(const nos::trent& t) {
+        if (t.is_nil()) {
+            return tc_value_nil();
+        }
+
+        if (t.is_bool()) {
+            return tc_value_bool(t.as_bool());
+        }
+
+        if (t.is_numer()) {
+            double val = static_cast<double>(t.as_numer());
+            // Check if it's an integer value
+            if (val == static_cast<double>(static_cast<int64_t>(val))) {
+                return tc_value_int(static_cast<int64_t>(val));
+            }
+            return tc_value_double(val);
+        }
+
+        if (t.is_string()) {
+            return tc_value_string(t.as_string().c_str());
+        }
+
+        if (t.is_list()) {
+            tc_value list = tc_value_list_new();
+            for (const auto& item : t.as_list()) {
+                tc_value v = trent_to_tc_value(item);
+                tc_value_list_push(&list, v);
+            }
+            return list;
+        }
+
+        if (t.is_dict()) {
+            tc_value dict = tc_value_dict_new();
+            for (const auto& [key, val] : t.as_dict()) {
+                tc_value v = trent_to_tc_value(val);
+                tc_value_dict_set(&dict, key.c_str(), v);
+            }
+            return dict;
+        }
+
         return tc_value_nil();
     }
 
-    if (t.is_bool()) {
-        return tc_value_bool(t.as_bool());
-    }
-
-    if (t.is_numer()) {
-        double val = static_cast<double>(t.as_numer());
-        // Check if it's an integer value
-        if (val == static_cast<double>(static_cast<int64_t>(val))) {
-            return tc_value_int(static_cast<int64_t>(val));
-        }
-        return tc_value_double(val);
-    }
-
-    if (t.is_string()) {
-        return tc_value_string(t.as_string().c_str());
-    }
-
-    if (t.is_list()) {
-        tc_value list = tc_value_list_new();
-        for (const auto& item : t.as_list()) {
-            tc_value v = trent_to_tc_value(item);
-            tc_value_list_push(&list, v);
-        }
-        return list;
-    }
-
-    if (t.is_dict()) {
-        tc_value dict = tc_value_dict_new();
-        for (const auto& [key, val] : t.as_dict()) {
-            tc_value v = trent_to_tc_value(val);
-            tc_value_dict_set(&dict, key.c_str(), v);
-        }
-        return dict;
-    }
-
-    return tc_value_nil();
-}
-
-nos::trent tc_value_to_trent(const tc_value& v) {
-    switch (v.type) {
+    nos::trent tc_value_to_trent(const tc_value& v) {
+        switch (v.type) {
         case TC_VALUE_NIL:
             return nos::trent();
 
@@ -89,7 +89,7 @@ nos::trent tc_value_to_trent(const tc_value& v) {
 
         default:
             return nos::trent();
+        }
     }
-}
 
 } // namespace tc

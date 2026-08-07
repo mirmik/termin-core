@@ -5,26 +5,24 @@
     @file
 */
 
+#include "buffer.h"
+#include "ctrdtr.h"
+#include "error.h"
+#include "expected.h"
+#include "flat_map.h"
+#include "trent_path.h"
 #include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <map>
-#include "buffer.h"
-#include "trent_path.h"
-#include "ctrdtr.h"
-#include "error.h"
-#include "expected.h"
-#include "flat_map.h"
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace nos
-{
-    enum class trent_type : uint8_t
-    {
+namespace nos {
+    enum class trent_type : uint8_t {
         string,
         list,
         dict,
@@ -32,12 +30,11 @@ namespace nos
         boolean,
         nil,
     };
-    const char *typestr(trent_type type);
+    const char* typestr(trent_type type);
 
     class trent_path;
 
-    class trent
-    {
+    class trent {
     public:
         using type = trent_type;
         using value_type = std::pair<std::string, trent>;
@@ -48,44 +45,40 @@ namespace nos
         using numer_type = long double;
         using integer_type = int64_t;
 
-        class wrong_path : public std::exception
-        {
+        class wrong_path : public std::exception {
             trent_path path = {};
             std::string str = {};
 
         public:
-            explicit wrong_path(const nos::trent_path &path);
-            const char *what() const noexcept override;
+            explicit wrong_path(const nos::trent_path& path);
+            const char* what() const noexcept override;
         };
 
-        class wrong_type : public std::exception
-        {
+        class wrong_type : public std::exception {
         public:
             trent_path path = {};
             type t = {};
             std::string str = {};
 
         public:
-            wrong_type(const trent_path &path, type t, type rt);
-            const char *what() const noexcept override;
+            wrong_type(const trent_path& path, type t, type rt);
+            const char* what() const noexcept override;
         };
 
-        class wrong_index : public std::exception
-        {
+        class wrong_index : public std::exception {
         public:
             std::string str;
             trent_path path;
             type t;
 
         public:
-            wrong_index(const trent_path &path, type t);
-            const char *what() const noexcept override;
+            wrong_index(const trent_path& path, type t);
+            const char* what() const noexcept override;
         };
 
     private:
         type m_type = type::nil;
-        union
-        {
+        union {
             bool m_bool;
             numer_type m_num;
             list_type m_arr;
@@ -94,175 +87,152 @@ namespace nos
         };
 
     public:
-        static const trent &static_nil();
-        static trent nil()
-        {
+        static const trent& static_nil();
+        static trent nil() {
             return trent();
         }
 
-        const char *typestr();
+        const char* typestr();
 
         ~trent();
         trent();
-        trent(const trent &other);
-        trent(trent &&other) noexcept;
+        trent(const trent& other);
+        trent(trent&& other) noexcept;
 
         void invalidate();
 
-        template <class T> trent(const T &obj)
-        {
+        template <class T> trent(const T& obj) {
             init(obj);
         }
 
-        void init_sint(const int64_t &i);
-        void init_uint(const uint64_t &i);
-        void init_flt(const long double &i);
-        void init_str(const char *data, size_t size);
+        void init_sint(const int64_t& i);
+        void init_uint(const uint64_t& i);
+        void init_flt(const long double& i);
+        void init_str(const char* data, size_t size);
 
         void init(type t);
 
-        void init(const char *ptr)
-        {
+        void init(const char* ptr) {
             init_str(ptr, strlen(ptr));
         }
-        void init(const std::string &str)
-        {
+        void init(const std::string& str) {
             init_str(str.data(), str.size());
         }
-        void init(const nos::buffer &str)
-        {
+        void init(const nos::buffer& str) {
             init_str(str.data(), str.size());
         }
 
-        void init(const int8_t &i)
-        {
+        void init(const int8_t& i) {
             init_sint(i);
         }
-        void init(const int16_t &i)
-        {
+        void init(const int16_t& i) {
             init_sint(i);
         }
-        void init(const int32_t &i)
-        {
+        void init(const int32_t& i) {
             init_sint(i);
         }
-        void init(const int64_t &i)
-        {
+        void init(const int64_t& i) {
             init_sint(i);
         }
 
-        void init(const uint8_t &i)
-        {
+        void init(const uint8_t& i) {
             init_uint(i);
         }
-        void init(const uint16_t &i)
-        {
+        void init(const uint16_t& i) {
             init_uint(i);
         }
-        void init(const uint32_t &i)
-        {
+        void init(const uint32_t& i) {
             init_uint(i);
         }
-        void init(const uint64_t &i)
-        {
+        void init(const uint64_t& i) {
             init_uint(i);
         }
 
-        void init(const float &i)
-        {
+        void init(const float& i) {
             init_flt(i);
         }
-        void init(const double &i)
-        {
+        void init(const double& i) {
             init_flt(i);
         }
-        void init(const long double &i)
-        {
+        void init(const long double& i) {
             init_flt(i);
         }
 
-        void init(const bool &i)
-        {
+        void init(const bool& i) {
             m_type = type::boolean;
             m_bool = i;
         }
 
-        template <typename T> void reset(const T &obj)
-        {
+        template <typename T> void reset(const T& obj) {
             invalidate();
             init(obj);
         }
 
-        trent &operator[](int i);
-        trent &operator[](const char *key);
-        trent &operator[](const std::string &key);
-        trent &operator[](const nos::buffer &key);
-        trent &operator[](const trent_path &path);
+        trent& operator[](int i);
+        trent& operator[](const char* key);
+        trent& operator[](const std::string& key);
+        trent& operator[](const nos::buffer& key);
+        trent& operator[](const trent_path& path);
 
-        const trent &operator[](const std::string &obj) const;
-        const trent &operator[](const nos::buffer &obj) const;
-        const trent &operator[](const char *obj) const;
-        const trent &operator[](int obj) const;
-        const trent &operator[](const trent_path &path) const;
+        const trent& operator[](const std::string& obj) const;
+        const trent& operator[](const nos::buffer& obj) const;
+        const trent& operator[](const char* obj) const;
+        const trent& operator[](int obj) const;
+        const trent& operator[](const trent_path& path) const;
 
-        const trent &at(const trent_path &path) const;
-        trent &at(const trent_path &path);
+        const trent& at(const trent_path& path) const;
+        trent& at(const trent_path& path);
 
-        bool contains(const char *key) const;
+        bool contains(const char* key) const;
         bool contains(std::string key) const;
 
         void init_from_list(const std::initializer_list<double> l);
         void init_from_list(const std::initializer_list<std::string> l);
 
-        trent &at(int i);
-        const trent &at(int i) const;
-        trent &at(const std::string &key);
-        const trent &at(const std::string &key) const;
-        trent &at(const char *key);
-        const trent &at(const char *key) const;
+        trent& at(int i);
+        const trent& at(int i) const;
+        trent& at(const std::string& key);
+        const trent& at(const std::string& key) const;
+        trent& at(const char* key);
+        const trent& at(const char* key) const;
 
-        void push_back(const trent &tr);
+        void push_back(const trent& tr);
 
-        const trent *_get(const std::string &str) const;
-        const trent *_get(const char *str) const;
-        const trent *_get(int index) const;
-        const trent *get(const trent_path &path) const;
-        const trent &get_except(const trent_path &path) const;
+        const trent* _get(const std::string& str) const;
+        const trent* _get(const char* str) const;
+        const trent* _get(int index) const;
+        const trent* get(const trent_path& path) const;
+        const trent& get_except(const trent_path& path) const;
 
-        numer_type get_as_numer_ex(const trent_path &path) const;
-        const string_type &get_as_string_ex(const trent_path &path) const;
-        bool get_as_boolean_ex(const trent_path &path) const;
+        numer_type get_as_numer_ex(const trent_path& path) const;
+        const string_type& get_as_string_ex(const trent_path& path) const;
+        bool get_as_boolean_ex(const trent_path& path) const;
 
-        numer_type get_as_numer_def(const trent_path &path,
-                                    numer_type def) const;
-        const string_type &get_as_string_def(const trent_path &path,
-                                             const std::string &def) const;
-        bool get_as_boolean_def(const trent_path &path, bool def) const;
+        numer_type get_as_numer_def(const trent_path& path, numer_type def) const;
+        const string_type& get_as_string_def(const trent_path& path, const std::string& def) const;
+        bool get_as_boolean_def(const trent_path& path, bool def) const;
 
-        string_type &as_string();
-        const string_type &as_string() const;
-        nos::expected<string_type &, nos::errstring> as_string_critical();
-        nos::expected<const string_type &, nos::errstring>
-        as_string_critical() const;
-        string_type &as_string_except();
-        const string_type &as_string_except() const;
-        const string_type &as_string_default(const string_type &def) const;
+        string_type& as_string();
+        const string_type& as_string() const;
+        nos::expected<string_type&, nos::errstring> as_string_critical();
+        nos::expected<const string_type&, nos::errstring> as_string_critical() const;
+        string_type& as_string_except();
+        const string_type& as_string_except() const;
+        const string_type& as_string_default(const string_type& def) const;
 
-        dict_type &as_dict();
-        const dict_type &as_dict() const;
-        nos::expected<dict_type &, nos::errstring> as_dict_critical();
-        nos::expected<const dict_type &, nos::errstring>
-        as_dict_critical() const;
-        dict_type &as_dict_except();
-        const dict_type &as_dict_except() const;
+        dict_type& as_dict();
+        const dict_type& as_dict() const;
+        nos::expected<dict_type&, nos::errstring> as_dict_critical();
+        nos::expected<const dict_type&, nos::errstring> as_dict_critical() const;
+        dict_type& as_dict_except();
+        const dict_type& as_dict_except() const;
 
-        list_type &as_list();
-        const list_type &as_list() const;
-        nos::expected<list_type &, nos::errstring> as_list_critical();
-        nos::expected<const list_type &, nos::errstring>
-        as_list_critical() const;
-        list_type &as_list_except();
-        const list_type &as_list_except() const;
+        list_type& as_list();
+        const list_type& as_list() const;
+        nos::expected<list_type&, nos::errstring> as_list_critical();
+        nos::expected<const list_type&, nos::errstring> as_list_critical() const;
+        list_type& as_list_except();
+        const list_type& as_list_except() const;
 
         numer_type as_numer() const;
         integer_type as_integer() const;
@@ -280,16 +250,16 @@ namespace nos
 
         const nos::buffer as_buffer() const;
 
-        numer_type &unsafe_numer_const();
-        string_type &unsafe_string_const();
-        list_type &unsafe_list_const();
-        dict_type &unsafe_dict_const();
+        numer_type& unsafe_numer_const();
+        string_type& unsafe_string_const();
+        list_type& unsafe_list_const();
+        dict_type& unsafe_dict_const();
 
-        const numer_type &unsafe_numer_const() const;
-        const string_type &unsafe_string_const() const;
-        const list_type &unsafe_list_const() const;
-        const dict_type &unsafe_dict_const() const;
-        const bool &unsafe_bool_const() const;
+        const numer_type& unsafe_numer_const() const;
+        const string_type& unsafe_string_const() const;
+        const list_type& unsafe_list_const() const;
+        const dict_type& unsafe_dict_const() const;
+        const bool& unsafe_bool_const() const;
 
         trent::type get_type() const;
         bool is_nil() const;
@@ -299,36 +269,27 @@ namespace nos
         bool is_dict() const;
         bool is_string() const;
 
-        trent &operator=(const trent &other);
-        trent &operator=(trent &&other) noexcept;
+        trent& operator=(const trent& other);
+        trent& operator=(trent&& other) noexcept;
 
-        template <class T> trent &operator=(const T &arg)
-        {
+        template <class T> trent& operator=(const T& arg) {
             reset(arg);
             return *this;
         }
 
-        template <class T> T get() const
-        {
+        template <class T> T get() const {
             using DT = typename std::decay<T>::type;
 
-            if constexpr (std::is_same_v<DT, trent>)
-            {
+            if constexpr (std::is_same_v<DT, trent>) {
                 return *this;
-            }
-            else if constexpr (std::is_same_v<DT, std::string>)
-            {
+            } else if constexpr (std::is_same_v<DT, std::string>) {
                 if (is_string())
                     return as_string();
                 else
                     return std::to_string(as_numer_except());
-            }
-            else if constexpr (std::is_same_v<DT, bool>)
-            {
+            } else if constexpr (std::is_same_v<DT, bool>) {
                 return as_bool();
-            }
-            else
-            {
+            } else {
                 if (is_numer())
                     return static_cast<T>(as_numer());
                 else
@@ -336,7 +297,6 @@ namespace nos
             }
         }
     };
-}
-    
+} // namespace nos
 
 #endif

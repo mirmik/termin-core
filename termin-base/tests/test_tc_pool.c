@@ -14,7 +14,8 @@ typedef struct failing_allocator {
 
 static void* failing_allocate(size_t size, void* user_data) {
     failing_allocator* allocator = (failing_allocator*)user_data;
-    if (allocator->successful_allocations_before_failure == 0) return NULL;
+    if (allocator->successful_allocations_before_failure == 0)
+        return NULL;
     allocator->successful_allocations_before_failure--;
     return malloc(size);
 }

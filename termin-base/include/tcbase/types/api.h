@@ -5,15 +5,15 @@
 // Backward-compatible export macro used by existing C APIs.
 // Each library that exposes TC_API symbols defines TC_EXPORTS when building.
 #ifndef TC_API
-    #ifdef _WIN32
-        #ifdef TC_EXPORTS
-            #define TC_API __declspec(dllexport)
-        #else
-            #define TC_API __declspec(dllimport)
-        #endif
-    #else
-        #define TC_API
-    #endif
+#ifdef _WIN32
+#ifdef TC_EXPORTS
+#define TC_API __declspec(dllexport)
+#else
+#define TC_API __declspec(dllimport)
+#endif
+#else
+#define TC_API
+#endif
 #endif
 
 /*
@@ -23,12 +23,11 @@
  * Real exported C functions must use TC_API and an explicitly portable ABI.
  */
 #ifndef TC_C_STATIC_INLINE
-    #if defined(_MSC_VER) && defined(__cplusplus)
-        #define TC_C_STATIC_INLINE \
-            __pragma(warning(suppress: 4190)) static inline
-    #else
-        #define TC_C_STATIC_INLINE static inline
-    #endif
+#if defined(_MSC_VER) && defined(__cplusplus)
+#define TC_C_STATIC_INLINE __pragma(warning(suppress : 4190)) static inline
+#else
+#define TC_C_STATIC_INLINE static inline
+#endif
 #endif
 
 #endif // TCBASE_TYPES_API_H

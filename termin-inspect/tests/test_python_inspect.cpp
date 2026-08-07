@@ -11,37 +11,31 @@ namespace nb = nanobind;
 
 namespace {
 
-bool require_check(bool condition, const char* message) {
-    if (!condition) {
-        std::fprintf(stderr, "test_python_inspect failed: %s\n", message);
-        return false;
+    bool require_check(bool condition, const char* message) {
+        if (!condition) {
+            std::fprintf(stderr, "test_python_inspect failed: %s\n", message);
+            return false;
+        }
+        return true;
     }
-    return true;
-}
 
-void publish_python_inspect_type(
-    const char* type_name,
-    const char* parent,
-    nb::dict fields,
-    bool replace = false
-) {
-    tc::InspectFacetBuilder inspect = tc::build_python_inspect_facet(
-        type_name, std::move(fields));
-    auto* descriptor = tc_runtime_type_descriptor_create(
-        type_name, "termin-inspect-python-test", parent);
-    if (!descriptor) throw std::runtime_error("could not create runtime descriptor");
-    if (replace && !tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor)) {
-        tc_runtime_type_descriptor_destroy(descriptor);
-        throw std::runtime_error("could not enable descriptor replacement");
+    void publish_python_inspect_type(const char* type_name, const char* parent, nb::dict fields, bool replace = false) {
+        tc::InspectFacetBuilder inspect = tc::build_python_inspect_facet(type_name, std::move(fields));
+        auto* descriptor = tc_runtime_type_descriptor_create(type_name, "termin-inspect-python-test", parent);
+        if (!descriptor)
+            throw std::runtime_error("could not create runtime descriptor");
+        if (replace && !tc_runtime_type_descriptor_allow_same_owner_replacement(descriptor)) {
+            tc_runtime_type_descriptor_destroy(descriptor);
+            throw std::runtime_error("could not enable descriptor replacement");
+        }
+        if (!inspect.attach_to(descriptor)) {
+            tc_runtime_type_descriptor_destroy(descriptor);
+            throw std::runtime_error(inspect.error());
+        }
+        if (!tc_runtime_type_registry_commit_descriptor(descriptor)) {
+            throw std::runtime_error("could not commit Python inspect descriptor");
+        }
     }
-    if (!inspect.attach_to(descriptor)) {
-        tc_runtime_type_descriptor_destroy(descriptor);
-        throw std::runtime_error(inspect.error());
-    }
-    if (!tc_runtime_type_registry_commit_descriptor(descriptor)) {
-        throw std::runtime_error("could not commit Python inspect descriptor");
-    }
-}
 
 } // namespace
 
@@ -123,7 +117,8 @@ obj = PyDerivedComponent()
 )PY";
 
         int run_rc = PyRun_SimpleString(script);
-        if (!require_check(run_rc == 0, "python setup script ran")) return 1;
+        if (!require_check(run_rc == 0, "python setup script ran"))
+            return 1;
 
         nb::module_ main = nb::module_::import_("__main__");
         nb::dict globals = main.attr("__dict__");
@@ -132,95 +127,103 @@ obj = PyDerivedComponent()
         nb::dict derived_fields = nb::cast<nb::dict>(globals["derived_fields"]);
         nb::object obj = nb::borrow<nb::object>(globals["obj"]);
 
-        publish_python_inspect_type(
-            "PyBaseComponent", nullptr, std::move(base_fields));
-        publish_python_inspect_type(
-            "PyDerivedComponent", "PyBaseComponent", std::move(derived_fields));
+        publish_python_inspect_type("PyBaseComponent", nullptr, std::move(base_fields));
+        publish_python_inspect_type("PyDerivedComponent", "PyBaseComponent", std::move(derived_fields));
 
         nb::dict broken_fields = nb::cast<nb::dict>(globals["broken_fields"]);
         bool rejected_new_fields = false;
         try {
-            publish_python_inspect_type(
-                "PyBrokenComponent",
-                nullptr,
-                nb::dict(broken_fields)
-            );
+            publish_python_inspect_type("PyBrokenComponent", nullptr, nb::dict(broken_fields));
         } catch (const nb::python_error&) {
             rejected_new_fields = true;
             PyErr_Clear();
         }
-        if (!require_check(rejected_new_fields, "broken Python field extraction is rejected")) return 1;
+        if (!require_check(rejected_new_fields, "broken Python field extraction is rejected"))
+            return 1;
         if (!require_check(!tc_runtime_type_registry_has_type("PyBrokenComponent"),
-                           "broken Python field extraction creates no type shell")) return 1;
+                           "broken Python field extraction creates no type shell"))
+            return 1;
 
         bool rejected_replacement = false;
         try {
-            publish_python_inspect_type(
-                "PyBaseComponent",
-                nullptr,
-                std::move(broken_fields),
-                true
-            );
+            publish_python_inspect_type("PyBaseComponent", nullptr, std::move(broken_fields), true);
         } catch (const nb::python_error&) {
             rejected_replacement = true;
             PyErr_Clear();
         }
-        if (!require_check(rejected_replacement, "broken Python replacement is rejected")) return 1;
+        if (!require_check(rejected_replacement, "broken Python replacement is rejected"))
+            return 1;
         if (!require_check(reg.all_fields_count("PyBaseComponent") == 1,
-                           "failed Python replacement preserves committed fields")) return 1;
+                           "failed Python replacement preserves committed fields"))
+            return 1;
         if (!require_check(reg.find_field("PyBaseComponent", "base_value") != nullptr,
-                           "failed Python replacement preserves old callbacks")) return 1;
+                           "failed Python replacement preserves old callbacks"))
+            return 1;
 
         if (!require_check(reg.get_type_backend("PyBaseComponent") == tc::TypeBackend::Python,
-                           "base component backend is Python")) return 1;
+                           "base component backend is Python"))
+            return 1;
         if (!require_check(reg.get_type_backend("PyDerivedComponent") == tc::TypeBackend::Python,
-                           "derived component backend is Python")) return 1;
+                           "derived component backend is Python"))
+            return 1;
         const char* stable_parent = tc_inspect_get_base_type("PyDerivedComponent");
         if (!require_check(stable_parent == tc_intern_string("PyBaseComponent"),
-                           "Python base type returns the interned parent symbol")) return 1;
-        if (!require_check(tc_inspect_get_base_type("PyBaseComponent") == nullptr,
-                           "Python root type has no parent")) return 1;
+                           "Python base type returns the interned parent symbol"))
+            return 1;
+        if (!require_check(tc_inspect_get_base_type("PyBaseComponent") == nullptr, "Python root type has no parent"))
+            return 1;
         if (!require_check(std::string(stable_parent) == "PyBaseComponent",
-                           "Python parent symbol survives a subsequent query")) return 1;
+                           "Python parent symbol survives a subsequent query"))
+            return 1;
         if (!require_check(reg.all_fields_count("PyDerivedComponent") == 4,
-                           "derived component inherits and exposes all fields")) return 1;
+                           "derived component inherits and exposes all fields"))
+            return 1;
         if (!require_check(reg.find_field("PyDerivedComponent", "base_value") != nullptr,
-                           "derived component exposes inherited field")) return 1;
+                           "derived component exposes inherited field"))
+            return 1;
         if (!require_check(reg.find_field("PyDerivedComponent", "child_name") != nullptr,
-                           "derived component exposes own field")) return 1;
+                           "derived component exposes own field"))
+            return 1;
 
         nb::object base_v = tc::InspectRegistry_get(reg, obj.ptr(), "PyDerivedComponent", "base_value");
-        if (!require_check(nb::cast<int>(base_v) == 10, "initial inherited value reads through registry")) return 1;
+        if (!require_check(nb::cast<int>(base_v) == 10, "initial inherited value reads through registry"))
+            return 1;
 
         tc::InspectRegistry_set(reg, obj.ptr(), "PyDerivedComponent", "base_value", nb::int_(42), nullptr);
         tc::InspectRegistry_set(reg, obj.ptr(), "PyDerivedComponent", "child_name", nb::str("updated"), nullptr);
         if (!require_check(nb::cast<int>(nb::getattr(obj, "base_value")) == 42,
-                           "inherited value writes through registry")) return 1;
+                           "inherited value writes through registry"))
+            return 1;
         if (!require_check(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "updated",
-                           "own string value writes through registry")) return 1;
+                           "own string value writes through registry"))
+            return 1;
 
-        if (!require_check(tc_inspect_set_checked(
-                               obj.ptr(), "PyDerivedComponent", "nullable", tc_value_nil(), nullptr),
-                           "checked Python setter accepts nil as a value")) return 1;
-        if (!require_check(nb::getattr(obj, "nullable").is_none(),
-                           "nil assignment stores Python None")) return 1;
-        if (!require_check(!tc_inspect_set_checked(
-                               obj.ptr(), "PyDerivedComponent", "rejected", tc_value_int(8), nullptr),
-                           "checked Python setter reports callback exception")) return 1;
-        if (!require_check(!tc_inspect_set_checked(
-                               obj.ptr(), "PyDerivedComponent", "missing", tc_value_int(8), nullptr),
-                           "checked Python setter reports a missing field")) return 1;
+        if (!require_check(tc_inspect_set_checked(obj.ptr(), "PyDerivedComponent", "nullable", tc_value_nil(), nullptr),
+                           "checked Python setter accepts nil as a value"))
+            return 1;
+        if (!require_check(nb::getattr(obj, "nullable").is_none(), "nil assignment stores Python None"))
+            return 1;
+        if (!require_check(
+                !tc_inspect_set_checked(obj.ptr(), "PyDerivedComponent", "rejected", tc_value_int(8), nullptr),
+                "checked Python setter reports callback exception"))
+            return 1;
+        if (!require_check(
+                !tc_inspect_set_checked(obj.ptr(), "PyDerivedComponent", "missing", tc_value_int(8), nullptr),
+                "checked Python setter reports a missing field"))
+            return 1;
 
         tc_value serialized = reg.serialize_all(obj.ptr(), "PyDerivedComponent");
-        if (!require_check(serialized.type == TC_VALUE_DICT, "serialize_all returns dict")) return 1;
+        if (!require_check(serialized.type == TC_VALUE_DICT, "serialize_all returns dict"))
+            return 1;
         tc_value* base_field = tc_value_dict_get(&serialized, "base_value");
         tc_value* child_field = tc_value_dict_get(&serialized, "child_name");
         if (!require_check(base_field && base_field->type == TC_VALUE_INT && base_field->data.i == 42,
-                           "serialized inherited int field matches")) return 1;
-        if (!require_check(child_field && child_field->type == TC_VALUE_STRING,
-                           "serialized own string field exists")) return 1;
-        if (!require_check(std::string(child_field->data.s) == "updated",
-                           "serialized own string field matches")) return 1;
+                           "serialized inherited int field matches"))
+            return 1;
+        if (!require_check(child_field && child_field->type == TC_VALUE_STRING, "serialized own string field exists"))
+            return 1;
+        if (!require_check(std::string(child_field->data.s) == "updated", "serialized own string field matches"))
+            return 1;
         tc_value_free(&serialized);
 
         nb::dict input;
@@ -229,9 +232,11 @@ obj = PyDerivedComponent()
         tc::InspectRegistry_deserialize_all_py(reg, obj.ptr(), "PyDerivedComponent", input, nullptr);
 
         if (!require_check(nb::cast<int>(nb::getattr(obj, "base_value")) == 7,
-                           "deserialize_all updates inherited field")) return 1;
+                           "deserialize_all updates inherited field"))
+            return 1;
         if (!require_check(nb::cast<std::string>(nb::getattr(obj, "child_name")) == "restored",
-                           "deserialize_all updates own field")) return 1;
+                           "deserialize_all updates own field"))
+            return 1;
 
         const char* action_script = R"PY(
 action_calls = []
@@ -243,20 +248,22 @@ action_fields = {
 }
 )PY";
         run_rc = PyRun_SimpleString(action_script);
-        if (!require_check(run_rc == 0, "python action setup script ran")) return 1;
+        if (!require_check(run_rc == 0, "python action setup script ran"))
+            return 1;
 
         globals = main.attr("__dict__");
         nb::object inspect_action = nb::borrow<nb::object>(globals["inspect_action"]);
         Py_ssize_t action_refcount = Py_REFCNT(inspect_action.ptr());
 
         nb::dict action_fields = nb::cast<nb::dict>(globals["action_fields"]);
-        publish_python_inspect_type(
-            "PyActionComponent", nullptr, std::move(action_fields));
+        publish_python_inspect_type("PyActionComponent", nullptr, std::move(action_fields));
         if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount + 1,
-                           "registered action field owns one callable reference")) return 1;
+                           "registered action field owns one callable reference"))
+            return 1;
         tc_runtime_type_registry_unregister_type("PyActionComponent");
         if (!require_check(Py_REFCNT(inspect_action.ptr()) == action_refcount,
-                           "unregister_type releases action field callable reference")) return 1;
+                           "unregister_type releases action field callable reference"))
+            return 1;
 
         tc_runtime_type_registry_unregister_type("PyDerivedComponent");
         tc_runtime_type_registry_unregister_type("PyBaseComponent");

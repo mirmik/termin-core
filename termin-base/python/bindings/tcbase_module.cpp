@@ -1,14 +1,14 @@
+#include "trent_helpers.hpp"
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
+#include <stdexcept>
 #include <tcbase/input_enums.hpp>
+#include <tcbase/settings.h>
 #include <tcbase/tc_log.hpp>
 #include <tcbase/tc_resource.h>
 #include <tcbase/tc_string.h>
-#include <tcbase/settings.h>
-#include <stdexcept>
 #include <utility>
 #include <vector>
-#include "trent_helpers.hpp"
 
 namespace nb = nanobind;
 
@@ -24,40 +24,41 @@ static bool py_resource_loader_wrapper(const char* uuid, void* user_data) {
     // Future concurrent loader install/invoke/teardown needs separate locking.
     nb::gil_scoped_acquire acquire;
     if (!g_resource_loader_callback.is_valid()) {
-        tc_log_error(
-            "Python resource loader bridge is not installed for '%s'",
-            uuid ? uuid : ""
-        );
+        tc_log_error("Python resource loader bridge is not installed for '%s'", uuid ? uuid : "");
         return false;
     }
 
     try {
         return nb::cast<bool>(g_resource_loader_callback(uuid ? uuid : ""));
     } catch (const std::exception& e) {
-        tc_log_error(
-            "Python resource loader failed for '%s': %s",
-            uuid ? uuid : "",
-            e.what()
-        );
+        tc_log_error("Python resource loader failed for '%s': %s", uuid ? uuid : "", e.what());
         return false;
     }
 }
 
 static void bind_resource_loader(nb::module_& m) {
-    m.def("set_resource_loader", [](nb::callable callback) {
-        g_resource_loader_callback = std::move(callback);
-        tc_resource_set_loader(py_resource_loader_wrapper, nullptr);
-    }, nb::arg("callback"),
+    m.def(
+        "set_resource_loader",
+        [](nb::callable callback) {
+            g_resource_loader_callback = std::move(callback);
+            tc_resource_set_loader(py_resource_loader_wrapper, nullptr);
+        },
+        nb::arg("callback"),
         "Install the process-wide UUID resource loader");
 
-    m.def("clear_resource_loader", []() {
-        tc_resource_clear_loader();
-        g_resource_loader_callback = nb::callable();
-    }, "Clear the process-wide UUID resource loader");
+    m.def(
+        "clear_resource_loader",
+        []() {
+            tc_resource_clear_loader();
+            g_resource_loader_callback = nb::callable();
+        },
+        "Clear the process-wide UUID resource loader");
 
-    m.def("request_resource_load", [](const std::string& uuid) {
-        return tc_resource_request_load(uuid.c_str());
-    }, nb::arg("uuid"), "Request lazy resource loading by canonical UUID");
+    m.def(
+        "request_resource_load",
+        [](const std::string& uuid) { return tc_resource_request_load(uuid.c_str()); },
+        nb::arg("uuid"),
+        "Request lazy resource loading by canonical UUID");
 }
 
 static void py_log_callback_wrapper(tc_log_level level, const char* message) {
@@ -93,123 +94,164 @@ static void bind_log(nb::module_& m) {
         .value("ERROR", TC_LOG_ERROR)
         .export_values();
 
-    m.def("set_level", &tc_log_set_level, nb::arg("level"),
-        "Set minimum log level");
+    m.def("set_level", &tc_log_set_level, nb::arg("level"), "Set minimum log level");
 
-    m.def("set_callback", [](nb::object callback) {
-        if (callback.is_none()) {
-            g_py_callback = nb::callable();
-            tc_log_set_callback(nullptr);
-        } else {
-            g_py_callback = nb::cast<nb::callable>(callback);
-            tc_log_set_callback(py_log_callback_wrapper);
-        }
-    }, nb::arg("callback"),
+    m.def(
+        "set_callback",
+        [](nb::object callback) {
+            if (callback.is_none()) {
+                g_py_callback = nb::callable();
+                tc_log_set_callback(nullptr);
+            } else {
+                g_py_callback = nb::cast<nb::callable>(callback);
+                tc_log_set_callback(py_log_callback_wrapper);
+            }
+        },
+        nb::arg("callback"),
         "Set callback for log interception. Callback signature: (level: int, message: str)");
 
-    m.def("capture_start", [](size_t capacity) {
-        if (!tc_log_capture_start(capacity)) {
-            throw std::runtime_error("Failed to allocate native log capture queue");
-        }
-    }, nb::arg("capacity") = 2048,
+    m.def(
+        "capture_start",
+        [](size_t capacity) {
+            if (!tc_log_capture_start(capacity)) {
+                throw std::runtime_error("Failed to allocate native log capture queue");
+            }
+        },
+        nb::arg("capacity") = 2048,
         "Start or reset the bounded native log capture queue");
 
-    m.def("capture_stop", &tc_log_capture_stop,
-        "Stop native log capture and discard queued records");
+    m.def("capture_stop", &tc_log_capture_stop, "Stop native log capture and discard queued records");
 
-    m.def("capture_drain", [](size_t max_records) {
-        if (max_records == 0) {
-            throw std::invalid_argument("max_records must be positive");
-        }
-        std::vector<tc_log_record> buffer(max_records);
-        uint64_t dropped_count = 0;
-        size_t count = tc_log_capture_drain(
-            buffer.data(),
-            buffer.size(),
-            &dropped_count
-        );
-        nb::list records;
-        for (size_t i = 0; i < count; ++i) {
-            records.append(nb::make_tuple(
-                buffer[i].level,
-                std::string(buffer[i].message)
-            ));
-        }
-        return nb::make_tuple(records, dropped_count);
-    }, nb::arg("max_records") = 512,
+    m.def(
+        "capture_drain",
+        [](size_t max_records) {
+            if (max_records == 0) {
+                throw std::invalid_argument("max_records must be positive");
+            }
+            std::vector<tc_log_record> buffer(max_records);
+            uint64_t dropped_count = 0;
+            size_t count = tc_log_capture_drain(buffer.data(), buffer.size(), &dropped_count);
+            nb::list records;
+            for (size_t i = 0; i < count; ++i) {
+                records.append(nb::make_tuple(buffer[i].level, std::string(buffer[i].message)));
+            }
+            return nb::make_tuple(records, dropped_count);
+        },
+        nb::arg("max_records") = 512,
         "Drain native log records and the overflow count since the previous drain");
 
-    m.def("debug", [](const std::string& msg) {
-        tc_log_debug("%s", msg.c_str());
-    }, nb::arg("message"), "Log debug message");
+    m.def(
+        "debug",
+        [](const std::string& msg) { tc_log_debug("%s", msg.c_str()); },
+        nb::arg("message"),
+        "Log debug message");
 
-    m.def("debug", [](nb::object exc, const std::string& context) {
-        std::string msg = format_py_exception(exc, context);
-        tc_log_debug("%s", msg.c_str());
-    }, nb::arg("exception"), nb::arg("context") = "", "Log debug with exception");
+    m.def(
+        "debug",
+        [](nb::object exc, const std::string& context) {
+            std::string msg = format_py_exception(exc, context);
+            tc_log_debug("%s", msg.c_str());
+        },
+        nb::arg("exception"),
+        nb::arg("context") = "",
+        "Log debug with exception");
 
-    m.def("info", [](const std::string& msg) {
-        tc_log_info("%s", msg.c_str());
-    }, nb::arg("message"), "Log info message");
+    m.def(
+        "info", [](const std::string& msg) { tc_log_info("%s", msg.c_str()); }, nb::arg("message"), "Log info message");
 
-    m.def("info", [](nb::object exc, const std::string& context) {
-        std::string msg = format_py_exception(exc, context);
-        tc_log_info("%s", msg.c_str());
-    }, nb::arg("exception"), nb::arg("context") = "", "Log info with exception");
+    m.def(
+        "info",
+        [](nb::object exc, const std::string& context) {
+            std::string msg = format_py_exception(exc, context);
+            tc_log_info("%s", msg.c_str());
+        },
+        nb::arg("exception"),
+        nb::arg("context") = "",
+        "Log info with exception");
 
-    m.def("warn", [](const std::string& msg) {
-        tc_log_warn("%s", msg.c_str());
-    }, nb::arg("message"), "Log warning message");
+    m.def(
+        "warn",
+        [](const std::string& msg) { tc_log_warn("%s", msg.c_str()); },
+        nb::arg("message"),
+        "Log warning message");
 
-    m.def("warn", [](nb::object exc, const std::string& context) {
-        std::string msg = format_py_exception(exc, context);
-        tc_log_warn("%s", msg.c_str());
-    }, nb::arg("exception"), nb::arg("context") = "", "Log warning with exception");
+    m.def(
+        "warn",
+        [](nb::object exc, const std::string& context) {
+            std::string msg = format_py_exception(exc, context);
+            tc_log_warn("%s", msg.c_str());
+        },
+        nb::arg("exception"),
+        nb::arg("context") = "",
+        "Log warning with exception");
 
-    m.def("error", [](const std::string& msg) {
-        tc_log_error("%s", msg.c_str());
-    }, nb::arg("message"), "Log error message");
+    m.def(
+        "error",
+        [](const std::string& msg) { tc_log_error("%s", msg.c_str()); },
+        nb::arg("message"),
+        "Log error message");
 
-    m.def("error", [](nb::object exc, const std::string& context) {
-        std::string msg = format_py_exception(exc, context);
-        tc_log_error("%s", msg.c_str());
-    }, nb::arg("exception"), nb::arg("context") = "", "Log error with exception");
+    m.def(
+        "error",
+        [](nb::object exc, const std::string& context) {
+            std::string msg = format_py_exception(exc, context);
+            tc_log_error("%s", msg.c_str());
+        },
+        nb::arg("exception"),
+        nb::arg("context") = "",
+        "Log error with exception");
 
     // Alias for consistency with Python's logging module
-    m.def("warning", [](const std::string& msg) {
-        tc_log_warn("%s", msg.c_str());
-    }, nb::arg("message"), "Log warning message (alias for warn)");
+    m.def(
+        "warning",
+        [](const std::string& msg) { tc_log_warn("%s", msg.c_str()); },
+        nb::arg("message"),
+        "Log warning message (alias for warn)");
 
     // Log error with exception traceback
-    m.def("exception", [](const std::string& msg) {
-        nb::module_ traceback = nb::module_::import_("traceback");
-        nb::object format_exc = traceback.attr("format_exc");
-        std::string tb = nb::cast<std::string>(format_exc());
-        tc_log_error("%s\n%s", msg.c_str(), tb.c_str());
-    }, nb::arg("message"), "Log error message with current exception traceback");
-
-    // Log with optional exc_info
-    m.def("error", [](const std::string& msg, bool exc_info) {
-        if (exc_info) {
+    m.def(
+        "exception",
+        [](const std::string& msg) {
             nb::module_ traceback = nb::module_::import_("traceback");
             nb::object format_exc = traceback.attr("format_exc");
             std::string tb = nb::cast<std::string>(format_exc());
             tc_log_error("%s\n%s", msg.c_str(), tb.c_str());
-        } else {
-            tc_log_error("%s", msg.c_str());
-        }
-    }, nb::arg("message"), nb::arg("exc_info"), "Log error message with optional traceback");
+        },
+        nb::arg("message"),
+        "Log error message with current exception traceback");
 
-    m.def("warning", [](const std::string& msg, bool exc_info) {
-        if (exc_info) {
-            nb::module_ traceback = nb::module_::import_("traceback");
-            nb::object format_exc = traceback.attr("format_exc");
-            std::string tb = nb::cast<std::string>(format_exc());
-            tc_log_warn("%s\n%s", msg.c_str(), tb.c_str());
-        } else {
-            tc_log_warn("%s", msg.c_str());
-        }
-    }, nb::arg("message"), nb::arg("exc_info"), "Log warning message with optional traceback");
+    // Log with optional exc_info
+    m.def(
+        "error",
+        [](const std::string& msg, bool exc_info) {
+            if (exc_info) {
+                nb::module_ traceback = nb::module_::import_("traceback");
+                nb::object format_exc = traceback.attr("format_exc");
+                std::string tb = nb::cast<std::string>(format_exc());
+                tc_log_error("%s\n%s", msg.c_str(), tb.c_str());
+            } else {
+                tc_log_error("%s", msg.c_str());
+            }
+        },
+        nb::arg("message"),
+        nb::arg("exc_info"),
+        "Log error message with optional traceback");
+
+    m.def(
+        "warning",
+        [](const std::string& msg, bool exc_info) {
+            if (exc_info) {
+                nb::module_ traceback = nb::module_::import_("traceback");
+                nb::object format_exc = traceback.attr("format_exc");
+                std::string tb = nb::cast<std::string>(format_exc());
+                tc_log_warn("%s\n%s", msg.c_str(), tb.c_str());
+            } else {
+                tc_log_warn("%s", msg.c_str());
+            }
+        },
+        nb::arg("message"),
+        nb::arg("exc_info"),
+        "Log warning message with optional traceback");
 }
 
 static nb::dict intern_stats_to_dict(tc_intern_string_stats stats) {
@@ -219,17 +261,13 @@ static nb::dict intern_stats_to_dict(tc_intern_string_stats stats) {
     result["non_empty_bucket_count"] = stats.non_empty_bucket_count;
     result["max_bucket_depth"] = stats.max_bucket_depth;
     result["load_factor"] = stats.bucket_count == 0
-        ? 0.0
-        : static_cast<double>(stats.entry_count) / static_cast<double>(stats.bucket_count);
+                                ? 0.0
+                                : static_cast<double>(stats.entry_count) / static_cast<double>(stats.bucket_count);
     return result;
 }
 
-static void append_intern_string_info(
-    const char* string,
-    size_t bucket_index,
-    size_t depth_in_bucket,
-    void* user_data
-) {
+static void
+append_intern_string_info(const char* string, size_t bucket_index, size_t depth_in_bucket, void* user_data) {
     nb::list* rows = static_cast<nb::list*>(user_data);
     nb::dict row;
     row["string"] = string ? string : "";
@@ -239,15 +277,19 @@ static void append_intern_string_info(
 }
 
 static void bind_intern_strings(nb::module_& m) {
-    m.def("intern_string_get_stats", []() {
-        return intern_stats_to_dict(tc_intern_string_get_stats());
-    }, "Return process-wide intern string table stats");
+    m.def(
+        "intern_string_get_stats",
+        []() { return intern_stats_to_dict(tc_intern_string_get_stats()); },
+        "Return process-wide intern string table stats");
 
-    m.def("intern_string_get_all_info", []() {
-        nb::list rows;
-        tc_intern_string_foreach(append_intern_string_info, &rows);
-        return rows;
-    }, "Return all interned strings with their bucket position");
+    m.def(
+        "intern_string_get_all_info",
+        []() {
+            nb::list rows;
+            tc_intern_string_foreach(append_intern_string_info, &rows);
+            return rows;
+        },
+        "Return all interned strings with their bucket position");
 }
 
 NB_MODULE(_tcbase_native, m) {
@@ -288,32 +330,39 @@ NB_MODULE(_tcbase_native, m) {
 
     // Settings
     nb::class_<tc::Settings>(m, "Settings", "Persistent JSON-based settings")
-        .def(nb::init<const std::string &>(), nb::arg("app_name"),
+        .def(nb::init<const std::string&>(),
+             nb::arg("app_name"),
              "Create settings in the platform user configuration root")
-        .def("__init__", [](tc::Settings *self, const std::string &path, bool explicit_path) {
-            new (self) tc::Settings(path, explicit_path);
-        }, nb::arg("path"), nb::arg("explicit_path"),
-           "Create settings with explicit file path")
-        .def("get", [](const tc::Settings &s, const std::string &key, nb::object default_val) -> nb::object {
-            const auto &val = s.get(key);
-            if (val.is_nil()) {
-                return default_val;
-            }
-            return termin::trent_to_py(val);
-        }, nb::arg("key"), nb::arg("default") = nb::none(),
-           "Get value by hierarchical key (e.g. 'a/b/c')")
-        .def("set", [](tc::Settings &s, const std::string &key, nb::object val) {
-            s.set(key, termin::py_to_trent(val));
-        }, nb::arg("key"), nb::arg("value"),
-           "Set value by hierarchical key")
-        .def("remove", &tc::Settings::remove, nb::arg("key"),
-             "Remove a key")
-        .def("contains", &tc::Settings::contains, nb::arg("key"),
-             "Check if key exists")
-        .def("begin_group", &tc::Settings::begin_group, nb::arg("name"),
-             "Push group prefix")
-        .def("end_group", &tc::Settings::end_group,
-             "Pop group prefix")
+        .def(
+            "__init__",
+            [](tc::Settings* self, const std::string& path, bool explicit_path) {
+                new (self) tc::Settings(path, explicit_path);
+            },
+            nb::arg("path"),
+            nb::arg("explicit_path"),
+            "Create settings with explicit file path")
+        .def(
+            "get",
+            [](const tc::Settings& s, const std::string& key, nb::object default_val) -> nb::object {
+                const auto& val = s.get(key);
+                if (val.is_nil()) {
+                    return default_val;
+                }
+                return termin::trent_to_py(val);
+            },
+            nb::arg("key"),
+            nb::arg("default") = nb::none(),
+            "Get value by hierarchical key (e.g. 'a/b/c')")
+        .def(
+            "set",
+            [](tc::Settings& s, const std::string& key, nb::object val) { s.set(key, termin::py_to_trent(val)); },
+            nb::arg("key"),
+            nb::arg("value"),
+            "Set value by hierarchical key")
+        .def("remove", &tc::Settings::remove, nb::arg("key"), "Remove a key")
+        .def("contains", &tc::Settings::contains, nb::arg("key"), "Check if key exists")
+        .def("begin_group", &tc::Settings::begin_group, nb::arg("name"), "Push group prefix")
+        .def("end_group", &tc::Settings::end_group, "Pop group prefix")
         .def("save", &tc::Settings::save, "Save to disk")
         .def("load", &tc::Settings::load, "Load from disk")
         .def_prop_ro("path", &tc::Settings::path, "File path");

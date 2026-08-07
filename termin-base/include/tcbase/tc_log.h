@@ -47,11 +47,7 @@ TCBASE_API void tc_log_capture_stop(void);
 
 // Drain up to record_capacity oldest records. The returned dropped count covers
 // records evicted by overflow since the previous drain.
-TCBASE_API size_t tc_log_capture_drain(
-    tc_log_record* records,
-    size_t record_capacity,
-    uint64_t* dropped_count
-);
+TCBASE_API size_t tc_log_capture_drain(tc_log_record* records, size_t record_capacity, uint64_t* dropped_count);
 
 // Log with specified level (printf-style)
 TCBASE_API void tc_log(tc_log_level level, const char* format, ...);

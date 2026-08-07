@@ -54,10 +54,7 @@ inline tc_affine3d tc_affine3d::identity() {
     return tc_affine3d_identity();
 }
 
-inline tc_affine3d tc_affine3d::from_translation(
-    double x,
-    double y,
-    double z) {
+inline tc_affine3d tc_affine3d::from_translation(double x, double y, double z) {
     return tc_affine3d_translation(x, y, z);
 }
 
@@ -81,10 +78,7 @@ inline tc_affine3d tc_affine3d::scaling(double uniform) {
     return scaling(uniform, uniform, uniform);
 }
 
-inline tc_affine3d tc_affine3d::trs(
-    const tc_vec3& translation,
-    const tc_quat& rotation,
-    const tc_vec3& scale) {
+inline tc_affine3d tc_affine3d::trs(const tc_vec3& translation, const tc_quat& rotation, const tc_vec3& scale) {
     return tc_affine3d_trs(translation, rotation, scale);
 }
 
@@ -92,8 +86,7 @@ inline tc_affine3d tc_affine3d::from_pose3(const tc_pose3& pose) {
     return tc_affine3d_from_pose3(pose);
 }
 
-inline tc_affine3d tc_affine3d::from_general_pose3(
-    const tc_general_pose3& pose) {
+inline tc_affine3d tc_affine3d::from_general_pose3(const tc_general_pose3& pose) {
     return tc_affine3d_from_general_pose3(pose);
 }
 
@@ -125,54 +118,28 @@ inline void tc_affine3d::matrix4(double* out_column_major_16) const {
     tc_affine3d_to_matrix4(*this, out_column_major_16);
 }
 
-inline bool tc_affine3d::try_from_matrix4(
-    const double* column_major_16,
-    tc_affine3d& out,
-    double epsilon) {
-    return tc_affine3d_try_from_matrix4(
-        column_major_16,
-        epsilon,
-        &out);
+inline bool tc_affine3d::try_from_matrix4(const double* column_major_16, tc_affine3d& out, double epsilon) {
+    return tc_affine3d_try_from_matrix4(column_major_16, epsilon, &out);
 }
 
 namespace termin {
 
-using Basis3d = ::tc_basis3d;
-using Affine3d = ::tc_affine3d;
+    using Basis3d = ::tc_basis3d;
+    using Affine3d = ::tc_affine3d;
 
-static_assert(
-    std::is_same<Basis3d, ::tc_basis3d>::value,
-    "termin::Basis3d must alias tc_basis3d");
-static_assert(
-    std::is_standard_layout<Basis3d>::value,
-    "Basis3d must stay ABI-friendly");
-static_assert(
-    std::is_trivially_copyable<Basis3d>::value,
-    "Basis3d must stay trivially copyable");
-static_assert(
-    sizeof(Basis3d) == sizeof(double) * 9,
-    "Basis3d must stay a packed nine-double value");
-static_assert(offsetof(Basis3d, x) == sizeof(double) * 0, "Basis3d.x offset changed");
-static_assert(offsetof(Basis3d, y) == sizeof(double) * 3, "Basis3d.y offset changed");
-static_assert(offsetof(Basis3d, z) == sizeof(double) * 6, "Basis3d.z offset changed");
+    static_assert(std::is_same<Basis3d, ::tc_basis3d>::value, "termin::Basis3d must alias tc_basis3d");
+    static_assert(std::is_standard_layout<Basis3d>::value, "Basis3d must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<Basis3d>::value, "Basis3d must stay trivially copyable");
+    static_assert(sizeof(Basis3d) == sizeof(double) * 9, "Basis3d must stay a packed nine-double value");
+    static_assert(offsetof(Basis3d, x) == sizeof(double) * 0, "Basis3d.x offset changed");
+    static_assert(offsetof(Basis3d, y) == sizeof(double) * 3, "Basis3d.y offset changed");
+    static_assert(offsetof(Basis3d, z) == sizeof(double) * 6, "Basis3d.z offset changed");
 
-static_assert(
-    std::is_same<Affine3d, ::tc_affine3d>::value,
-    "termin::Affine3d must alias tc_affine3d");
-static_assert(
-    std::is_standard_layout<Affine3d>::value,
-    "Affine3d must stay ABI-friendly");
-static_assert(
-    std::is_trivially_copyable<Affine3d>::value,
-    "Affine3d must stay trivially copyable");
-static_assert(
-    sizeof(Affine3d) == sizeof(double) * 12,
-    "Affine3d must stay a packed twelve-double value");
-static_assert(
-    offsetof(Affine3d, basis) == sizeof(double) * 0,
-    "Affine3d.basis offset changed");
-static_assert(
-    offsetof(Affine3d, translation) == sizeof(double) * 9,
-    "Affine3d.translation offset changed");
+    static_assert(std::is_same<Affine3d, ::tc_affine3d>::value, "termin::Affine3d must alias tc_affine3d");
+    static_assert(std::is_standard_layout<Affine3d>::value, "Affine3d must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<Affine3d>::value, "Affine3d must stay trivially copyable");
+    static_assert(sizeof(Affine3d) == sizeof(double) * 12, "Affine3d must stay a packed twelve-double value");
+    static_assert(offsetof(Affine3d, basis) == sizeof(double) * 0, "Affine3d.basis offset changed");
+    static_assert(offsetof(Affine3d, translation) == sizeof(double) * 9, "Affine3d.translation offset changed");
 
 } // namespace termin

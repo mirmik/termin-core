@@ -2,8 +2,8 @@
 // C acts as a dispatcher; each language manages its own registry.
 #pragma once
 
-#include "tc_types.h"
 #include "inspect/tc_inspect.h"
+#include "tc_types.h"
 
 #ifdef __cplusplus
 extern "C" {

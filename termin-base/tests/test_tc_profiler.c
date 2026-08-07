@@ -83,7 +83,8 @@ GUARD_C_TEST(test_profiler_history_cursor_reports_ring_overwrite) {
         tc_profiler_begin_frame();
         tc_frame_profile* current = tc_profiler_current_frame();
         GUARD_C_REQUIRE(current != NULL);
-        if (index == 0) first_frame_number = current->frame_number;
+        if (index == 0)
+            first_frame_number = current->frame_number;
         tc_profiler_end_frame();
     }
 
@@ -98,8 +99,7 @@ GUARD_C_TEST(test_profiler_history_cursor_reports_ring_overwrite) {
     GUARD_C_REQUIRE(tc_profiler_history_after(first_frame_number + 120, &tail));
     GUARD_C_CHECK(tail.count == 4);
     GUARD_C_CHECK(tail.dropped_count == 0);
-    GUARD_C_CHECK(tc_profiler_history_at(tail.first_index)->frame_number ==
-                  first_frame_number + 121);
+    GUARD_C_CHECK(tc_profiler_history_at(tail.first_index)->frame_number == first_frame_number + 121);
 
     tc_profiler_clear_history();
     tc_profiler_set_enabled(false);
@@ -120,13 +120,14 @@ GUARD_C_TEST(test_profiler_native_capture_owns_bounded_complete_frames) {
             1000.0 + index * 20.0,
             10.0 + index * 2.0,
             10.0,
-            (double) index,
+            (double)index,
             index == 3 ? 1 : 0,
         };
         tc_profiler_begin_frame_with_info(&info);
         tc_frame_profile* current = tc_profiler_current_frame();
         GUARD_C_REQUIRE(current != NULL);
-        if (index == 0) first_frame_number = current->frame_number;
+        if (index == 0)
+            first_frame_number = current->frame_number;
         tc_profiler_begin_section("Root");
         tc_profiler_end_section();
         tc_profiler_end_frame();

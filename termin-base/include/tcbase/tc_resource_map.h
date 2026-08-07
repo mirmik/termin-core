@@ -1,10 +1,10 @@
 // tc_resource_map.h - Generic hashmap for resources by UUID
 #pragma once
 
-#include <tcbase/tcbase_api.h>
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <tcbase/tcbase_api.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,21 +50,13 @@ TCBASE_API bool tc_resource_map_reserve(tc_resource_map* map, size_t additional)
 // Add a resource using a caller-allocated key. The map takes ownership of key
 // only on success. Call tc_resource_map_reserve() first when allocation-free
 // publication is required.
-TCBASE_API bool tc_resource_map_add_owned_key(
-    tc_resource_map* map,
-    char* key,
-    void* resource
-);
+TCBASE_API bool tc_resource_map_add_owned_key(tc_resource_map* map, char* key, void* resource);
 
 // Replace an existing value without removing its key first. If the key does
 // not exist, behaves like add(). The previous value is destroyed only after
 // the replacement is installed. Replacing a value with the same pointer is a
 // no-op for the destructor.
-TCBASE_API bool tc_resource_map_replace(
-    tc_resource_map* map,
-    const char* uuid,
-    void* resource
-);
+TCBASE_API bool tc_resource_map_replace(tc_resource_map* map, const char* uuid, void* resource);
 
 // Get resource by UUID, returns NULL if not found
 TCBASE_API void* tc_resource_map_get(const tc_resource_map* map, const char* uuid);
@@ -86,11 +78,7 @@ TCBASE_API size_t tc_resource_map_count(const tc_resource_map* map);
 // Iterate over all resources
 // Callback receives uuid, resource pointer, and user_data
 // Return false from callback to stop iteration
-TCBASE_API void tc_resource_map_foreach(
-    tc_resource_map* map,
-    tc_resource_iter_fn callback,
-    void* user_data
-);
+TCBASE_API void tc_resource_map_foreach(tc_resource_map* map, tc_resource_iter_fn callback, void* user_data);
 
 #ifdef __cplusplus
 }

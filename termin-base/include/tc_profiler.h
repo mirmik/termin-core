@@ -121,10 +121,7 @@ TCBASE_API void tc_profiler_end_section(void);
 TCBASE_API tc_frame_profile* tc_profiler_current_frame(void);
 TCBASE_API int tc_profiler_history_count(void);
 TCBASE_API tc_frame_profile* tc_profiler_history_at(int index);
-TCBASE_API bool tc_profiler_history_after(
-    int last_frame_number,
-    tc_profiler_history_range* out_range
-);
+TCBASE_API bool tc_profiler_history_after(int last_frame_number, tc_profiler_history_range* out_range);
 TCBASE_API void tc_profiler_clear_history(void);
 TCBASE_API int tc_profiler_frame_count(void);
 
@@ -135,43 +132,26 @@ TCBASE_API tc_profiler_capture* tc_profiler_capture_create(int capacity);
 TCBASE_API void tc_profiler_capture_destroy(tc_profiler_capture* capture);
 TCBASE_API void tc_profiler_capture_set_active(tc_profiler_capture* capture, bool active);
 TCBASE_API bool tc_profiler_capture_active(const tc_profiler_capture* capture);
-TCBASE_API void tc_profiler_capture_set_profiling(
-    tc_profiler_capture* capture,
-    bool profiling
-);
+TCBASE_API void tc_profiler_capture_set_profiling(tc_profiler_capture* capture, bool profiling);
 TCBASE_API bool tc_profiler_capture_profiling(const tc_profiler_capture* capture);
 TCBASE_API void tc_profiler_capture_clear(tc_profiler_capture* capture);
 TCBASE_API int tc_profiler_capture_count(const tc_profiler_capture* capture);
 TCBASE_API int tc_profiler_capture_overwritten_count(const tc_profiler_capture* capture);
-TCBASE_API unsigned long long tc_profiler_capture_revision(
-    const tc_profiler_capture* capture
-);
-TCBASE_API const tc_frame_profile* tc_profiler_capture_at(
-    const tc_profiler_capture* capture,
-    int index
-);
-TCBASE_API const tc_frame_profile* tc_profiler_capture_find(
-    const tc_profiler_capture* capture,
-    int frame_number
-);
-TCBASE_API bool tc_profiler_capture_after(
-    const tc_profiler_capture* capture,
-    int last_frame_number,
-    tc_profiler_history_range* out_range
-);
-TCBASE_API bool tc_profiler_capture_summary_at(
-    const tc_profiler_capture* capture,
-    int index,
-    double hitch_ratio,
-    tc_profiler_frame_summary* out_summary
-);
-TCBASE_API bool tc_profiler_capture_statistics(
-    const tc_profiler_capture* capture,
-    int start_frame_number,
-    int end_frame_number,
-    double hitch_ratio,
-    tc_profiler_statistics* out_statistics
-);
+TCBASE_API unsigned long long tc_profiler_capture_revision(const tc_profiler_capture* capture);
+TCBASE_API const tc_frame_profile* tc_profiler_capture_at(const tc_profiler_capture* capture, int index);
+TCBASE_API const tc_frame_profile* tc_profiler_capture_find(const tc_profiler_capture* capture, int frame_number);
+TCBASE_API bool tc_profiler_capture_after(const tc_profiler_capture* capture,
+                                          int last_frame_number,
+                                          tc_profiler_history_range* out_range);
+TCBASE_API bool tc_profiler_capture_summary_at(const tc_profiler_capture* capture,
+                                               int index,
+                                               double hitch_ratio,
+                                               tc_profiler_frame_summary* out_summary);
+TCBASE_API bool tc_profiler_capture_statistics(const tc_profiler_capture* capture,
+                                               int start_frame_number,
+                                               int end_frame_number,
+                                               double hitch_ratio,
+                                               tc_profiler_statistics* out_statistics);
 
 #ifdef __cplusplus
 }

@@ -1,9 +1,9 @@
 #include <string>
 #include <type_traits>
 
+#include <tcbase/tc_trent.hpp>
 #include <tcbase/tc_trent_json.hpp>
 #include <tcbase/tc_trent_yaml.hpp>
-#include <tcbase/tc_trent.hpp>
 
 #include "guard_main.h"
 
@@ -34,10 +34,7 @@ TEST_CASE("tc trent copy is deep and independent") {
 
     tc::trent copy = original;
     copy.set("name", tc::trent::string("copy"));
-    tc_value_list_push(
-        tc_value_dict_get(copy.raw(), "items"),
-        tc_value_int(3)
-    );
+    tc_value_list_push(tc_value_dict_get(copy.raw(), "items"), tc_value_int(3));
 
     CHECK(original.view().dict_get("name").as_string() == "original");
     CHECK(copy.view().dict_get("name").as_string() == "copy");
@@ -151,11 +148,9 @@ TEST_CASE("tc trent json facade parses and dumps tree data") {
 }
 
 TEST_CASE("tc trent yaml facade parses and prints tree data") {
-    tc::trent data = tc::yaml::parse(
-        "name: root\n"
-        "values: [1, 2]\n"
-        "enabled: true\n"
-    );
+    tc::trent data = tc::yaml::parse("name: root\n"
+                                     "values: [1, 2]\n"
+                                     "enabled: true\n");
 
     CHECK(data["name"].as_string() == "root");
     CHECK(data["values"][0].as_integer() == 1);

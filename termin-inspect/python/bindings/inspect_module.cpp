@@ -2,13 +2,13 @@
 // Core InspectRegistry binding for termin-inspect.
 // Domain-specific pointer extractors are registered by consumers (termin).
 
+#include <cstdint>
+#include <cstdio>
+#include <functional>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
-#include <cstdint>
-#include <cstdio>
 #include <vector>
-#include <functional>
 
 #include "inspect/tc_inspect_python.hpp"
 #include "inspect/tc_kind.h"
@@ -21,10 +21,10 @@ extern "C" {
 
 namespace nb = nanobind;
 
-using tc::TypeBackend;
 using tc::EnumChoice;
 using tc::InspectFieldInfo;
 using tc::InspectRegistry;
+using tc::TypeBackend;
 
 // ============================================================================
 // Pluggable pointer extractor for domain types
@@ -38,7 +38,8 @@ static void* get_raw_pointer(nb::object obj) {
     // Try registered domain extractors first
     for (auto& extractor : g_ptr_extractors) {
         void* ptr = extractor(obj);
-        if (ptr) return ptr;
+        if (ptr)
+            return ptr;
     }
     // Fallback: return PyObject* for pure Python objects
     return static_cast<void*>(obj.ptr());
@@ -59,18 +60,14 @@ static std::string get_short_type_name(const std::string& full_name) {
 
 static void register_builtin_kind_handlers() {
     // enum kind handler - serializes enum.value (int), deserializes as-is
-    tc::KindRegistry::instance().register_python(
-        "enum",
-        nb::cpp_function([](nb::object obj) -> nb::object {
-            if (nb::hasattr(obj, "value")) {
-                return obj.attr("value");
-            }
-            return obj;
-        }),
-        nb::cpp_function([](nb::object data) -> nb::object {
-            return data;
-        })
-    );
+    tc::KindRegistry::instance().register_python("enum",
+                                                 nb::cpp_function([](nb::object obj) -> nb::object {
+                                                     if (nb::hasattr(obj, "value")) {
+                                                         return obj.attr("value");
+                                                     }
+                                                     return obj;
+                                                 }),
+                                                 nb::cpp_function([](nb::object data) -> nb::object { return data; }));
 
     // layer_mask kind handler - stores 64-bit mask as hex string to avoid int64 overflow
     tc::KindRegistry::instance().register_python(
@@ -98,8 +95,7 @@ static void register_builtin_kind_handlers() {
                 return nb::int_(mask);
             }
             return nb::int_(nb::cast<uint64_t>(data));
-        })
-    );
+        }));
 }
 
 // Ensure list[X] kind has a Python handler
@@ -111,8 +107,7 @@ static bool ensure_list_handler_impl(const std::string& kind) {
     }
 
     char container[64], element[64];
-    if (!tc_kind_parse(kind.c_str(), container, sizeof(container),
-                      element, sizeof(element))) {
+    if (!tc_kind_parse(kind.c_str(), container, sizeof(container), element, sizeof(element))) {
         return false;
     }
 
@@ -127,7 +122,8 @@ static bool ensure_list_handler_impl(const std::string& kind) {
 
     nb::object serialize_fn = nb::cpp_function([elem_kind](nb::object obj) -> nb::object {
         nb::list result;
-        if (obj.is_none()) return result;
+        if (obj.is_none())
+            return result;
         auto& py_reg = tc::KindRegistryPython::instance();
         for (auto item : obj) {
             nb::object nb_item = nb::borrow<nb::object>(item);
@@ -142,7 +138,8 @@ static bool ensure_list_handler_impl(const std::string& kind) {
 
     nb::object deserialize_fn = nb::cpp_function([elem_kind](nb::object data) -> nb::object {
         nb::list result;
-        if (!nb::isinstance<nb::list>(data)) return result;
+        if (!nb::isinstance<nb::list>(data))
+            return result;
         auto& py_reg = tc::KindRegistryPython::instance();
         for (auto item : data) {
             nb::object nb_item = nb::borrow<nb::object>(item);
@@ -167,32 +164,39 @@ static bool ensure_list_handler_impl(const std::string& kind) {
 // ============================================================================
 
 static nb::object tc_value_to_py(const tc_value* v) {
-    if (!v) return nb::none();
+    if (!v)
+        return nb::none();
     switch (v->type) {
-        case TC_VALUE_NIL: return nb::none();
-        case TC_VALUE_INT: return nb::int_(v->data.i);
-        case TC_VALUE_FLOAT: return nb::float_(v->data.f);
-        case TC_VALUE_BOOL: return nb::bool_(v->data.b);
-        case TC_VALUE_STRING: return v->data.s ? nb::str(v->data.s) : nb::none();
-        case TC_VALUE_DICT: {
-            nb::dict d;
-            for (size_t i = 0; i < v->data.dict.count; i++) {
-                const char* key = nullptr;
-                tc_value* val = tc_value_dict_get_at(const_cast<tc_value*>(v), i, &key);
-                if (key && val) {
-                    d[key] = tc_value_to_py(val);
-                }
+    case TC_VALUE_NIL:
+        return nb::none();
+    case TC_VALUE_INT:
+        return nb::int_(v->data.i);
+    case TC_VALUE_FLOAT:
+        return nb::float_(v->data.f);
+    case TC_VALUE_BOOL:
+        return nb::bool_(v->data.b);
+    case TC_VALUE_STRING:
+        return v->data.s ? nb::str(v->data.s) : nb::none();
+    case TC_VALUE_DICT: {
+        nb::dict d;
+        for (size_t i = 0; i < v->data.dict.count; i++) {
+            const char* key = nullptr;
+            tc_value* val = tc_value_dict_get_at(const_cast<tc_value*>(v), i, &key);
+            if (key && val) {
+                d[key] = tc_value_to_py(val);
             }
-            return d;
         }
-        case TC_VALUE_LIST: {
-            nb::list l;
-            for (size_t i = 0; i < v->data.list.count; i++) {
-                l.append(tc_value_to_py(&v->data.list.items[i]));
-            }
-            return l;
+        return d;
+    }
+    case TC_VALUE_LIST: {
+        nb::list l;
+        for (size_t i = 0; i < v->data.list.count; i++) {
+            l.append(tc_value_to_py(&v->data.list.items[i]));
         }
-        default: return nb::none();
+        return l;
+    }
+    default:
+        return nb::none();
     }
 }
 
@@ -213,64 +217,70 @@ NB_MODULE(_inspect_native, m) {
     tc::bind_kind_registry(m);
 
     // Diagnostics
-    m.def("inspect_registry_address", []() -> uintptr_t {
-        return reinterpret_cast<uintptr_t>(&InspectRegistry::instance());
-    });
-    m.def("kind_registry_cpp_address", []() -> uintptr_t {
-        return reinterpret_cast<uintptr_t>(&tc::KindRegistryCpp::instance());
-    });
-    m.def("runtime_type_registry_snapshot", []() {
-        nb::list result;
-        tc_runtime_type_registry_foreach_type(
-            [](const char* type_name, void* user_data) -> bool {
-                auto* result = static_cast<nb::list*>(user_data);
-                tc_runtime_type_record_info info;
-                if (!tc_runtime_type_registry_get_info(type_name, &info)) {
-                    return true;
-                }
-                nb::dict item;
-                item["name"] = info.name ? info.name : "";
-                item["owner"] = info.owner ? info.owner : "";
-                item["parent"] = info.parent ? info.parent : "";
-                item["generation"] = info.generation;
-                item["instance_count"] = info.instance_count;
-                item["tombstoned"] = info.tombstoned;
-                nb::list facets;
-                tc_runtime_type_registry_foreach_facet(
-                    type_name,
-                    [](const char* facet_id, void* facet_user_data) -> bool {
-                        static_cast<nb::list*>(facet_user_data)->append(facet_id ? facet_id : "");
+    m.def("inspect_registry_address",
+          []() -> uintptr_t { return reinterpret_cast<uintptr_t>(&InspectRegistry::instance()); });
+    m.def("kind_registry_cpp_address",
+          []() -> uintptr_t { return reinterpret_cast<uintptr_t>(&tc::KindRegistryCpp::instance()); });
+    m.def(
+        "runtime_type_registry_snapshot",
+        []() {
+            nb::list result;
+            tc_runtime_type_registry_foreach_type(
+                [](const char* type_name, void* user_data) -> bool {
+                    auto* result = static_cast<nb::list*>(user_data);
+                    tc_runtime_type_record_info info;
+                    if (!tc_runtime_type_registry_get_info(type_name, &info)) {
                         return true;
-                    },
-                    &facets);
-                item["facets"] = facets;
-                result->append(item);
-                return true;
-            },
-            &result);
-        return result;
-    }, "Return runtime type records with owner, parent, generation and facet ids");
-    m.def("commit_runtime_type_owner_unload", [](const std::string& owner) {
-        size_t removed = 0;
-        if (!tc_runtime_type_registry_commit_owner_unload(owner.c_str(), &removed)) {
-            throw std::runtime_error(
-                "Failed to commit runtime type owner unload for '" + owner + "'"
-            );
-        }
-        return removed;
-    }, nb::arg("owner"),
-       "Commit removal of runtime type records after successful unload preparation");
+                    }
+                    nb::dict item;
+                    item["name"] = info.name ? info.name : "";
+                    item["owner"] = info.owner ? info.owner : "";
+                    item["parent"] = info.parent ? info.parent : "";
+                    item["generation"] = info.generation;
+                    item["instance_count"] = info.instance_count;
+                    item["tombstoned"] = info.tombstoned;
+                    nb::list facets;
+                    tc_runtime_type_registry_foreach_facet(
+                        type_name,
+                        [](const char* facet_id, void* facet_user_data) -> bool {
+                            static_cast<nb::list*>(facet_user_data)->append(facet_id ? facet_id : "");
+                            return true;
+                        },
+                        &facets);
+                    item["facets"] = facets;
+                    result->append(item);
+                    return true;
+                },
+                &result);
+            return result;
+        },
+        "Return runtime type records with owner, parent, generation and facet ids");
+    m.def(
+        "commit_runtime_type_owner_unload",
+        [](const std::string& owner) {
+            size_t removed = 0;
+            if (!tc_runtime_type_registry_commit_owner_unload(owner.c_str(), &removed)) {
+                throw std::runtime_error("Failed to commit runtime type owner unload for '" + owner + "'");
+            }
+            return removed;
+        },
+        nb::arg("owner"),
+        "Commit removal of runtime type records after successful unload preparation");
 
     // Register pointer extractor (for domain types)
-    m.def("register_ptr_extractor", [](nb::object fn) {
-        g_ptr_extractors.push_back([fn](nb::object obj) -> void* {
-            nb::object result = fn(obj);
-            if (result.is_none()) return nullptr;
-            return reinterpret_cast<void*>(nb::cast<uintptr_t>(result));
-        });
-    }, nb::arg("fn"),
-       "Register a function that extracts raw pointer from domain objects. "
-       "Returns uintptr_t or None.");
+    m.def(
+        "register_ptr_extractor",
+        [](nb::object fn) {
+            g_ptr_extractors.push_back([fn](nb::object obj) -> void* {
+                nb::object result = fn(obj);
+                if (result.is_none())
+                    return nullptr;
+                return reinterpret_cast<void*>(nb::cast<uintptr_t>(result));
+            });
+        },
+        nb::arg("fn"),
+        "Register a function that extracts raw pointer from domain objects. "
+        "Returns uintptr_t or None.");
 
     // TypeBackend enum
     nb::enum_<TypeBackend>(m, "TypeBackend")
@@ -279,9 +289,7 @@ NB_MODULE(_inspect_native, m) {
         .value("Rust", TypeBackend::Rust);
 
     // EnumChoice
-    nb::class_<EnumChoice>(m, "EnumChoice")
-        .def_ro("value", &EnumChoice::value)
-        .def_ro("label", &EnumChoice::label);
+    nb::class_<EnumChoice>(m, "EnumChoice").def_ro("value", &EnumChoice::value).def_ro("label", &EnumChoice::label);
 
     // InspectFieldInfo
     nb::class_<InspectFieldInfo>(m, "InspectFieldInfo")
@@ -295,19 +303,26 @@ NB_MODULE(_inspect_native, m) {
         .def_ro("is_serializable", &InspectFieldInfo::is_serializable)
         .def_ro("is_inspectable", &InspectFieldInfo::is_inspectable)
         .def_ro("choices", &InspectFieldInfo::choices)
-        .def("invoke_action", [](InspectFieldInfo& self, nb::object obj) {
-            if (!self.action) return;
-            void* ptr = get_raw_pointer(std::move(obj));
-            if (!ptr) return;
-            tc::InspectContext inspect_context;
-            self.action(ptr, inspect_context);
-        }, nb::arg("obj"))
+        .def(
+            "invoke_action",
+            [](InspectFieldInfo& self, nb::object obj) {
+                if (!self.action)
+                    return;
+                void* ptr = get_raw_pointer(std::move(obj));
+                if (!ptr)
+                    return;
+                tc::InspectContext inspect_context;
+                self.action(ptr, inspect_context);
+            },
+            nb::arg("obj"))
         .def_prop_ro("action", [](InspectFieldInfo& self) -> nb::object {
-            if (!self.action) return nb::none();
+            if (!self.action)
+                return nb::none();
             auto action_fn = self.action;
             return nb::cpp_function([action_fn](nb::object obj) {
                 void* ptr = get_raw_pointer(std::move(obj));
-                if (!ptr) return;
+                if (!ptr)
+                    return;
                 tc::InspectContext inspect_context;
                 action_fn(ptr, inspect_context);
             });
@@ -315,72 +330,86 @@ NB_MODULE(_inspect_native, m) {
 
     // InspectRegistry singleton
     nb::class_<InspectRegistry>(m, "InspectRegistry")
-        .def_static("instance", &InspectRegistry::instance,
-                    nb::rv_policy::reference)
-        .def("fields", &InspectRegistry::fields,
+        .def_static("instance", &InspectRegistry::instance, nb::rv_policy::reference)
+        .def("fields",
+             &InspectRegistry::fields,
              nb::arg("type_name"),
              nb::rv_policy::reference,
              "Get type's own fields only")
-        .def("all_fields", &InspectRegistry::all_fields,
+        .def("all_fields",
+             &InspectRegistry::all_fields,
              nb::arg("type_name"),
              "Get all fields including inherited fields")
-        .def("types", &InspectRegistry::types,
-             "Get all registered type names")
-        .def("get_type_backend", &InspectRegistry::get_type_backend,
+        .def("types", &InspectRegistry::types, "Get all registered type names")
+        .def("get_type_backend",
+             &InspectRegistry::get_type_backend,
              nb::arg("type_name"),
              "Get the backend (Cpp/Python/Rust) for a type")
-        .def("has_type", &InspectRegistry::has_type,
-             nb::arg("type_name"),
-             "Check if type is registered")
-        .def("get_type_parent", &InspectRegistry::get_type_parent,
-             nb::arg("type_name"),
-             "Get parent type name")
-        .def("get_type_metadata", [](InspectRegistry& self, const std::string& type_name) {
-            tc_value metadata = self.type_metadata(type_name);
-            nb::object result = tc::tc_value_to_nb(&metadata);
-            tc_value_free(&metadata);
-            return result;
-        }, nb::arg("type_name"),
-           "Get free-form type metadata dict")
-        .def("owner_of", &InspectRegistry::owner_of,
-             nb::arg("type_name"),
-             "Get owner module id for a runtime type")
+        .def("has_type", &InspectRegistry::has_type, nb::arg("type_name"), "Check if type is registered")
+        .def("get_type_parent", &InspectRegistry::get_type_parent, nb::arg("type_name"), "Get parent type name")
+        .def(
+            "get_type_metadata",
+            [](InspectRegistry& self, const std::string& type_name) {
+                tc_value metadata = self.type_metadata(type_name);
+                nb::object result = tc::tc_value_to_nb(&metadata);
+                tc_value_free(&metadata);
+                return result;
+            },
+            nb::arg("type_name"),
+            "Get free-form type metadata dict")
+        .def("owner_of", &InspectRegistry::owner_of, nb::arg("type_name"), "Get owner module id for a runtime type")
 
-        .def("get", [](InspectRegistry& self, nb::object obj, const std::string& field_path) {
-            std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
-            std::string type_name = get_short_type_name(full_type_name);
-            void* ptr = get_raw_pointer(obj);
-            return tc::InspectRegistry_get(self, ptr, type_name, field_path);
-        }, nb::arg("obj"), nb::arg("field"),
-           "Get field value from object")
+        .def(
+            "get",
+            [](InspectRegistry& self, nb::object obj, const std::string& field_path) {
+                std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
+                std::string type_name = get_short_type_name(full_type_name);
+                void* ptr = get_raw_pointer(obj);
+                return tc::InspectRegistry_get(self, ptr, type_name, field_path);
+            },
+            nb::arg("obj"),
+            nb::arg("field"),
+            "Get field value from object")
 
-        .def("set", [](InspectRegistry& self, nb::object obj, const std::string& field_path, nb::object value) {
-            std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
-            std::string type_name = get_short_type_name(full_type_name);
-            void* ptr = get_raw_pointer(obj);
-            tc::InspectRegistry_set(self, ptr, type_name, field_path, std::move(value));
-        }, nb::arg("obj"), nb::arg("field"), nb::arg("value"),
-           "Set field value on object")
+        .def(
+            "set",
+            [](InspectRegistry& self, nb::object obj, const std::string& field_path, nb::object value) {
+                std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
+                std::string type_name = get_short_type_name(full_type_name);
+                void* ptr = get_raw_pointer(obj);
+                tc::InspectRegistry_set(self, ptr, type_name, field_path, std::move(value));
+            },
+            nb::arg("obj"),
+            nb::arg("field"),
+            nb::arg("value"),
+            "Set field value on object")
 
-        .def("serialize_all", [](InspectRegistry& self, nb::object obj) {
-            std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
-            std::string type_name = get_short_type_name(full_type_name);
-            void* ptr = get_raw_pointer(obj);
-            tc_value v = self.serialize_all(ptr, type_name);
-            nb::object result = tc_value_to_py(&v);
-            tc_value_free(&v);
-            return result;
-        }, nb::arg("obj"),
-           "Serialize all fields of object to dict")
+        .def(
+            "serialize_all",
+            [](InspectRegistry& self, nb::object obj) {
+                std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
+                std::string type_name = get_short_type_name(full_type_name);
+                void* ptr = get_raw_pointer(obj);
+                tc_value v = self.serialize_all(ptr, type_name);
+                nb::object result = tc_value_to_py(&v);
+                tc_value_free(&v);
+                return result;
+            },
+            nb::arg("obj"),
+            "Serialize all fields of object to dict")
 
-        .def("deserialize_all", [](InspectRegistry& self, nb::object obj, nb::object data) {
-            std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
-            std::string type_name = get_short_type_name(full_type_name);
-            void* ptr = get_raw_pointer(obj);
-            nb::dict py_data = nb::cast<nb::dict>(data);
-            tc::InspectRegistry_deserialize_component_fields_over_python(self, ptr, obj, type_name, py_data);
-        }, nb::arg("obj"), nb::arg("data"),
-           "Deserialize all fields from dict to object")
+        .def(
+            "deserialize_all",
+            [](InspectRegistry& self, nb::object obj, nb::object data) {
+                std::string full_type_name = nb::cast<std::string>(nb::str(nb::type_name(obj.type())));
+                std::string type_name = get_short_type_name(full_type_name);
+                void* ptr = get_raw_pointer(obj);
+                nb::dict py_data = nb::cast<nb::dict>(data);
+                tc::InspectRegistry_deserialize_component_fields_over_python(self, ptr, obj, type_name, py_data);
+            },
+            nb::arg("obj"),
+            nb::arg("data"),
+            "Deserialize all fields from dict to object")
 
         ;
 

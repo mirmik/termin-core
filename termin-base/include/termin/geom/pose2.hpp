@@ -84,20 +84,17 @@ inline tc_pose2 tc_pose2::forward(double distance) {
 }
 
 inline tc_pose2 tc_pose2::lerp(const tc_pose2& a, const tc_pose2& b, double t) {
-    return {
-        a.ang + (b.ang - a.ang) * t,
-        a.lin + (b.lin - a.lin) * t
-    };
+    return {a.ang + (b.ang - a.ang) * t, a.lin + (b.lin - a.lin) * t};
 }
 
 namespace termin {
 
-using Pose2 = ::tc_pose2;
+    using Pose2 = ::tc_pose2;
 
-static_assert(std::is_same<Pose2, ::tc_pose2>::value, "termin::Pose2 must alias tc_pose2");
-static_assert(std::is_standard_layout<Pose2>::value, "Pose2 must stay ABI-friendly");
-static_assert(std::is_trivially_copyable<Pose2>::value, "Pose2 must stay trivially copyable");
-static_assert(offsetof(Pose2, ang) == 0, "Pose2.ang offset changed");
-static_assert(offsetof(Pose2, lin) == sizeof(double), "Pose2.lin offset changed");
+    static_assert(std::is_same<Pose2, ::tc_pose2>::value, "termin::Pose2 must alias tc_pose2");
+    static_assert(std::is_standard_layout<Pose2>::value, "Pose2 must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<Pose2>::value, "Pose2 must stay trivially copyable");
+    static_assert(offsetof(Pose2, ang) == 0, "Pose2.ang offset changed");
+    static_assert(offsetof(Pose2, lin) == sizeof(double), "Pose2.lin offset changed");
 
 } // namespace termin

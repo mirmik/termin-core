@@ -2,8 +2,8 @@
 #ifndef TCBASE_TC_REGISTRY_UTILS_H
 #define TCBASE_TC_REGISTRY_UTILS_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <tcbase/tc_log.h>
 
@@ -34,8 +34,7 @@ static inline bool tc_has_index(void* ptr) {
 // ============================================================================
 // Generates UUID with given prefix: "prefix-0000000000000001"
 
-static inline void tc_generate_prefixed_uuid(char* out_uuid, size_t out_size,
-                                             const char* prefix, uint64_t* counter) {
+static inline void tc_generate_prefixed_uuid(char* out_uuid, size_t out_size, const char* prefix, uint64_t* counter) {
     snprintf(out_uuid, out_size, "%s-%016llx", prefix, (unsigned long long)(*counter)++);
 }
 
@@ -43,28 +42,28 @@ static inline void tc_generate_prefixed_uuid(char* out_uuid, size_t out_size,
 // Init/Shutdown guard macros
 // ============================================================================
 
-#define TC_REGISTRY_INIT_GUARD(initialized, name) \
-    do { \
-        if (initialized) { \
-            tc_log(TC_LOG_WARN, name "_init: already initialized"); \
-            return; \
-        } \
-    } while(0)
+#define TC_REGISTRY_INIT_GUARD(initialized, name)                                                                      \
+    do {                                                                                                               \
+        if (initialized) {                                                                                             \
+            tc_log(TC_LOG_WARN, name "_init: already initialized");                                                    \
+            return;                                                                                                    \
+        }                                                                                                              \
+    } while (0)
 
-#define TC_REGISTRY_SHUTDOWN_GUARD(initialized, name) \
-    do { \
-        if (!initialized) { \
-            tc_log(TC_LOG_WARN, name "_shutdown: not initialized"); \
-            return; \
-        } \
-    } while(0)
+#define TC_REGISTRY_SHUTDOWN_GUARD(initialized, name)                                                                  \
+    do {                                                                                                               \
+        if (!initialized) {                                                                                            \
+            tc_log(TC_LOG_WARN, name "_shutdown: not initialized");                                                    \
+            return;                                                                                                    \
+        }                                                                                                              \
+    } while (0)
 
-#define TC_REGISTRY_CHECK_INIT(initialized, name, retval) \
-    do { \
-        if (!initialized) { \
-            name##_init(); \
-        } \
-    } while(0)
+#define TC_REGISTRY_CHECK_INIT(initialized, name, retval)                                                              \
+    do {                                                                                                               \
+        if (!initialized) {                                                                                            \
+            name##_init();                                                                                             \
+        }                                                                                                              \
+    } while (0)
 
 #ifdef __cplusplus
 }

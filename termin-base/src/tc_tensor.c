@@ -7,7 +7,8 @@
 #include <tcbase/tc_log.h>
 
 static bool checked_mul_size(size_t a, size_t b, size_t* out) {
-    if (!out) return false;
+    if (!out)
+        return false;
     if (a != 0 && b > SIZE_MAX / a) {
         return false;
     }
@@ -17,9 +18,7 @@ static bool checked_mul_size(size_t a, size_t b, size_t* out) {
 
 static bool validate_shape(uint8_t ndim, const size_t* shape) {
     if (ndim > TC_TENSOR_MAX_DIMS) {
-        tc_log_error("tc_tensor: ndim=%u exceeds TC_TENSOR_MAX_DIMS=%u",
-                     (unsigned)ndim,
-                     (unsigned)TC_TENSOR_MAX_DIMS);
+        tc_log_error("tc_tensor: ndim=%u exceeds TC_TENSOR_MAX_DIMS=%u", (unsigned)ndim, (unsigned)TC_TENSOR_MAX_DIMS);
         return false;
     }
     if (ndim > 0 && !shape) {
@@ -59,17 +58,28 @@ size_t tc_dtype_size(tc_dtype dtype) {
 
 const char* tc_dtype_name(tc_dtype dtype) {
     switch (dtype) {
-    case TC_DTYPE_U8: return "u8";
-    case TC_DTYPE_U16: return "u16";
-    case TC_DTYPE_U32: return "u32";
-    case TC_DTYPE_U64: return "u64";
-    case TC_DTYPE_I8: return "i8";
-    case TC_DTYPE_I16: return "i16";
-    case TC_DTYPE_I32: return "i32";
-    case TC_DTYPE_I64: return "i64";
-    case TC_DTYPE_F32: return "f32";
-    case TC_DTYPE_F64: return "f64";
-    default: return "invalid";
+    case TC_DTYPE_U8:
+        return "u8";
+    case TC_DTYPE_U16:
+        return "u16";
+    case TC_DTYPE_U32:
+        return "u32";
+    case TC_DTYPE_U64:
+        return "u64";
+    case TC_DTYPE_I8:
+        return "i8";
+    case TC_DTYPE_I16:
+        return "i16";
+    case TC_DTYPE_I32:
+        return "i32";
+    case TC_DTYPE_I64:
+        return "i64";
+    case TC_DTYPE_F32:
+        return "f32";
+    case TC_DTYPE_F64:
+        return "f64";
+    default:
+        return "invalid";
     }
 }
 
@@ -80,12 +90,7 @@ tc_tensor tc_tensor_empty(void) {
     return tensor;
 }
 
-bool tc_tensor_make_c_strides(
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    ptrdiff_t* out_strides
-) {
+bool tc_tensor_make_c_strides(tc_dtype dtype, uint8_t ndim, const size_t* shape, ptrdiff_t* out_strides) {
     if (!validate_shape(ndim, shape)) {
         return false;
     }
@@ -116,10 +121,7 @@ bool tc_tensor_make_c_strides(
     return true;
 }
 
-static bool init_tensor(
-    tc_tensor* tensor,
-    const tc_tensor_external_desc* desc
-) {
+static bool init_tensor(tc_tensor* tensor, const tc_tensor_external_desc* desc) {
     if (!tensor) {
         tc_log_error("tc_tensor: tensor is NULL");
         return false;
@@ -161,33 +163,22 @@ static bool init_tensor(
     return true;
 }
 
-bool tc_tensor_init_borrowed(
-    tc_tensor* tensor,
-    void* data,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    const ptrdiff_t* strides,
-    uint32_t flags
-) {
+bool tc_tensor_init_borrowed(tc_tensor* tensor,
+                             void* data,
+                             tc_dtype dtype,
+                             uint8_t ndim,
+                             const size_t* shape,
+                             const ptrdiff_t* strides,
+                             uint32_t flags) {
     const tc_tensor_external_desc desc = {data, NULL, NULL, dtype, ndim, shape, strides, flags};
     return init_tensor(tensor, &desc);
 }
 
-bool tc_tensor_init_external(
-    tc_tensor* tensor,
-    const tc_tensor_external_desc* desc
-) {
+bool tc_tensor_init_external(tc_tensor* tensor, const tc_tensor_external_desc* desc) {
     return init_tensor(tensor, desc);
 }
 
-bool tc_tensor_init_owned(
-    tc_tensor* tensor,
-    tc_dtype dtype,
-    uint8_t ndim,
-    const size_t* shape,
-    uint32_t flags
-) {
+bool tc_tensor_init_owned(tc_tensor* tensor, tc_dtype dtype, uint8_t ndim, const size_t* shape, uint32_t flags) {
     if (!tensor) {
         tc_log_error("tc_tensor_init_owned: tensor is NULL");
         return false;
@@ -230,7 +221,8 @@ bool tc_tensor_init_owned(
 }
 
 void tc_tensor_free(tc_tensor* tensor) {
-    if (!tensor) return;
+    if (!tensor)
+        return;
     if (tensor->owner && tensor->release_owner) {
         tensor->release_owner(tensor->owner);
     }
@@ -242,7 +234,8 @@ bool tc_tensor_is_readonly(const tc_tensor* tensor) {
 }
 
 size_t tc_tensor_element_count(const tc_tensor* tensor) {
-    if (!tensor || tensor->dtype == TC_DTYPE_INVALID) return 0;
+    if (!tensor || tensor->dtype == TC_DTYPE_INVALID)
+        return 0;
     size_t count = 1;
     for (uint8_t i = 0; i < tensor->ndim; ++i) {
         if (!checked_mul_size(count, tensor->shape[i], &count)) {
@@ -253,7 +246,8 @@ size_t tc_tensor_element_count(const tc_tensor* tensor) {
 }
 
 size_t tc_tensor_contiguous_byte_size(const tc_tensor* tensor) {
-    if (!tensor) return 0;
+    if (!tensor)
+        return 0;
     size_t count = tc_tensor_element_count(tensor);
     size_t bytes = 0;
     if (!checked_mul_size(count, tc_dtype_size(tensor->dtype), &bytes)) {
@@ -263,13 +257,16 @@ size_t tc_tensor_contiguous_byte_size(const tc_tensor* tensor) {
 }
 
 bool tc_tensor_is_valid(const tc_tensor* tensor) {
-    if (!tensor || tc_dtype_size(tensor->dtype) == 0) return false;
-    if (tensor->ndim > TC_TENSOR_MAX_DIMS) return false;
+    if (!tensor || tc_dtype_size(tensor->dtype) == 0)
+        return false;
+    if (tensor->ndim > TC_TENSOR_MAX_DIMS)
+        return false;
     return tensor->data != NULL || tc_tensor_element_count(tensor) == 0;
 }
 
 bool tc_tensor_is_c_contiguous(const tc_tensor* tensor) {
-    if (!tc_tensor_is_valid(tensor)) return false;
+    if (!tc_tensor_is_valid(tensor))
+        return false;
     ptrdiff_t expected[TC_TENSOR_MAX_DIMS] = {0};
     if (!tc_tensor_make_c_strides(tensor->dtype, tensor->ndim, tensor->shape, expected)) {
         return false;

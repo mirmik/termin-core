@@ -15,23 +15,19 @@ void hexascii_decode(const void *indata, int size, void *out);
 
 __END_DECLS*/
 
-constexpr static inline uint8_t hex2half(char c)
-{
+constexpr static inline uint8_t hex2half(char c) {
     return (uint8_t)(c <= '9' ? c - '0' : c - 'A' + 10);
 }
 
-constexpr static inline char half2hex(uint8_t n)
-{
+constexpr static inline char half2hex(uint8_t n) {
     return (char)(n < 10 ? '0' + n : 'A' - 10 + n);
 }
 
-constexpr static inline uint8_t hex2byte(char hi, char lo)
-{
+constexpr static inline uint8_t hex2byte(char hi, char lo) {
     return (uint8_t)((hex2half(hi) << 4) + hex2half(lo));
 }
 
-static inline uint8_t hex_to_uint8(const char *hex)
-{
+static inline uint8_t hex_to_uint8(const char* hex) {
     uint8_t out;
 
     out = hex2byte(*(hex + 0), *(hex + 1));
@@ -39,8 +35,7 @@ static inline uint8_t hex_to_uint8(const char *hex)
     return out;
 }
 
-static inline uint16_t hex_to_uint16(const char *hex)
-{
+static inline uint16_t hex_to_uint16(const char* hex) {
     uint16_t out;
 
     UINT16_HI(out) = hex2byte(*(hex + 0), *(hex + 1));
@@ -49,8 +44,7 @@ static inline uint16_t hex_to_uint16(const char *hex)
     return out;
 }
 
-static inline uint32_t hex_to_uint32(const char *hex)
-{
+static inline uint32_t hex_to_uint32(const char* hex) {
     uint32_t out;
 
     UINT32_HHI(out) = hex2byte(*(hex + 0), *(hex + 1));
@@ -61,8 +55,7 @@ static inline uint32_t hex_to_uint32(const char *hex)
     return out;
 }
 
-static inline uint64_t hex_to_uint64(const char *hex)
-{
+static inline uint64_t hex_to_uint64(const char* hex) {
     uint64_t out;
 
     UINT64_HHHI(out) = hex2byte(*(hex + 0), *(hex + 1));
@@ -77,22 +70,19 @@ static inline uint64_t hex_to_uint64(const char *hex)
     return out;
 }
 
-static inline void uint8_to_hex(char *hex, uint8_t in)
-{
+static inline void uint8_to_hex(char* hex, uint8_t in) {
     *hex++ = half2hex(HIHALF(in));
     *hex++ = half2hex(LOHALF(in));
 }
 
-static inline void uint16_to_hex(char *hex, uint16_t in)
-{
+static inline void uint16_to_hex(char* hex, uint16_t in) {
     *hex++ = half2hex(HIHALF(UINT16_HI(in)));
     *hex++ = half2hex(LOHALF(UINT16_HI(in)));
     *hex++ = half2hex(HIHALF(UINT16_LO(in)));
     *hex++ = half2hex(LOHALF(UINT16_LO(in)));
 }
 
-static inline void uint32_to_hex(char *hex, uint32_t in)
-{
+static inline void uint32_to_hex(char* hex, uint32_t in) {
     *hex++ = half2hex(HIHALF(UINT32_HHI(in)));
     *hex++ = half2hex(LOHALF(UINT32_HHI(in)));
     *hex++ = half2hex(HIHALF(UINT32_HLO(in)));
@@ -103,8 +93,7 @@ static inline void uint32_to_hex(char *hex, uint32_t in)
     *hex++ = half2hex(LOHALF(UINT32_LLO(in)));
 }
 
-static inline void uint64_to_hex(char *hex, uint64_t in)
-{
+static inline void uint64_to_hex(char* hex, uint64_t in) {
     *hex++ = half2hex(HIHALF(UINT64_HHHI(in)));
     *hex++ = half2hex(LOHALF(UINT64_HHHI(in)));
     *hex++ = half2hex(HIHALF(UINT64_HHLO(in)));

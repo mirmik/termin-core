@@ -6,13 +6,13 @@
 
 namespace termin::detail {
 
-inline tc_vec2 tc_scalar_cross_vec2(double scalar, const tc_vec2& vec) {
-    return {scalar * vec.y, -scalar * vec.x};
-}
+    inline tc_vec2 tc_scalar_cross_vec2(double scalar, const tc_vec2& vec) {
+        return {scalar * vec.y, -scalar * vec.x};
+    }
 
-inline tc_vec2 tc_vec2_cross_scalar(const tc_vec2& vec, double scalar) {
-    return {-scalar * vec.y, scalar * vec.x};
-}
+    inline tc_vec2 tc_vec2_cross_scalar(const tc_vec2& vec, double scalar) {
+        return {-scalar * vec.y, scalar * vec.x};
+    }
 
 } // namespace termin::detail
 
@@ -135,12 +135,12 @@ inline tc_screw2 tc_screw2::from_vector_wv_order(const double* data) {
 
 namespace termin {
 
-using Screw2 = ::tc_screw2;
+    using Screw2 = ::tc_screw2;
 
-static_assert(std::is_same<Screw2, ::tc_screw2>::value, "termin::Screw2 must alias tc_screw2");
-static_assert(std::is_standard_layout<Screw2>::value, "Screw2 must stay ABI-friendly");
-static_assert(std::is_trivially_copyable<Screw2>::value, "Screw2 must stay trivially copyable");
-static_assert(offsetof(Screw2, ang) == 0, "Screw2.ang offset changed");
-static_assert(offsetof(Screw2, lin) == sizeof(double), "Screw2.lin offset changed");
+    static_assert(std::is_same<Screw2, ::tc_screw2>::value, "termin::Screw2 must alias tc_screw2");
+    static_assert(std::is_standard_layout<Screw2>::value, "Screw2 must stay ABI-friendly");
+    static_assert(std::is_trivially_copyable<Screw2>::value, "Screw2 must stay trivially copyable");
+    static_assert(offsetof(Screw2, ang) == 0, "Screw2.ang offset changed");
+    static_assert(offsetof(Screw2, lin) == sizeof(double), "Screw2.lin offset changed");
 
 } // namespace termin

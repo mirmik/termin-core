@@ -3,17 +3,17 @@
 
 #include <string>
 
-namespace nos
-{
-    void fatal_handle(const char *msg);
+namespace nos {
+    void fatal_handle(const char* msg);
 
-    class errstring : public std::string
-    {
+    class errstring : public std::string {
     public:
-        errstring(const char *msg) : std::string(msg) {}
-        errstring(const std::string &msg) : std::string(msg) {}
+        errstring(const char* msg)
+            : std::string(msg) {}
+        errstring(const std::string& msg)
+            : std::string(msg) {}
         ~errstring() = default;
     };
-}
+} // namespace nos
 
 #endif
