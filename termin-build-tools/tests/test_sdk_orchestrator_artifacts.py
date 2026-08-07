@@ -529,7 +529,7 @@ def test_windows_python_runtime_copies_cli_and_allows_python_home_dll(
     monkeypatch.setattr(sdk_bundled_python, "_is_windows", lambda: True)
     monkeypatch.setattr(sdk_verification, "_is_windows", lambda: True)
 
-    sdk._copy_windows_python_runtime_executables(
+    sdk_bundled_python._copy_windows_python_runtime_executables(
         sdk_prefix,
         {
             "base_prefix": str(host_python),

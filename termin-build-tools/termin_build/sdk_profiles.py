@@ -66,7 +66,7 @@ def select_python_packages(profile: SdkProfile, packages: Iterable[_T]) -> list[
     selected = list(packages)
     if profile.python_package_paths is None:
         return selected
-    by_path = {str(getattr(package, "path")): package for package in selected}
+    by_path = {str(package.path): package for package in selected}
     missing = sorted(profile.python_package_paths - by_path.keys())
     if missing:
         raise ValueError(
@@ -76,7 +76,7 @@ def select_python_packages(profile: SdkProfile, packages: Iterable[_T]) -> list[
     return [
         package
         for package in selected
-        if str(getattr(package, "path")) in profile.python_package_paths
+        if str(package.path) in profile.python_package_paths
     ]
 
 
@@ -86,7 +86,7 @@ def select_application_payloads(
     selected = tuple(payloads)
     if profile.application_payload_names is None:
         return selected
-    by_name = {str(getattr(payload, "name")): payload for payload in selected}
+    by_name = {str(payload.name): payload for payload in selected}
     missing = sorted(profile.application_payload_names - by_name.keys())
     if missing:
         raise ValueError(
@@ -96,5 +96,5 @@ def select_application_payloads(
     return tuple(
         payload
         for payload in selected
-        if str(getattr(payload, "name")) in profile.application_payload_names
+        if str(payload.name) in profile.application_payload_names
     )
