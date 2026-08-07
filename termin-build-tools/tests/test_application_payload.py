@@ -15,6 +15,7 @@ from termin_build.application_payload import (
 )
 from termin_build.package_manifest import load_manifest
 from termin_build.python_abi import PythonAbiIdentity
+from termin_build.sdk_verification import verify_application_python_payloads
 
 
 def _repo_root() -> Path:
@@ -60,6 +61,29 @@ def test_termin_app_is_an_explicit_application_payload_not_a_distribution() -> N
     assert payloads[0].native_extensions[0].extension == (
         "termin.editor._editor_native"
     )
+
+
+def test_empty_profile_application_payload_manifest_needs_no_product_launcher(
+    tmp_path: Path,
+) -> None:
+    sdk_root = tmp_path / "sdk"
+    site_packages = sdk_root / "python" / "Lib" / "site-packages"
+    site_packages.mkdir(parents=True)
+    _write_empty_artifact_manifest(sdk_root)
+    (sdk_root / INSTALLED_MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "schema": 2,
+                "python_abi": PythonAbiIdentity.current().to_dict(),
+                "site_packages": site_packages.relative_to(sdk_root).as_posix(),
+                "payloads": [],
+                "files": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert verify_application_python_payloads(sdk_root) == 0
 
 
 def test_representative_library_subset_has_no_termin_app_dependency() -> None:

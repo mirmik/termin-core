@@ -147,8 +147,8 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
     output = capsys.readouterr().out
     assert result == 0
     assert "pwsh.exe -ExecutionPolicy Bypass -File" in output
-    assert "build-sdk-bindings.ps1 --no-parallel" in output
-    assert "build-sdk-csharp.ps1 --no-parallel" in output
+    assert "build-sdk-bindings.ps1 --profile=full --no-parallel" in output
+    assert "build-sdk-csharp.ps1 --profile=full --no-parallel" in output
     assert "sdk/python/Lib/site-packages" in output.replace("\\", "/")
 
 
@@ -207,6 +207,35 @@ def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
     assert "build-sdk-csharp.sh" in output
 
 
+def test_graphics_sdk_profile_selects_chart_capable_native_and_csharp_stages(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    interpreter = tmp_path / "python"
+    interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sdk.sys, "platform", "win32")
+    monkeypatch.setattr(
+        sdk.shutil,
+        "which",
+        lambda name: "C:/Program Files/PowerShell/7/pwsh.exe" if name == "pwsh" else None,
+    )
+
+    result = sdk.run_sdk_build(
+        repo_root=tmp_path,
+        build_type="Release",
+        stage_args=["--no-sdl", "--no-vulkan", "--no-opengl"],
+        build_csharp=True,
+        dry_run=True,
+        profile_name="graphics",
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "build-sdk-bindings.ps1 --profile=graphics --no-sdl" in output
+    assert "build-sdk-csharp.ps1 --profile=plot-d3d11 --no-sdl" in output
+
+
 def test_sdk_build_publishes_and_verifies_canonical_wheelhouse(
     tmp_path,
     monkeypatch,
@@ -254,7 +283,7 @@ def test_sdk_build_publishes_and_verifies_canonical_wheelhouse(
         lambda *args, **kwargs: calls.append("subset") or 0,
     )
 
-    def verify_sdk(_sdk_prefix, _build_dir):
+    def verify_sdk(_sdk_prefix, _build_dir, **_kwargs):
         calls.append("verify")
         return 0
 
@@ -607,6 +636,45 @@ def test_verify_sdk_python_launcher_checks_platform_layout_isolation_and_imports
         assert kwargs["env"]["PYTHONPATH"].endswith("__invalid_python_path__")
 
 
+def test_sdk_python_launcher_uses_graphics_smoke_imports(tmp_path, monkeypatch):
+    sdk_prefix = tmp_path / "sdk"
+    launcher = sdk_prefix / "bin" / "termin_python"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("", encoding="utf-8")
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append((command, kwargs))
+        if "--termin-info" in command:
+            return sdk.subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {
+                        "sdk_root": str(sdk_prefix.resolve()),
+                        "python_home": str(sdk_prefix.resolve()),
+                        "isolated": True,
+                        "use_environment": False,
+                        "user_site": False,
+                    }
+                ),
+                stderr="",
+            )
+        return sdk.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(sdk_verification, "_is_windows", lambda: False)
+    monkeypatch.setattr(sdk.subprocess, "run", fake_run)
+
+    assert sdk.verify_sdk_python_launcher(
+        sdk_prefix,
+        require_engine_package=False,
+    ) == 0
+    smoke = commands[1][0][-1]
+    assert "tcplot" in smoke
+    assert "termin.visual_scene" in smoke
+    assert "termin.engine" not in smoke
+
+
 def test_force_package_cache_cleanup_removes_plain_build_lib_and_nested_egg_info(
     tmp_path,
     monkeypatch,
@@ -700,6 +768,7 @@ def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
         "_run",
         lambda command, **_kwargs: commands.append(command) or 0,
     )
+    monkeypatch.setattr(sdk, "_python_pip_error", lambda _python: None)
 
     result = sdk._ensure_sdk_python_build_environment(repo_root)
 
@@ -718,6 +787,65 @@ def test_sdk_python_build_environment_uses_pinned_tools(tmp_path, monkeypatch):
         ]
     ]
     assert (environment_root / "python-sdk-build-requirements.txt").read_bytes() == (requirements.read_bytes())
+
+
+def test_sdk_python_build_environment_repairs_missing_pip(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    requirements = repo_root / sdk.SDK_BUILD_REQUIREMENTS_RELATIVE
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("pip==26.1.2\n", encoding="utf-8")
+    environment_root = repo_root / "build" / "python-runtime" / "build-env"
+    build_python = environment_root / "bin" / "python"
+    build_python.parent.mkdir(parents=True)
+    build_python.touch()
+    commands = []
+    pip_errors = iter(["No module named pip", None])
+    monkeypatch.setattr(sdk, "_is_windows", lambda: False)
+    monkeypatch.setattr(
+        sdk,
+        "_python_version_and_paths",
+        lambda _python: {
+            "version": "3.14",
+            "soabi": "cpython-314t-x86_64-linux-gnu",
+            "free_threaded": True,
+            "py_gil_disabled": True,
+        },
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+    monkeypatch.setattr(
+        sdk,
+        "_python_pip_error",
+        lambda _python: next(pip_errors),
+    )
+
+    result = sdk._ensure_sdk_python_build_environment(repo_root)
+
+    assert result == build_python
+    assert commands == [
+        [
+            str(build_python),
+            "-I",
+            "-m",
+            "ensurepip",
+            "--upgrade",
+            "--default-pip",
+        ],
+        [
+            str(build_python),
+            "-I",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--no-deps",
+            "-r",
+            str(requirements),
+        ],
+    ]
 
 
 def test_windows_build_environment_accepts_versioned_base_executable_alias(
@@ -759,6 +887,7 @@ def test_windows_build_environment_accepts_versioned_base_executable_alias(
         "_run",
         lambda command, **_kwargs: commands.append(command) or 0,
     )
+    monkeypatch.setattr(sdk, "_python_pip_error", lambda _python: None)
 
     result = sdk._ensure_sdk_python_build_environment(
         repo_root,
@@ -1014,31 +1143,23 @@ def test_prepare_build_python_runtime_copies_windows_runtime_for_consumers(
     monkeypatch,
 ):
     sdk_prefix = tmp_path / "sdk"
-    runtime_info = {
-        "version": "3.14",
-        "soabi": "cp314t-win_amd64",
-        "free_threaded": True,
-        "py_gil_disabled": True,
-    }
+    bundled_py_dir = sdk_prefix / "python" / "Lib"
     calls = []
 
     monkeypatch.setattr(sdk, "_is_windows", lambda: True)
     monkeypatch.setattr(sdk, "_python_executable", lambda: "python")
     monkeypatch.setattr(
         sdk,
-        "_python_version_and_paths",
-        lambda _py_exec: runtime_info,
-    )
-    monkeypatch.setattr(
-        sdk,
-        "_copy_windows_python_runtime_executables",
-        lambda prefix, info: calls.append((prefix, info)),
+        "ensure_bundled_python_runtime",
+        lambda prefix, **kwargs: calls.append((prefix, kwargs)) or bundled_py_dir,
     )
 
     result = sdk.prepare_build_python_runtime(sdk_prefix)
 
     assert result == 0
-    assert calls == [(sdk_prefix, runtime_info)]
+    assert calls == [
+        (sdk_prefix, {"python_executable": Path("python")}),
+    ]
 
 
 def test_prepare_build_python_runtime_creates_runtime_for_clean_sdk(

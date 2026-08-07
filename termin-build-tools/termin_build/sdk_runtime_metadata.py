@@ -11,9 +11,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Iterable
 
 from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND, SDK_MANIFEST_NAME
-from .package_manifest import load_manifest
+from .package_manifest import PackageEntry, load_manifest
 from .python_abi import PythonAbiIdentity
 from .python_interpreter import resolve_python_executable
 
@@ -262,14 +263,16 @@ def write_python_runtime_manifest(
     site_packages: Path,
     *,
     runtime_python_abi: PythonAbiIdentity,
+    packages: Iterable[PackageEntry] | None = None,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
     artifact_manifest.require_kind(SDK_MANIFEST_KIND)
     artifact_manifest.validate_all(expected_python_abi=runtime_python_abi)
     runtime_lock = _load_runtime_lock(repo_root)
+    effective_packages = packages if packages is not None else load_manifest(repo_root)
     local_names = {
         _normalized_distribution_name(package.distribution)
-        for package in load_manifest(repo_root)
+        for package in effective_packages
     }
     entries = _runtime_distribution_entries(site_packages, runtime_lock, local_names)
     lock_path = repo_root / RUNTIME_LOCK_RELATIVE
