@@ -1054,12 +1054,18 @@ compatibility matrix не входит.
 Если Chromium отсутствует в `PATH`, `TERMIN_WEB_BROWSER` должен указывать на
 его executable. `build/web-core/bin/termin-web-core.mjs` — стабильная внешняя
 ESM-точка входа; `termin_web_core.mjs` и `termin_web_core.wasm` являются
-генерируемыми деталями. Рядом устанавливается `termin-web-host.mjs`: он
-загружает directory-shaped package v2 по HTTP, переносит manifest и scene files
-в изолированный каталог MEMFS, вызывает native `RuntimePackageLoader` и ведёт
-явные состояния `idle/loading/ready/running/stopped/error`. Кадры исполняются
+генерируемыми деталями. Рядом устанавливается `termin-web-host.mjs`: он одним
+HTTP-запросом загружает `package.trpkg`, передаёт blob нативному
+`RuntimePackageReader` без построения копии directory tree в MEMFS и вызывает
+общий `RuntimePackageLoader`. Индекс blob содержит portable relative path,
+offset, size и SHA-256 каждого entry; reader до загрузки manifest проверяет
+уникальность путей, непрерывность bounds и content hashes. Directory reader
+остаётся каноническим путём native hosts, а оба provider-а используют общую
+валидацию manifest/resources/scenes. Кадры исполняются
 через настоящий `requestAnimationFrame`; `reload()` и `teardown()` останавливают
-цикл, уничтожают native scenes и удаляют MEMFS tree.
+цикл и уничтожают native scenes; blob освобождается вместе с package result.
+Provider API оставляет точку расширения для HTTP range/cache reader, но runtime
+не содержит автоматических fallback-слоёв или speculative streaming policy.
 
 Node smoke детерминированно проверяет этот lifecycle поверх настоящего Wasm,
 включая repeated load, cleanup, HTTP 404/path traversal и fail-closed отказ
