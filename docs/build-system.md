@@ -1069,10 +1069,13 @@ Node smoke детерминированно проверяет этот lifecycl
 host lifecycle он асинхронно создаёт WebGPU adapter/device для
 `#termin-canvas`, загружает strict-export package с camera/mesh/texture/material,
 рендерит его через `EngineCore`/`RenderingManager` и проверяет пиксели canvas,
-reload, teardown и resize. В Emscripten показ выполняется browser в конце RAF
-callback, зарегистрированного через HTML5 API; `wgpuSurfacePresent` там вызывать
-нельзя. Render registry bootstrap живёт всё время жизни Wasm-модуля, тогда как
-reload освобождает package, EngineCore, display и WebGPU device state.
+reload, teardown, resize и финальный shutdown. В Emscripten показ выполняется
+browser в конце RAF callback, зарегистрированного через HTML5 API;
+`wgpuSurfacePresent` там вызывать нельзя. После `await host.teardown()` владелец
+модуля может вызвать `core.shutdown()`: метод освобождает WebGPU smoke state и
+полностью выключает Render registry bootstrap. Shutdown идемпотентен, а
+последующая загрузка package заново поднимает registry; вызов во время
+асинхронной инициализации WebGPU отклоняется с записью ошибки в лог.
 
 Для ручной проверки рядом с smoke harness устанавливается `viewer.html` —
 полноэкранная пользовательская оболочка над тем же host и strict package:
