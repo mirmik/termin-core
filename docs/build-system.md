@@ -325,6 +325,11 @@ Test-only `site-packages` также является exact производны
 после успешной установки; удалённые зависимости не остаются затенять SDK.
 `run-tests-python.*` проверяет этот manifest до запуска pytest и при устаревшем
 окружении требует явно повторить `setup-sdk-python-env.*`.
+Верхнеуровневый `run-tests.*` сам вызывает `setup-sdk-python-env.*` перед
+Python-фазой: после новой SDK-сборки он обновляет fingerprint overlay, не
+переустанавливая неизменившийся test-only слой. Прямой вызов
+`run-tests-python.*` остаётся строгим и только сообщает каноническую команду
+восстановления.
 
 Прямые режимы запуска:
 
@@ -1150,6 +1155,12 @@ sidecar contract version 3 и только затем принимает WGSL п
 читают строковый ключ `Shader/slangCompiler` из того же
 `~/.config/termin/settings.json`; переменная `TERMIN_SLANG_TOOLCHAIN_DIR`
 переопределяет только каталог установки.
+
+Source-project editor проверяет `slangc` до загрузки проектных shader sources.
+Если compiler отсутствует, редактор показывает одно warning-окно со ссылкой на
+`Edit > Settings... > Slang Compiler` (`Shader/slangCompiler`), а CLI/player
+пишет тот же actionable warning в лог. Неверный configured path выводится
+целиком. Artifact-only runtime этот dev-toolchain check не выполняет.
 
 CLI также принимают явные `--slangc` / `TERMIN_SLANGC` и
 `--wgsl-validator` / `TERMIN_WGSL_VALIDATOR`; fallback в runtime-компиляцию не
