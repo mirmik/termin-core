@@ -19,6 +19,9 @@ namespace {
         fs::path sdk_root;
         fs::path termin_root;
         fs::path android_sdk_root;
+        fs::path android_home;
+        fs::path android_ndk_root;
+        fs::path java_home;
         fs::path shader_compiler;
         fs::path fxc;
         fs::path android_build_script;
@@ -51,6 +54,9 @@ namespace {
             << "  --sdk-root <dir>\n"
             << "  --termin-root <dir>\n"
             << "  --android-sdk-root <dir>\n"
+            << "  --android-home <dir>\n"
+            << "  --android-ndk-root <dir>\n"
+            << "  --java-home <dir>\n"
             << "  --shader-compiler <file>\n"
             << "  --fxc <file>\n"
             << "  --android-build-script <file>\n"
@@ -133,6 +139,12 @@ namespace {
                 parsed.options.termin_root = take_value();
             } else if (arg == "--android-sdk-root" && accepts_toolchain_options) {
                 parsed.options.android_sdk_root = take_value();
+            } else if (arg == "--android-home" && accepts_toolchain_options) {
+                parsed.options.android_home = take_value();
+            } else if (arg == "--android-ndk-root" && accepts_toolchain_options) {
+                parsed.options.android_ndk_root = take_value();
+            } else if (arg == "--java-home" && accepts_toolchain_options) {
+                parsed.options.java_home = take_value();
             } else if (arg == "--shader-compiler" && accepts_toolchain_options) {
                 parsed.options.shader_compiler = take_value();
             } else if (arg == "--fxc" && accepts_toolchain_options) {
@@ -236,6 +248,9 @@ namespace {
             append_path_option("--sdk-root", args.options.sdk_root);
             append_path_option("--termin-root", args.options.termin_root);
             append_path_option("--android-sdk-root", args.options.android_sdk_root);
+            append_path_option("--android-home", args.options.android_home);
+            append_path_option("--android-ndk-root", args.options.android_ndk_root);
+            append_path_option("--java-home", args.options.java_home);
             append_path_option("--shader-compiler", args.options.shader_compiler);
             append_path_option("--fxc", args.options.fxc);
             append_path_option("--android-build-script", args.options.android_build_script);

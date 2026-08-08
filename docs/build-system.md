@@ -614,11 +614,11 @@ ABI и числовой `ndk_api`, но не имеют конфигурируе
 являются частью фиксированного product target. Пути к SDK, компиляторам, Gradle
 и build scripts в профиль не входят; их передает локальный `ToolchainContext`.
 
-`ToolchainContext` собирается одной provider chain. Приоритет отдельных полей:
-SDK installation defaults, затем environment, общие пользовательские настройки
-Termin и, наконец,
-явные параметры конкретного запуска. После слияния roots незаданные tools
-выводятся из итоговых `sdk_root`/`termin_root`/`android_sdk_root` и `PATH`.
+`ToolchainContext` собирается одной provider chain. Приоритет отдельных полей
+от высшего к низшему: явные параметры конкретного запуска, environment, общие
+пользовательские настройки Termin, SDK installation defaults. После слияния
+roots незаданные tools выводятся из итоговых `sdk_root`, `termin_root`,
+Termin `android_sdk_root`, Google `android_home` и `PATH`.
 Поэтому смена SDK не оставляет compiler path от прежней установки. Контекст
 включает `termin_shaderc`, FXC, Android/Quest scripts, Gradle и ADB, но никогда
 не сохраняется в `build_profiles.json`.
@@ -628,11 +628,28 @@ Termin и, наконец,
 `%APPDATA%/termin/settings.json` на Windows. Редактор хранит там как свои
 пользовательские параметры, так и provider из
 **Edit > Settings... > Build Toolchain**: локальные корни Termin SDK/source,
-Termin Android SDK slice и overrides для `termin_shaderc`, FXC, Android/Quest
-build scripts, Gradle и ADB. Сохранение не меняет project-owned файлы. Build
-Profiles немедленно пересчитывает capabilities, а `termin build` читает тот же
-`Build/*` section, если соответствующий явный аргумент не задан. Запуск через
-`GRADLE_BIN=...` для обычной работы не требуется.
+Termin Android SDK slice, Google Android SDK, Android NDK, JDK и overrides для
+`termin_shaderc`, FXC, Android/Quest build scripts, Gradle и ADB.
+
+Android-пути намеренно разделены:
+
+| Назначение | Environment | User setting |
+|---|---|---|
+| cross-compiled Termin Android SDK | `TERMIN_ANDROID_SDK_ROOT` | `Build/androidSdkRoot` |
+| Google Android SDK | `ANDROID_HOME`, затем `ANDROID_SDK_ROOT` | `Build/androidHome` |
+| Android NDK | `ANDROID_NDK_HOME`, затем `ANDROID_NDK_ROOT` | `Build/androidNdkRoot` |
+| JDK для Gradle | `JAVA_HOME` | `Build/javaHome` |
+| Gradle | `GRADLE_BIN` | `Build/gradle` |
+| ADB | `ADB` | `Build/adb`, затем `<androidHome>/platform-tools/adb` |
+
+`build-sdk-android.sh` выбирает NDK
+в порядке `--ndk`, `ANDROID_NDK_HOME`, `ANDROID_NDK_ROOT`, затем
+`Build/androidNdkRoot` из этого файла. Сохранение не меняет project-owned
+файлы. Build Profiles немедленно пересчитывает capabilities, а `termin build`
+читает тот же `Build/*` section, если соответствующий явный аргумент не задан.
+Standalone Android/Quest APK wrappers используют ту же последовательность и
+принимают явные `--android-home`, `--ndk-root`, `--java-home`, `--gradle` и
+другие overrides. Запуск через `GRADLE_BIN=...` для обычной работы не требуется.
 
 Канонический `inspect_profile_capabilities()` возвращает тот же stable-code
 report для CLI и editor consumers. `capability.*.missing` означает отсутствие
