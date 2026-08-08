@@ -229,6 +229,33 @@ GUARD_C_TEST(test_capture_records_frame_timing_without_section_profiling) {
     return 0;
 }
 
+GUARD_C_TEST(test_gpu_frame_timing_is_published_after_cpu_frame_close) {
+    tc_profiler_set_enabled(false);
+    tc_profiler_clear_history();
+    tc_profiler_capture* capture = tc_profiler_capture_create(2);
+    GUARD_C_REQUIRE(capture != NULL);
+    tc_profiler_capture_set_active(capture, true);
+    tc_profiler_begin_frame();
+    tc_frame_profile* current = tc_profiler_current_frame();
+    GUARD_C_REQUIRE(current != NULL);
+    const int frame_number = current->frame_number;
+    tc_profiler_end_frame();
+    GUARD_C_CHECK(!tc_profiler_capture_at(capture, 0)->has_gpu_duration);
+    GUARD_C_CHECK(tc_profiler_publish_gpu_frame_timing(frame_number, 2.5));
+    const tc_frame_profile* completed = tc_profiler_capture_at(capture, 0);
+    GUARD_C_REQUIRE(completed != NULL);
+    GUARD_C_CHECK(completed->has_gpu_duration);
+    GUARD_C_CHECK(completed->gpu_duration_ms == 2.5);
+    GUARD_C_CHECK(tc_profiler_publish_gpu_frame_timing(frame_number, 1.25));
+    completed = tc_profiler_capture_at(capture, 0);
+    GUARD_C_REQUIRE(completed != NULL);
+    GUARD_C_CHECK(completed->gpu_duration_ms == 3.75);
+    GUARD_C_CHECK(!tc_profiler_publish_gpu_frame_timing(frame_number, -1.0));
+    tc_profiler_capture_destroy(capture);
+    tc_profiler_clear_history();
+    return 0;
+}
+
 int main(int argc, char** argv) {
     GUARD_C_BEGIN_ARGS(argc, argv);
     GUARD_C_RUN(test_profiler_bounds_deeply_nested_sections);
@@ -236,5 +263,6 @@ int main(int argc, char** argv) {
     GUARD_C_RUN(test_profiler_history_cursor_reports_ring_overwrite);
     GUARD_C_RUN(test_profiler_native_capture_owns_bounded_complete_frames);
     GUARD_C_RUN(test_capture_records_frame_timing_without_section_profiling);
+    GUARD_C_RUN(test_gpu_frame_timing_is_published_after_cpu_frame_close);
     return GUARD_C_END();
 }

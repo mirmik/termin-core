@@ -2,6 +2,7 @@
 #include "tcbase/tc_log.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -181,6 +182,17 @@ typedef struct {
 
 static tc_profiler g_profiler = {0};
 
+static tc_frame_profile* profile_ring_find(tc_profile_ring* ring, int frame_number) {
+    if (!ring)
+        return NULL;
+    for (int index = 0; index < ring->count; ++index) {
+        tc_frame_profile* frame = profile_ring_at(ring, index);
+        if (frame && frame->frame_number == frame_number)
+            return frame;
+    }
+    return NULL;
+}
+
 static void profiler_refresh_enabled(void) {
     bool capture_active = false;
     bool capture_profiling = false;
@@ -281,6 +293,36 @@ void tc_profiler_end_frame(void) {
     }
     g_profiler.current_frame = NULL;
     g_profiler.current_frame_profiles_sections = false;
+}
+
+bool tc_profiler_publish_gpu_frame_timing(int frame_number, double gpu_duration_ms) {
+    if (frame_number < 0 || !isfinite(gpu_duration_ms) || gpu_duration_ms < 0.0) {
+        tc_log(TC_LOG_ERROR,
+               "tc_profiler_publish_gpu_frame_timing: invalid frame number or duration (frame=%d, duration=%f)",
+               frame_number,
+               gpu_duration_ms);
+        return false;
+    }
+    bool applied = false;
+    tc_frame_profile* frame = profile_ring_find(&g_profiler.history, frame_number);
+    if (frame) {
+        frame->gpu_duration_ms += gpu_duration_ms;
+        frame->has_gpu_duration = true;
+        applied = true;
+    }
+    for (tc_profiler_capture* capture = g_profiler.captures; capture; capture = capture->next) {
+        frame = profile_ring_find(&capture->ring, frame_number);
+        if (frame) {
+            frame->gpu_duration_ms += gpu_duration_ms;
+            frame->has_gpu_duration = true;
+            capture->revision++;
+            applied = true;
+        }
+    }
+    if (!applied) {
+        tc_log(TC_LOG_WARN, "tc_profiler_publish_gpu_frame_timing: frame %d is no longer retained", frame_number);
+    }
+    return applied;
 }
 
 static int find_or_create_section(const char* name, int parent_index) {

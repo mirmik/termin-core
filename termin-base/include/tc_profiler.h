@@ -48,6 +48,10 @@ typedef struct tc_frame_profile {
     // history/capture is cleared or destroyed.
     tc_section_timing* sections;
     int section_count;
+    // Optional GPU duration published after the CPU frame closes. Kept at the
+    // end so existing positional frame initializers retain their meaning.
+    double gpu_duration_ms;
+    bool has_gpu_duration;
 } tc_frame_profile;
 
 typedef struct tc_profiler_frame_info {
@@ -109,6 +113,12 @@ TCBASE_API bool tc_profiler_frame_capture_enabled(void);
 TCBASE_API void tc_profiler_begin_frame(void);
 TCBASE_API void tc_profiler_begin_frame_with_info(const tc_profiler_frame_info* info);
 TCBASE_API void tc_profiler_end_frame(void);
+// Publish a late GPU duration for a completed frame from the profiler's owning
+// frame thread, after tc_profiler_end_frame(); the
+// duration is treated as one GPU submission contribution, accumulated by
+// frame_number, and retained only while the bounded history/capture still
+// retains that frame. Each backend submission must publish exactly once.
+TCBASE_API bool tc_profiler_publish_gpu_frame_timing(int frame_number, double gpu_duration_ms);
 TCBASE_API void tc_profiler_begin_section(const char* name);
 // Begin a "muted" section — pushes a balanced stack entry but drops all
 // timing (for the section and every nested begin_section inside it). Use
