@@ -9,10 +9,20 @@ namespace termin {
     // This is intentionally a plain four-float value: encoding is part of the
     // type, not stored as runtime metadata.
     struct SrgbColor {
-        float r;
-        float g;
-        float b;
-        float a;
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
+        float a = 1.0f;
+
+        constexpr SrgbColor() = default;
+        constexpr SrgbColor(float r_, float g_, float b_, float a_ = 1.0f) : r(r_), g(g_), b(b_), a(a_) {}
+
+        static constexpr SrgbColor black() { return {0, 0, 0, 1}; }
+        static constexpr SrgbColor white() { return {1, 1, 1, 1}; }
+        static constexpr SrgbColor red() { return {1, 0, 0, 1}; }
+        static constexpr SrgbColor green() { return {0, 1, 0, 1}; }
+        static constexpr SrgbColor blue() { return {0, 0, 1, 1}; }
+        static constexpr SrgbColor transparent() { return {0, 0, 0, 0}; }
     };
 
     // Renderer-working-space RGBA.  RGB is linear and may contain HDR values;
@@ -27,39 +37,5 @@ namespace termin {
 
     TCBASE_API LinearColor srgb_to_linear(SrgbColor value) noexcept;
     TCBASE_API SrgbColor linear_to_srgb(LinearColor value) noexcept;
-
-    // RGBA color with float components in [0, 1].
-    struct Color4 {
-        float r = 0.0f;
-        float g = 0.0f;
-        float b = 0.0f;
-        float a = 1.0f;
-
-        Color4() = default;
-        Color4(float r, float g, float b, float a = 1.0f)
-            : r(r),
-              g(g),
-              b(b),
-              a(a) {}
-
-        static Color4 black() {
-            return {0, 0, 0, 1};
-        }
-        static Color4 white() {
-            return {1, 1, 1, 1};
-        }
-        static Color4 red() {
-            return {1, 0, 0, 1};
-        }
-        static Color4 green() {
-            return {0, 1, 0, 1};
-        }
-        static Color4 blue() {
-            return {0, 0, 1, 1};
-        }
-        static Color4 transparent() {
-            return {0, 0, 0, 0};
-        }
-    };
 
 } // namespace termin

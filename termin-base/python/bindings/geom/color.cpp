@@ -41,6 +41,12 @@ namespace termin {
     void bind_color(nb::module_& m) {
         auto srgb = nb::class_<SrgbColor>(m, "SrgbColor");
         bind_color_fields(srgb);
+        srgb.def_static("black", &SrgbColor::black)
+            .def_static("white", &SrgbColor::white)
+            .def_static("red", &SrgbColor::red)
+            .def_static("green", &SrgbColor::green)
+            .def_static("blue", &SrgbColor::blue)
+            .def_static("transparent", &SrgbColor::transparent);
 
         auto linear = nb::class_<LinearColor>(m, "LinearColor");
         bind_color_fields(linear);

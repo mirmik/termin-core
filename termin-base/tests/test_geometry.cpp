@@ -176,7 +176,7 @@ TEST_CASE("Ray3 is tc_ray3 alias and normalizes direction") {
 }
 
 TEST_CASE("base geometry value types preserve simple construction semantics") {
-    static_assert(std::is_standard_layout_v<termin::Color4>);
+    static_assert(std::is_standard_layout_v<termin::SrgbColor>);
     static_assert(std::is_same_v<termin::Vec2f, tc_vec2f>);
     static_assert(std::is_same_v<termin::Size2f, tc_size2f>);
     static_assert(std::is_same_v<termin::Bounds2f, tc_bounds2f>);
@@ -191,7 +191,7 @@ TEST_CASE("base geometry value types preserve simple construction semantics") {
     static_assert(std::is_standard_layout_v<termin::Rect2i>);
     static_assert(std::is_standard_layout_v<termin::Rect2f>);
 
-    termin::Color4 color = termin::Color4::green();
+    termin::SrgbColor color = termin::SrgbColor::green();
     CHECK(color.r == 0.0f);
     CHECK(color.g == 1.0f);
     CHECK(color.b == 0.0f);
