@@ -30,6 +30,7 @@ set(TERMIN_BASE_SOURCES
     src/settings.cpp
     src/tc_value_trent.cpp
     src/orbit_camera.cpp
+    src/color.cpp
 )
 if(TERMIN_BASE_BUILD_SHARED)
     add_library(termin_base SHARED ${TERMIN_BASE_SOURCES})
@@ -138,6 +139,18 @@ if(TERMIN_BASE_BUILD_TESTS)
     )
     target_link_libraries(termin_base_geometry_test PRIVATE termin_base)
     add_test(NAME termin_base_geometry_test COMMAND termin_base_geometry_test)
+
+    add_executable(termin_base_color_test tests/test_color.cpp)
+    target_include_directories(termin_base_color_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../termin-thirdparty/guard
+    )
+    target_link_libraries(termin_base_color_test PRIVATE termin_base)
+    add_test(NAME termin_base_color_test COMMAND termin_base_color_test)
+
+    add_executable(termin_base_c_color_test tests/test_tc_color.c)
+    set_target_properties(termin_base_c_color_test PROPERTIES LINKER_LANGUAGE CXX)
+    target_link_libraries(termin_base_c_color_test PRIVATE termin_base)
+    add_test(NAME termin_base_c_color_test COMMAND termin_base_c_color_test)
 
     add_executable(termin_base_affine2_c_test tests/test_tc_affine2.c)
     set_target_properties(termin_base_affine2_c_test PROPERTIES LINKER_LANGUAGE CXX)

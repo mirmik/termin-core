@@ -6,6 +6,7 @@ namespace termin {
         m.doc() = "Native C++ geometry module for termin";
 
         // Bind all geometry types in order of dependencies
+        bind_color(m);
         bind_vec2(m);
         bind_pose2(m);
         bind_vec3(m);

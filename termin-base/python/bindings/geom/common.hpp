@@ -79,6 +79,7 @@ namespace termin {
 
     // Forward declarations for binding functions
     void bind_vec2(nb::module_& m);
+    void bind_color(nb::module_& m);
     void bind_pose2(nb::module_& m);
     void bind_vec3(nb::module_& m);
     void bind_vec4(nb::module_& m);

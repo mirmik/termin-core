@@ -55,6 +55,16 @@ state, но не callbacks или Python objects.
 - `trent` - JSON/YAML/value tree utilities.
 - `termin/geom/*` - базовые геометрические/value-типы: vectors, matrices,
   poses, quaternions, rays, AABB, colors, sizes, rectangles.
+- `termin/geom/color.hpp` разделяет scalar colors по смыслу. `SrgbColor`
+  хранит authored/display-referred SDR-компоненты в кодировке IEC sRGB, а
+  `LinearColor` — линейный RGB в рабочем пространстве renderer-а: sRGB
+  primaries и D65. Явные `srgb_to_linear()`/`linear_to_srgb()` преобразуют
+  только RGB; alpha остаётся линейным coverage и не преобразуется.
+  Преобразования ничего не clamp-ят: для отрицательных конечных RGB transfer
+  function продолжается симметрично с сохранением знака, а non-finite input
+  остаётся non-finite. `LinearColor` не ограничивает HDR-компоненты значением
+  `1.0`. Между двумя типами нет implicit conversion, а unrelated четыре числа
+  должны оставаться `Vec4`.
 - `termin/geom/screw3.hpp`, `se3.hpp` и `spatial_inertia3.hpp` — общий слой
   spatial algebra. `Screw3` хранит пару `[angular, linear]`, а явные
   `screw3_to_vec6_vw()`/`screw3_from_vec6_vw()` задают dense-порядок
