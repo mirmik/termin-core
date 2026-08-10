@@ -236,6 +236,18 @@ def test_graphics_sdk_profile_selects_chart_capable_native_and_csharp_stages(
     assert "build-sdk-csharp.ps1 --profile=plot-d3d11 --no-sdl" in output
 
 
+def test_no_sdl_disables_only_the_profiler_gui() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
+    profiler_cmake = (repo_root / "termin-profiler" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "set(TERMIN_PROFILER_BUILD_GUI\n    ${TERMIN_ENABLE_SDL}" in root_cmake
+    assert "if(TERMIN_PROFILER_BUILD_GUI)\n        termin_require_package(termin_gui_native" in profiler_cmake
+    assert "set(TERMIN_PROFILER_INSTALL_TARGETS termin_profiler_cli)" in profiler_cmake
+
+
 def test_sdk_build_publishes_and_verifies_canonical_wheelhouse(
     tmp_path,
     monkeypatch,
