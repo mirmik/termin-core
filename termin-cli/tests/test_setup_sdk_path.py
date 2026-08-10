@@ -4,6 +4,13 @@ import os
 from pathlib import Path
 import subprocess
 
+import pytest
+
+
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="exercises the POSIX setup-sdk-path.sh installer"
+)
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY_ROOT / "setup-sdk-path.sh"

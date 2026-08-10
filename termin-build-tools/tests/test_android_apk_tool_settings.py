@@ -7,6 +7,13 @@ import shutil
 import subprocess
 import sys
 
+import pytest
+
+
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="exercises the POSIX build-android-apk.sh wrapper"
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

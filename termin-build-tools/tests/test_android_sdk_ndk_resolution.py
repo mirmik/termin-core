@@ -5,6 +5,13 @@ import os
 from pathlib import Path
 import subprocess
 
+import pytest
+
+
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="exercises the POSIX build-sdk-android.sh wrapper"
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILD_SCRIPT = REPO_ROOT / "build-sdk-android.sh"
