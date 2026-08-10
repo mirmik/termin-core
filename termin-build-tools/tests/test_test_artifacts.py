@@ -93,7 +93,7 @@ def test_cpp_runners_build_shader_compiler_before_python_resolution() -> None:
     # C++ runners must explicitly build the producer target in the active
     # graph before run-tests.sh/run-tests.ps1 resolve TERMIN_SHADERC.
     assert linux_runner.count("--target termin_shaderc") == 1
-    assert 'Target "termin_shaderc"' in windows_runner
+    assert '$NativeBuildTargets += "termin_shaderc"' in windows_runner
 
 
 def test_cpp_runners_build_exact_planner_selected_targets() -> None:
@@ -102,6 +102,19 @@ def test_cpp_runners_build_exact_planner_selected_targets() -> None:
     windows_runner = (repo_root / "run-tests-cpp.ps1").read_text(encoding="utf-8")
 
     assert '--target "${CTEST_BUILD_TARGETS[@]}"' in linux_runner
-    assert "-Target $CtestBuildTargets" in windows_runner
+    assert "$NativeBuildTargets = @($CtestBuildTargets)" in windows_runner
+    assert "-Target $NativeBuildTargets" in windows_runner
     assert "termin_native_tests_with_window" not in linux_runner
     assert "termin_native_tests_with_window" not in windows_runner
+
+
+def test_windows_cmake_helper_builds_multiple_targets_as_one_solution_graph() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    helper = (repo_root / "scripts" / "Invoke-CMakeBuild.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert '$Target.Count -gt 1' in helper
+    assert '"/t:$($Target -join \';\')"' in helper
+    assert "Get-TerminVisualStudioSolution" in helper
+    assert "& $msbuildPath @msbuildArgs" in helper
