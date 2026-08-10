@@ -1678,6 +1678,7 @@ def doctor(
     init_submodules: bool,
     require_nanobind: bool,
     sdk_prefix: Path,
+    sdl: str = "OFF",
 ) -> int:
     profile = PROFILES[profile_name]
     errors = []
@@ -1712,7 +1713,7 @@ def doctor(
     if warning:
         warnings.append(warning)
 
-    required_submodules = profile_submodules(profile, vulkan)
+    required_submodules = profile_submodules(profile, vulkan, sdl)
     missing = missing_submodules(repo_root, required_submodules)
     if missing and init_submodules:
         result = ensure_submodules(repo_root, required_submodules)
@@ -1759,6 +1760,11 @@ def main(argv: list[str] | None = None) -> int:
         "--vulkan",
         choices=("ON", "OFF"),
         default="ON",
+    )
+    doctor_parser.add_argument(
+        "--sdl",
+        choices=("ON", "OFF"),
+        default="OFF",
     )
     doctor_parser.add_argument(
         "--init-submodules",
@@ -1912,6 +1918,7 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=repo_root,
             profile_name=args.profile,
             vulkan=args.vulkan,
+            sdl=args.sdl,
             init_submodules=args.init_submodules,
             require_nanobind=args.require_nanobind,
             sdk_prefix=sdk_prefix,

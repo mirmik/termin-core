@@ -20,6 +20,8 @@ EXPECTED_SUBMODULE_FILES = {
     "termin-thirdparty/libwebp": ("CMakeLists.txt", "src/webp/decode.h"),
     "termin-thirdparty/libogg": ("CMakeLists.txt", "include/ogg/ogg.h"),
     "termin-thirdparty/libvorbis": ("CMakeLists.txt", "include/vorbis/vorbisfile.h"),
+    "termin-thirdparty/cgltf": ("cgltf.h",),
+    "termin-thirdparty/sdl2": ("CMakeLists.txt", "include/SDL.h"),
     "termin-thirdparty/vulkan-memory-allocator": ("include/vk_mem_alloc.h",),
     "termin-thirdparty/openxr-sdk": ("include/openxr/openxr.h",),
     "termin-thirdparty/recastnavigation": (
@@ -40,6 +42,7 @@ SDK_NATIVE_SUBMODULES = (
     "termin-thirdparty/libwebp",
     "termin-thirdparty/libogg",
     "termin-thirdparty/libvorbis",
+    "termin-thirdparty/cgltf",
 )
 
 SDK_GRAPHICS_SUBMODULES = (
@@ -188,8 +191,10 @@ def ensure_submodules(repo_root: Path, paths: list[str]) -> int:
     return 0
 
 
-def profile_submodules(profile: DoctorProfile, vulkan: str) -> list[str]:
+def profile_submodules(profile: DoctorProfile, vulkan: str, sdl: str = "OFF") -> list[str]:
     paths = list(profile.submodules)
     if vulkan == "ON":
         paths.append("termin-thirdparty/vulkan-memory-allocator")
+    if sdl == "ON":
+        paths.append("termin-thirdparty/sdl2")
     return paths
