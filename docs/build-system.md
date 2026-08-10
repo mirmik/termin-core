@@ -1174,13 +1174,22 @@ sidecar contract version 3 и только затем принимает WGSL п
 ./setup-slang-toolchain.sh
 ```
 
+На Windows используется эквивалентная команда:
+
+```powershell
+.\setup-slang-toolchain.ps1
+```
+
 Скрипт проверяет checksum и версию закреплённого официального архива,
 устанавливает его по умолчанию в
 `${XDG_DATA_HOME:-~/.local/share}/termin/toolchains/slang-<version>` и записывает
 полный путь к `slangc` через `tcbase.Settings("termin")`. Python- и C++-хосты
 читают строковый ключ `Shader/slangCompiler` из того же
 `~/.config/termin/settings.json`; переменная `TERMIN_SLANG_TOOLCHAIN_DIR`
-переопределяет только каталог установки.
+переопределяет только каталог установки. На Windows официальный ZIP
+устанавливается без прав администратора в
+`%LOCALAPPDATA%\Termin\Toolchains\slang-<version>`, а общий Settings API пишет
+тот же ключ в `%APPDATA%\termin\settings.json`.
 
 Source-project editor проверяет `slangc` до загрузки проектных shader sources.
 Если compiler отсутствует, редактор показывает одно warning-окно со ссылкой на

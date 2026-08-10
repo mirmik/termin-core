@@ -96,6 +96,7 @@ class SuiteEntry:
     module: str
     executor: str
     roots: tuple[str, ...]
+    excluded_roots: tuple[str, ...]
     profiles: tuple[str, ...]
     platforms: tuple[str, ...]
     required_capabilities: tuple[str, ...]
@@ -321,7 +322,7 @@ def load_profiles_and_suites(
                 f"{path}: suite_defaults.{executor} must be an object"
             )
         allowed = {"profiles", "platforms"}
-        if executor == "process-smoke":
+        if executor in {"process-smoke", "pytest"}:
             allowed.add("required_capabilities")
         _reject_unknown_fields(
             defaults, allowed, f"{path}: suite_defaults.{executor}"
@@ -414,8 +415,10 @@ def load_profiles_and_suites(
             "platforms",
             "reason",
         }
-        if executor == "process-smoke":
+        if executor in {"process-smoke", "pytest"}:
             allowed.add("required_capabilities")
+        if executor == "pytest":
+            allowed.add("excluded_roots")
         _reject_unknown_fields(raw, allowed, context)
         suites.append(
             SuiteEntry(
@@ -423,6 +426,11 @@ def load_profiles_and_suites(
                 module=_required_string(raw, "module", context),
                 executor=executor,
                 roots=_string_tuple(raw, "roots", context, required=True),
+                excluded_roots=(
+                    _string_tuple(raw, "excluded_roots", context)
+                    if executor == "pytest"
+                    else ()
+                ),
                 profiles=_string_tuple_with_default(
                     raw,
                     "profiles",
@@ -440,7 +448,7 @@ def load_profiles_and_suites(
                         context,
                         executor_defaults,
                     )
-                    if executor == "process-smoke"
+                    if executor in {"process-smoke", "pytest"}
                     else ()
                 ),
                 reason=_optional_string(raw, "reason", context),
@@ -571,6 +579,8 @@ def _pytest_owners(test_path: str, suites: Iterable[SuiteEntry]) -> list[str]:
     owners = []
     for suite in suites:
         if suite.executor != "pytest":
+            continue
+        if any(_is_within(path, Path(root)) for root in suite.excluded_roots):
             continue
         for root in suite.roots:
             if _is_within(path, Path(root)):
@@ -894,6 +904,23 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
                         f"{suite.id}: Windows process-smoke root has no supported "
                         f"runner: {root}"
                     )
+        for excluded_root in suite.excluded_roots:
+            if not _is_repository_relative(excluded_root):
+                errors.append(
+                    f"{suite.id}: excluded test root must be repository-relative: "
+                    f"{excluded_root}"
+                )
+            elif not (repo_root / excluded_root).exists():
+                errors.append(
+                    f"{suite.id}: excluded test root does not exist: {excluded_root}"
+                )
+            elif not any(
+                _is_within(Path(excluded_root), Path(root)) for root in suite.roots
+            ):
+                errors.append(
+                    f"{suite.id}: excluded test root is outside suite roots: "
+                    f"{excluded_root}"
+                )
                 if suffix in {".bat", ".cmd", ".ps1"} and any(
                     platform != "windows" for platform in suite.platforms
                 ):
@@ -967,8 +994,10 @@ def validate_catalog(repo_root: Path, catalog: RepositoryCatalog) -> list[str]:
 
 def _suite_as_json(suite: SuiteEntry) -> dict[str, object]:
     entry = asdict(suite)
-    if suite.executor != "process-smoke":
+    if suite.executor not in {"process-smoke", "pytest"} or not suite.required_capabilities:
         entry.pop("required_capabilities")
+    if suite.executor != "pytest" or not suite.excluded_roots:
+        entry.pop("excluded_roots")
     return entry
 
 
@@ -1037,6 +1066,7 @@ def run_pytest_plan(
     platform: str,
     python_executable: str,
     python_arguments: tuple[str, ...] = (),
+    capabilities: Iterable[str] = (),
     jobs: int = 1,
 ) -> tuple[int, list[str]]:
     if jobs < 1:
@@ -1048,9 +1078,19 @@ def run_pytest_plan(
         raise ManifestError(f"unknown profile: {profile_id}")
 
     plan = build_plan(catalog, profile_id, platform)
-    pytest_suites = [
-        suite for suite in plan["suites"] if suite["executor"] == "pytest"
-    ]
+    enabled_capabilities = set(capabilities)
+    pytest_suites = []
+    skipped_suites = []
+    for suite in plan["suites"]:
+        if suite["executor"] != "pytest":
+            continue
+        missing = sorted(
+            set(suite.get("required_capabilities", ())) - enabled_capabilities
+        )
+        if missing:
+            skipped_suites.append((suite["id"], missing))
+        else:
+            pytest_suites.append(suite)
     run_root = repo_root / "build" / "pt" / uuid.uuid4().hex[:8]
     cache_root = repo_root / "build" / "pytest-cache"
     duration_cache_path = cache_root / "suite-durations.json"
@@ -1061,6 +1101,11 @@ def run_pytest_plan(
     historical_durations = duration_profiles.get(duration_profile_key, {})
     print(f"Pytest execution plan: {profile_id} / {platform}")
     print(f"Pytest suites: {len(pytest_suites)}")
+    for suite_id, missing in skipped_suites:
+        print(
+            f"Pytest suite skipped: {suite_id}: missing capabilities: "
+            + ", ".join(missing)
+        )
     print(f"Pytest workers: {jobs}")
     print(
         "Pytest timing history: "
@@ -1083,6 +1128,8 @@ def run_pytest_plan(
         if profile.pytest_mark_expression is not None:
             command.extend(["-m", profile.pytest_mark_expression])
         command.extend(suite["roots"])
+        for excluded_root in suite.get("excluded_roots", ()):
+            command.extend(["--ignore", excluded_root])
         command.extend(
             [
                 "--basetemp",
@@ -1795,6 +1842,7 @@ def _cmd_run(
             resolved_platform,
             python_executable,
             python_arguments,
+            capabilities,
             pytest_jobs,
         )
         exit_code |= pytest_exit_code

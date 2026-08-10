@@ -84,6 +84,20 @@ def test_test_runners_have_no_legacy_release_tests_fallback() -> None:
     )
 
 
+def test_central_runners_propagate_window_capability_to_python_planner() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    for suffix in ("sh", "ps1"):
+        central = (repo_root / f"run-tests.{suffix}").read_text(encoding="utf-8")
+        python = (repo_root / f"run-tests-python.{suffix}").read_text(
+            encoding="utf-8"
+        )
+
+        assert "TERMIN_TEST_CAPABILITIES" in central
+        assert "--no-sdl" in central
+        assert "TERMIN_TEST_CAPABILITIES" in python
+        assert "--capability" in python
+
+
 def test_cpp_runners_build_shader_compiler_before_python_resolution() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     linux_runner = (repo_root / "run-tests-cpp.sh").read_text(encoding="utf-8")

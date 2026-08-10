@@ -801,6 +801,76 @@ def test_run_executes_manifest_pytest_suites(
     assert "Pytest suites: 1" in capsys.readouterr().out
 
 
+def test_run_skips_capability_suite_and_ignores_its_roots_in_parent_suite(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo = _repository(tmp_path)
+    headless_test = repo / "alpha" / "tests" / "test_headless.py"
+    window_test = repo / "alpha" / "tests" / "test_window.py"
+    headless_test.write_text("def test_headless(): pass\n", encoding="utf-8")
+    window_test.write_text("def test_window(): pass\n", encoding="utf-8")
+    manifest = repo / repository_control.TEST_MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["suites"][0]["excluded_roots"] = ["alpha/tests/test_window.py"]
+    data["suites"].append(
+        {
+            "id": "alpha-window-python",
+            "module": "alpha",
+            "executor": "pytest",
+            "roots": ["alpha/tests/test_window.py"],
+            "required_capabilities": ["window"],
+        }
+    )
+    _write_json(manifest, data)
+    calls = []
+
+    class FakeProcess:
+        stdout = StringIO("1 passed\n")
+
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(command, **_kwargs):
+        calls.append(command)
+        return FakeProcess()
+
+    monkeypatch.setattr(repository_control.subprocess, "Popen", fake_popen)
+
+    result = repository_control.main(
+        ["--repo-root", str(repo), "run", "pr", "--platform", "linux"]
+    )
+
+    assert result == 0
+    assert len(calls) == 1
+    assert calls[0][5:9] == [
+        "alpha/tests",
+        "--ignore",
+        "alpha/tests/test_window.py",
+        "--basetemp",
+    ]
+    assert (
+        "Pytest suite skipped: alpha-window-python: missing capabilities: window"
+        in capsys.readouterr().out
+    )
+
+    calls.clear()
+    result = repository_control.main(
+        [
+            "--repo-root",
+            str(repo),
+            "run",
+            "pr",
+            "--platform",
+            "linux",
+            "--capability",
+            "window",
+        ]
+    )
+
+    assert result == 0
+    assert len(calls) == 2
+
+
 def test_run_accumulates_suite_failures(tmp_path: Path, monkeypatch, capsys) -> None:
     repo = _repository(tmp_path)
 
