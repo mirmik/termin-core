@@ -409,7 +409,12 @@ def test_root_propagates_global_native_test_option_to_subprojects():
 def test_native_test_configuration_does_not_mutate_render_product_target():
     repo_root = sdk.repo_root_from(Path(__file__))
     render_cmake = (repo_root / "termin-render/CMakeLists.txt").read_text(encoding="utf-8")
-    test_configuration = render_cmake[render_cmake.index("if(TERMIN_RENDER_BUILD_TESTS)") :]
+    test_guard = re.search(
+        r"if\(\s*TERMIN_RENDER_BUILD_TESTS\b[^)]*\)",
+        render_cmake,
+    )
+    assert test_guard is not None
+    test_configuration = render_cmake[test_guard.start() :]
     product_target_mutation = re.compile(
         r"(?:target_(?:compile_definitions|compile_options|include_directories|"
         r"link_libraries|precompile_headers|sources)|set_target_properties)"
@@ -417,6 +422,26 @@ def test_native_test_configuration_does_not_mutate_render_product_target():
     )
 
     assert product_target_mutation.search(test_configuration) is None
+
+
+def test_root_resets_python_only_cli_mode_for_non_graphics_profiles():
+    repo_root = sdk.repo_root_from(Path(__file__))
+    root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
+
+    profile_selection = re.search(
+        r'if\(TERMIN_SDK_PROFILE STREQUAL "graphics"\)\s*'
+        r'set\(_termin_cli_python_only ON\)\s*'
+        r'else\(\)\s*'
+        r'set\(_termin_cli_python_only OFF\)\s*'
+        r'endif\(\)',
+        root_cmake,
+    )
+
+    assert profile_selection is not None
+    assert (
+        "set(TERMIN_CLI_PYTHON_ONLY ${_termin_cli_python_only} CACHE BOOL"
+        in root_cmake
+    )
 
 
 def test_openxr_package_declares_all_public_target_dependencies():
