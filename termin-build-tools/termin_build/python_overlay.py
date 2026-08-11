@@ -14,7 +14,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .application_payload import load_application_payloads
+from .application_payload import (
+    INSTALLED_MANIFEST_NAME as APPLICATION_PAYLOAD_MANIFEST_NAME,
+    INSTALLED_SCHEMA as APPLICATION_PAYLOAD_MANIFEST_SCHEMA,
+    load_application_payloads,
+)
 from .artifact_manifest import ArtifactManifest, SDK_MANIFEST_KIND
 from .package_manifest import load_manifest, repo_root_from
 from .python_abi import PythonAbiError, PythonAbiIdentity
@@ -127,6 +131,43 @@ def _distribution_index(site_packages: Path) -> dict[str, importlib.metadata.Dis
     return result
 
 
+def _installed_application_payload_names(sdk_root: Path) -> frozenset[str]:
+    manifest_path = sdk_root / APPLICATION_PAYLOAD_MANIFEST_NAME
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise OverlayError(
+            f"failed to read installed application payload manifest "
+            f"{manifest_path}: {error}"
+        ) from error
+    if (
+        not isinstance(raw, dict)
+        or raw.get("schema") != APPLICATION_PAYLOAD_MANIFEST_SCHEMA
+    ):
+        raise OverlayError(
+            f"unsupported installed application payload manifest: {manifest_path}"
+        )
+    payloads = raw.get("payloads")
+    if not isinstance(payloads, list):
+        raise OverlayError(
+            f"installed application payload manifest has no payload list: {manifest_path}"
+        )
+    names = []
+    for index, payload in enumerate(payloads):
+        name = payload.get("name") if isinstance(payload, dict) else None
+        if not isinstance(name, str) or not name:
+            raise OverlayError(
+                f"invalid installed application payload at index {index}: {manifest_path}"
+            )
+        names.append(name)
+    if len(names) != len(set(names)):
+        raise OverlayError(
+            f"installed application payload manifest contains duplicate names: "
+            f"{manifest_path}"
+        )
+    return frozenset(names)
+
+
 def create_overlay_manifest(
     repo_root: Path,
     sdk_root: Path,
@@ -137,7 +178,9 @@ def create_overlay_manifest(
     sdk_root = sdk_root.resolve()
     site_packages = _sdk_site_packages(sdk_root).resolve()
     distributions = _distribution_index(site_packages)
+    installed_payload_names = _installed_application_payload_names(sdk_root)
     mappings: dict[str, dict[str, str]] = {}
+    overlaid_distributions = []
 
     def add_mapping(relative: Path, source_file: Path) -> None:
         if relative.name == "__init__.py":
@@ -170,9 +213,8 @@ def create_overlay_manifest(
     for package in load_manifest(repo_root):
         distribution = distributions.get(_normalized_distribution_name(package.distribution))
         if distribution is None:
-            raise OverlayError(
-                f"SDK distribution is missing for overlay: {package.distribution}"
-            )
+            continue
+        overlaid_distributions.append(package.distribution)
         package_root = (repo_root / package.path).resolve()
         source_files = _source_python_files(package_root)
         distribution_files = tuple(distribution.files or ())
@@ -214,6 +256,8 @@ def create_overlay_manifest(
                 add_mapping(candidates[0], source_file)
 
     for payload in load_application_payloads(repo_root):
+        if payload.name not in installed_payload_names:
+            continue
         source_root = (repo_root / payload.source_root).resolve()
         destination_root = Path(payload.destination_root)
         for declared_path in payload.paths:
@@ -242,6 +286,8 @@ def create_overlay_manifest(
         "sdk_root": str(sdk_root),
         "sdk_fingerprint": _sha256(sdk_root / "termin-artifacts.json"),
         "python_abi": sdk_manifest.python_abi.to_dict(),
+        "distributions": sorted(overlaid_distributions),
+        "application_payloads": sorted(installed_payload_names),
         "extra_sites": resolved_extra_sites,
         "mappings": dict(sorted(mappings.items())),
     }
