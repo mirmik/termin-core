@@ -29,6 +29,7 @@ _GRAPHICS_PYTHON_PACKAGES = frozenset(
         "termin-nodegraph",
         "termin-window",
         "tcplot",
+        "tcplot-gui-native",
     }
 )
 
