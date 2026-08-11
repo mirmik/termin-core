@@ -26,6 +26,8 @@ _GRAPHICS_PYTHON_PACKAGES = frozenset(
         "termin-shader-runtime",
         "termin-gui",
         "termin-gui-native",
+        "termin-nodegraph",
+        "termin-window",
         "tcplot",
     }
 )

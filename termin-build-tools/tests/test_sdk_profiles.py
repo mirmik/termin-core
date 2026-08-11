@@ -23,7 +23,9 @@ def test_graphics_sdk_profile_has_only_graphics_python_closure() -> None:
     paths = [package.path for package in packages]
     assert "tcplot" in paths
     assert "termin-gui-native" in paths
+    assert "termin-nodegraph" in paths
     assert "termin-visual-scene" in paths
+    assert "termin-window" in paths
     assert "termin-engine" not in paths
     assert "termin-render" not in paths
     assert "termin-physics" not in paths
