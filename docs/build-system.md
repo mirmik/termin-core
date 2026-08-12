@@ -102,9 +102,11 @@ legacy OpenGL выключены:
 ```
 
 Профиль включает `termin-graphics2`, поэтому 3D chart, text3D и
-backend-neutral 3D rendering сохраняются. Он исключает engine scene/render
-pipeline, physics, CSG, navmesh, animation, audio, editor/player/launcher и их
-Python-пакеты. На Windows оркестратор автоматически выбирает существующий C#
+backend-neutral 3D rendering сохраняются. Native-граф также собирает
+scene-neutral `termin-render` в `core-only` режиме, но его Python distribution
+в профиль не входит. Профиль исключает engine scene/render pipeline, physics,
+CSG, navmesh, animation, audio, editor/player/launcher и их Python-пакеты. На
+Windows оркестратор автоматически выбирает существующий C#
 профиль `plot-d3d11`, который генерирует API только для
 `tcplot`/`Termin.Wpf` и копирует требуемые D3D11 shader artifacts.
 
