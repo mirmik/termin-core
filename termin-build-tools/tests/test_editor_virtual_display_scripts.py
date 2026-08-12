@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import runpy
+import struct
+import zlib
 from pathlib import Path
 
 import pytest
@@ -9,9 +11,11 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPOSITORY_ROOT / "scripts" / "termin-editor-virtual-display"
 WRAPPER_GLOBALS = runpy.run_path(str(WRAPPER))
+SMOKE_GLOBALS = runpy.run_path(str(REPOSITORY_ROOT / "scripts" / "smoke-editor-virtual-display"))
 VirtualDisplayError = WRAPPER_GLOBALS["VirtualDisplayError"]
 _editor_environment = WRAPPER_GLOBALS["_editor_environment"]
 _validate_glxinfo = WRAPPER_GLOBALS["_validate_glxinfo"]
+_png_has_visible_pixel = SMOKE_GLOBALS["_png_has_visible_pixel"]
 
 
 def _glxinfo(*, vendor: str = "Mesa", renderer: str = "llvmpipe") -> str:
@@ -66,6 +70,28 @@ def test_editor_environment_forces_isolated_mcp_and_software_opengl(
     assert environment["MESA_GLSL_VERSION_OVERRIDE"] == "460"
     assert environment["TERMIN_EDITOR_MCP"] == "1"
     assert environment["TERMIN_EDITOR_MCP_PORT"] == "0"
-    assert environment["TERMIN_EDITOR_MCP_SESSION_FILE"] == str(
-        tmp_path / "session.json"
-    )
+    assert environment["TERMIN_EDITOR_MCP_SESSION_FILE"] == str(tmp_path / "session.json")
+
+
+def _write_rgb_png(path: Path, pixel: tuple[int, int, int]) -> None:
+    raw = b"\x00" + bytes(pixel)
+    chunks = []
+    for chunk_type, payload in (
+        (b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)),
+        (b"IDAT", zlib.compress(raw)),
+        (b"IEND", b""),
+    ):
+        chunks.append(
+            struct.pack(">I", len(payload)) + chunk_type + payload + struct.pack(">I", zlib.crc32(chunk_type + payload))
+        )
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"".join(chunks))
+
+
+def test_virtual_display_smoke_detects_visible_png_pixel(tmp_path: Path) -> None:
+    black = tmp_path / "black.png"
+    visible = tmp_path / "visible.png"
+    _write_rgb_png(black, (0, 0, 0))
+    _write_rgb_png(visible, (0, 1, 0))
+
+    assert not _png_has_visible_pixel(black)
+    assert _png_has_visible_pixel(visible)
