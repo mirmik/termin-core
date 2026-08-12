@@ -1039,9 +1039,9 @@ MSVC-специфичные warnings (C4251 — STL-члены в dllexport-кл
 `termin-base`, `termin-inspect`, `termin-mesh`, `termin-scene`, minimal-only
 `termin-bootstrap`, minimal-only `termin-runtime` и минимального среза
 `termin-graphics`. Профиль CMake
-`TERMIN_PLATFORM_WEB` включает
-`tgfx2` WebGPU через закреплённый Emscripten port `emdawnwebgpu`, но исключает
-desktop renderer stack, windowing,
+`TERMIN_PLATFORM_WEB` включает два tgfx2 presentation path: WebGPU через
+закреплённый Emscripten port `emdawnwebgpu` и WebGL2 через общий constrained-GL
+backend. Профиль исключает desktop renderer stack, windowing,
 Python, editor и launcher targets, чтобы платформенные зависимости не
 просачивались в WebAssembly-граф.
 
@@ -1089,16 +1089,27 @@ Node smoke детерминированно проверяет этот lifecycl
 неподдерживаемых component/resource domains. Browser smoke управляет живой
 страницей через Chrome DevTools и принимает только фактический terminal marker
 из DOM; наличие marker-текста в исходнике страницы не считается успехом. После
-host lifecycle он асинхронно создаёт WebGPU adapter/device для
+host lifecycle он выбирает графический backend для
 `#termin-canvas`, загружает strict-export package с camera/mesh/texture/material,
 рендерит его через `EngineCore`/`RenderingManager` и проверяет пиксели canvas,
 reload, teardown, resize и финальный shutdown. В Emscripten показ выполняется
 browser в конце RAF callback, зарегистрированного через HTML5 API;
-`wgpuSurfacePresent` там вызывать нельзя. После `await host.teardown()` владелец
-модуля может вызвать `core.shutdown()`: метод освобождает WebGPU smoke state и
+`wgpuSurfacePresent` там вызывать нельзя. WebGL2 рисует тем же engine path в
+offscreen texture и переносит её в default framebuffer canvas. После
+`await host.teardown()` владелец модуля может вызвать `core.shutdown()`: метод
+освобождает graphics state и
 полностью выключает Render registry bootstrap. Shutdown идемпотентен, а
 последующая загрузка package заново поднимает registry; вызов во время
-асинхронной инициализации WebGPU отклоняется с записью ошибки в лог.
+асинхронной инициализации graphics backend отклоняется с записью ошибки в лог.
+
+Host по умолчанию использует `graphicsBackend: "auto"`: сначала проверяет
+реальный WebGPU adapter, а при его отсутствии выбирает WebGL2. Поэтому
+публичной странице не нужны Chromium command-line flags, а WebGPU secure-context
+ограничение не делает её недоступной в браузере с WebGL2. Выбор виден в
+`host.graphicsBackend`, metrics, DOM `data-graphics-backend` и startup log.
+Для диагностики можно передать `graphicsBackend: "webgpu"` или `"webgl2"`; в
+`visual-scene.html` тому же служит query `?backend=auto|webgpu|webgl2`. Явно
+выбранный backend не переключается молча на другой.
 
 Для ручной проверки рядом с smoke harness устанавливается `viewer.html` —
 полноэкранная пользовательская оболочка над тем же host и strict package:
@@ -1120,8 +1131,10 @@ Web host, как и desktop player, создаёт и владеет
 `simple`/`basic`. Одного display router недостаточно: без viewport manager
 события принимаются adapter-ом и учитываются в метриках, но не доходят до
 scene input handlers.
-ResizeObserver и window resize ведут к повторной конфигурации WebGPU surface и
-offscreen display; blur/visibility loss сбрасывают зажатые кнопки и клавиши.
+ResizeObserver и window resize ведут к повторной конфигурации WebGPU surface
+либо WebGL2 drawing buffer и общего offscreen display; blur/visibility loss
+сбрасывают зажатые кнопки и клавиши. Device/context loss переводит host в
+ошибочное состояние с записью причины в лог.
 Browser smoke проверяет этот путь сквозным жестом: кадр обязан измениться после
 orbit/wheel input, а backing surface — после CSS resize. При проверке viewer
 HUD скрывается, поэтому изменение счётчика событий не может дать
@@ -1151,13 +1164,53 @@ shaders проверяется одной командой:
 ./audit-webgpu-shaders.sh --setup
 ```
 
-Slang устанавливается в пользовательский data-каталог и регистрируется как
-`Shader/slangCompiler` в общих настройках Termin. Naga остаётся в
-`build/toolchains/naga-<version>`, а WGSL, reflection и machine-readable report
-пишутся в `build/web-shader-audit`. Проверка требует явных уникальных
+Web-аудит устанавливает Slang и Naga в игнорируемый репозиторием
+`build/toolchains`, поэтому `build-web-core.sh --setup` работает до сборки SDK и
+не изменяет пользовательские настройки редактора. Общий native workflow по-
+прежнему использует `setup-slang-toolchain.sh` и `Shader/slangCompiler`. WGSL,
+reflection и machine-readable report пишутся в `build/web-shader-audit`.
+Проверка требует явных уникальных
 `@group`/`@binding`, std140 lowering для uniform buffers, валидного matrix
 lowering и отдельных texture/sampler bindings. Текущий полный отчёт лежит в
 [Built-in Slang → WGSL audit](analysis/2026-08-02-builtin-slang-wgsl-audit.md).
+
+### Constrained GL shader artifacts
+
+`TERMIN_BUILTIN_SHADER_ARTIFACT_TARGETS` accepts `opengl330` and `webgl2` in
+addition to the modern backend targets. Both targets require the repository
+submodule `termin-thirdparty/spirv-cross`; the host `termin_shaderc` links its
+GLSL translator directly, so SDK and offline builds do not depend on an
+ambient `spirv-cross` executable.
+
+The output roots are `share/termin/shaders/opengl330/` for GLSL 330 and
+`share/termin/shaders/webgl2/` for GLSL ES 300. Runtime package profiles use
+the same target names, keeping constrained artifacts separate from modern
+OpenGL artifacts.
+
+Desktop SDK builds with OpenGL enabled always compile and install the
+`opengl330` matrix. This makes the installed constrained tier an offline
+runtime: build-host tools produce the artifacts, while the deployed editor or
+application only reads `sdk/share/termin/shaders/opengl330`. `--no-opengl`
+keeps the SDK source-only for GL and does not require Slang. Windows OpenGL SDK
+builds add `opengl330` alongside the existing D3D11 artifact matrix.
+
+GLSL 3.30 / ES 3.00 lack the binding and cross-stage location facilities used
+by the modern profile. `termin_shaderc` therefore emits stable symbolic block
+and varying names and compact per-program texture/UBO bindings in their layout
+sidecars. The runtime resolves those names after program link; logical
+cross-backend binding numbers must not be passed directly to GL texture units.
+
+Web build не компилирует Slang в браузере. `build-web-core.sh` сначала строит
+native host-tool `termin_shaderc`, использует закреплённые `slangc` и Naga, а
+затем генерирует полные `webgpu` и `webgl2` builtin matrices и
+package-specific material artifacts до упаковки `package.trpkg`. WGSL при этом
+проходит независимую валидацию Naga. Поэтому опубликованный каталог
+самодостаточен и не требует compiler toolchain или сети на машине пользователя.
+
+`termin_web_visual_scene_browser_smoke` принудительно использует software
+WebGL2 только внутри headless CI, проверяет retained VisualScene2D, packaged 3D
+runtime, пиксели и resize. Это не требование к flags конечного браузера. Старый
+`termin_web_core_browser_smoke` остаётся отдельной WebGPU-регрессией.
 
 ### Offline WebGPU shader artifacts
 
