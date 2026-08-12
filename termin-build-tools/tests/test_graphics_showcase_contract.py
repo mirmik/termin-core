@@ -47,6 +47,7 @@ def test_graphics_showcase_has_one_artifact_section_and_documented_registry() ->
         "tcplot_surface",
         "visual_scene_gallery",
         "visual_scene_nodegraph",
+        "visual_scene3d_widget",
         "plot_nodegraph_composition",
     }
     for name in expected:
@@ -130,7 +131,7 @@ def test_graphics_showcase_tabbed_frontend_builds_and_renders_every_page() -> No
                 composition.graphics,
             )
             tabs, contents = _build_tabbed_showcase(application)
-            assert tabs.page_count == 12
+            assert tabs.page_count == 13
             assert [tabs.page_title(index) for index in range(tabs.page_count)] == [
                 "Overview",
                 "Native UI",
@@ -143,6 +144,7 @@ def test_graphics_showcase_tabbed_frontend_builds_and_renders_every_page() -> No
                 "3D Surface",
                 "Visual Scene",
                 "Nodegraph",
+                "SceneView3D",
                 "Composition",
             ]
             for index in range(tabs.page_count):
