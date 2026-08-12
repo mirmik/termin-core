@@ -216,6 +216,16 @@ def test_linux_csharp_stage_accepts_forwarded_profiles() -> None:
     assert '-DTERMIN_CSHARP_PROFILE="$PROFILE"' in csharp_script
 
 
+def test_csharp_build_entrypoints_reset_generated_bindings() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    linux_script = (repo_root / "build-sdk-csharp.sh").read_text(encoding="utf-8")
+    windows_script = (repo_root / "build-sdk-csharp.ps1").read_text(encoding="utf-8")
+
+    assert 'find "$generated_dir" -maxdepth 1 -type f -delete' in linux_script
+    assert "Get-ChildItem -Path $generatedDir -File" in windows_script
+    assert "Remove-Item -Force" in windows_script
+
+
 def test_graphics_sdk_profile_selects_chart_capable_native_and_csharp_stages(
     tmp_path,
     monkeypatch,
