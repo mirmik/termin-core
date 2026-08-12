@@ -204,7 +204,16 @@ def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert result == 0
-    assert "build-sdk-csharp.sh" in output
+    assert "build-sdk-csharp.sh --profile=full" in output
+
+
+def test_linux_csharp_stage_accepts_forwarded_profiles() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    csharp_script = (repo_root / "build-sdk-csharp.sh").read_text(encoding="utf-8")
+
+    assert '[[ "$arg" == --profile=* ]]' in csharp_script
+    assert 'full|plot-d3d11)' in csharp_script
+    assert '-DTERMIN_CSHARP_PROFILE="$PROFILE"' in csharp_script
 
 
 def test_graphics_sdk_profile_selects_chart_capable_native_and_csharp_stages(
