@@ -38,8 +38,14 @@ def test_graphics_showcase_has_one_artifact_section_and_documented_registry() ->
 
     expected = {
         "native_ui",
-        "plot_2d",
-        "plot_3d",
+        "graphics_lines",
+        "tcplot_sine",
+        "tcplot_scatter",
+        "tcplot_multi",
+        "tcplot_marker",
+        "tcplot_helix",
+        "tcplot_surface",
+        "visual_scene_gallery",
         "visual_scene_nodegraph",
         "plot_nodegraph_composition",
     }
@@ -50,7 +56,7 @@ def test_graphics_showcase_has_one_artifact_section_and_documented_registry() ->
 
 
 def test_graphics_showcase_does_not_import_full_or_external_window_hosts() -> None:
-    forbidden = {"sdl2", "termin.display", "termin.engine", "termin.runtime"}
+    forbidden = {"sdl2", "tcgui", "termin.display", "termin.engine", "termin.runtime"}
     discovered: set[str] = set()
     for source_path in _python_sources():
         tree = ast.parse(source_path.read_text(encoding="utf-8"), source_path)
@@ -114,20 +120,28 @@ def test_graphics_showcase_tabbed_frontend_builds_and_renders_every_page() -> No
             height=820,
             font_path=str(sdk_font_path()),
             continuous_rendering=False,
+            application_graphics_domain=True,
         )
         contents = []
         try:
             application = _WindowedApplication(
                 composition.document,
                 composition.request_repaint,
+                composition.graphics,
             )
             tabs, contents = _build_tabbed_showcase(application)
-            assert tabs.page_count == 6
+            assert tabs.page_count == 12
             assert [tabs.page_title(index) for index in range(tabs.page_count)] == [
                 "Overview",
                 "Native UI",
-                "Plot 2D",
-                "Plot 3D",
+                "Graphics Lines",
+                "Sine",
+                "Scatter",
+                "Multi Plot",
+                "Marker",
+                "3D Helix",
+                "3D Surface",
+                "Visual Scene",
                 "Nodegraph",
                 "Composition",
             ]
@@ -158,7 +172,7 @@ def test_graphics_showcase_has_an_installed_sdk_smoke_gate() -> None:
 
 
 def test_graphics_profile_examples_do_not_depend_on_full_or_pysdl_hosts() -> None:
-    forbidden = {"sdl2", "termin.display"}
+    forbidden = {"sdl2", "tcgui", "termin.display"}
     for source_path in _graphics_profile_example_sources():
         tree = ast.parse(source_path.read_text(encoding="utf-8"), source_path)
         discovered: set[str] = set()
@@ -172,3 +186,28 @@ def test_graphics_profile_examples_do_not_depend_on_full_or_pysdl_hosts() -> Non
                 module == prefix or module.startswith(prefix + ".")
                 for prefix in forbidden
             ), f"{source_path.relative_to(REPO_ROOT)} imports {module}"
+
+
+def test_restored_tcplot_example_entry_points_are_complete() -> None:
+    examples = REPO_ROOT / "tcplot" / "examples"
+    expected = {
+        "demo_sin.py",
+        "demo_scatter.py",
+        "demo_multi.py",
+        "demo_marker.py",
+        "demo_3d_helix.py",
+        "demo_3d_surface.py",
+    }
+    assert {path.name for path in examples.glob("demo_*.py")} == expected
+    gallery = (examples / "_gallery.py").read_text(encoding="utf-8")
+    for builder in (
+        "sine_plot",
+        "scatter_plot",
+        "multi_plot",
+        "marker_plot",
+        "helix_plot",
+        "surface_plot",
+    ):
+        assert f"def {builder}(document):" in gallery
+    assert "plot.show_colorbar(surface, \"z\")" in gallery
+    assert "plot.create_data_marker(" in gallery
