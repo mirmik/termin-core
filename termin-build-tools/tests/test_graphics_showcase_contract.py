@@ -159,6 +159,66 @@ def test_graphics_showcase_tabbed_frontend_builds_and_renders_every_page() -> No
         sys.path.remove(str(SHOWCASE_ROOT))
 
 
+def test_graphics_showcase_scene_view3d_left_drag_orbits_camera() -> None:
+    sys.path.insert(0, str(SHOWCASE_ROOT))
+    try:
+        import numpy as np
+
+        from graphics_showcase.sections import _visual_scene3d_widget, sdk_font_path
+        from graphics_showcase.windowed import _WindowedApplication
+        from tcbase import MouseButton
+        from termin.gui_native import (
+            EventResult,
+            OffscreenGuiComposition,
+            PointerEvent,
+            PointerEventType,
+        )
+
+        composition = OffscreenGuiComposition(
+            width=1280,
+            height=820,
+            font_path=str(sdk_font_path()),
+            continuous_rendering=False,
+            application_graphics_domain=True,
+        )
+        content = None
+        try:
+            application = _WindowedApplication(
+                composition.document,
+                composition.request_repaint,
+                composition.graphics,
+            )
+            content = _visual_scene3d_widget(application)
+            assert composition.render_frame()
+            before = composition.read_frame_rgba_float().copy()
+
+            pointer = PointerEvent()
+            pointer.type = PointerEventType.Down
+            pointer.x = 80.0
+            pointer.y = 80.0
+            pointer.button = MouseButton.LEFT.value
+            assert composition.document.dispatch_pointer_event(pointer) == EventResult.Handled
+
+            pointer.type = PointerEventType.Move
+            pointer.x = 240.0
+            pointer.y = 140.0
+            assert composition.document.dispatch_pointer_event(pointer) == EventResult.Handled
+
+            pointer.type = PointerEventType.Up
+            assert composition.document.dispatch_pointer_event(pointer) == EventResult.Handled
+            assert composition.render_frame()
+            after = composition.read_frame_rgba_float()
+
+            changed = np.max(np.abs(after - before), axis=2) > 0.01
+            assert np.count_nonzero(changed) > 1000
+        finally:
+            if content is not None:
+                content.cleanup()
+            composition.close()
+    finally:
+        sys.path.remove(str(SHOWCASE_ROOT))
+
+
 def test_graphics_showcase_has_an_installed_sdk_smoke_gate() -> None:
     smoke = (REPO_ROOT / "scripts" / "smoke-graphics-showcase").read_text(
         encoding="utf-8"
