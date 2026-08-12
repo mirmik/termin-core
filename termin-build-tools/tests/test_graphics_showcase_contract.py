@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,7 +93,54 @@ def test_graphics_showcase_windowed_frontend_uses_the_profile_host() -> None:
     assert "from termin.window import" in windowed_source
     assert "from termin.gui_native.window import GuiWindowAdapter" in windowed_source
     assert "termin.display" not in windowed_source
+    assert "for section in section_registry()" in windowed_source
+    assert 'tabs.add_page("Overview"' in windowed_source
+    assert "tabs.add_page(_SECTION_TITLES[section.name]" in windowed_source
     assert "--windowed" in readme
+
+
+def test_graphics_showcase_tabbed_frontend_builds_and_renders_every_page() -> None:
+    sys.path.insert(0, str(SHOWCASE_ROOT))
+    try:
+        from graphics_showcase.sections import sdk_font_path
+        from graphics_showcase.windowed import (
+            _WindowedApplication,
+            _build_tabbed_showcase,
+        )
+        from termin.gui_native import OffscreenGuiComposition
+
+        composition = OffscreenGuiComposition(
+            width=1280,
+            height=820,
+            font_path=str(sdk_font_path()),
+            continuous_rendering=False,
+        )
+        contents = []
+        try:
+            application = _WindowedApplication(
+                composition.document,
+                composition.request_repaint,
+            )
+            tabs, contents = _build_tabbed_showcase(application)
+            assert tabs.page_count == 6
+            assert [tabs.page_title(index) for index in range(tabs.page_count)] == [
+                "Overview",
+                "Native UI",
+                "Plot 2D",
+                "Plot 3D",
+                "Nodegraph",
+                "Composition",
+            ]
+            for index in range(tabs.page_count):
+                tabs.selected_index = index
+                composition.request_repaint()
+                assert composition.render_frame(), tabs.page_title(index)
+        finally:
+            for content in reversed(contents):
+                content.cleanup()
+            composition.close()
+    finally:
+        sys.path.remove(str(SHOWCASE_ROOT))
 
 
 def test_graphics_showcase_has_an_installed_sdk_smoke_gate() -> None:
