@@ -24,7 +24,6 @@ _GRAPHICS_PYTHON_PACKAGES = frozenset(
         "termin-visual-scene",
         "termin-inspect",
         "termin-shader-runtime",
-        "termin-gui",
         "termin-gui-native",
         "termin-nodegraph",
         "termin-window",

@@ -54,7 +54,6 @@ def _read_documented_package_manifest() -> list[tuple[str, str]]:
 def _is_internal_requirement_name(name: str) -> bool:
     return name.startswith("termin-") or name in {
         "tcbase",
-        "tcgui",
         "tcplot",
         "tgfx",
         "tmesh",

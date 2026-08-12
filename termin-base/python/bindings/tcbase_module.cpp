@@ -323,8 +323,8 @@ NB_MODULE(_tcbase_native, m) {
     bind_resource_loader(m);
 
     // Profiler submodule — hierarchical CPU section timing backed by
-    // tc_profiler. Lives here so non-termin hosts (tcgui standalone
-    // demos) can still push sections without pulling in termin-app.
+    // tc_profiler. Lives here so non-termin standalone hosts and demos can
+    // still push sections without pulling in termin-app.
     auto profiler_module = m.def_submodule("profiler", "Profiler module");
     bind_profiler(profiler_module);
 
