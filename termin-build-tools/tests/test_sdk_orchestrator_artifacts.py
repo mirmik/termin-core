@@ -17,8 +17,17 @@ from termin_build.sdk_doctor import PROFILES
 
 
 @pytest.mark.parametrize("profile_name", ["sdk", "sdk-cpp", "sdk-bindings", "cpp-tests"])
-def test_native_build_profiles_require_eigen(profile_name):
+def test_native_build_profiles_require_shader_compiler_submodules(profile_name):
     assert "termin-thirdparty/eigen" in PROFILES[profile_name].submodules
+    assert "termin-thirdparty/spirv-cross" in PROFILES[profile_name].submodules
+
+
+@pytest.mark.parametrize(
+    "profile_name",
+    ["sdk-graphics", "sdk-cpp-graphics", "sdk-bindings-graphics"],
+)
+def test_graphics_build_profiles_require_spirv_cross(profile_name):
+    assert "termin-thirdparty/spirv-cross" in PROFILES[profile_name].submodules
 
 
 def test_sdk_doctor_profile_checks_copy_backend(tmp_path, monkeypatch, capsys):

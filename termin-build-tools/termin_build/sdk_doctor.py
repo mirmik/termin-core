@@ -21,6 +21,7 @@ EXPECTED_SUBMODULE_FILES = {
     "termin-thirdparty/libogg": ("CMakeLists.txt", "include/ogg/ogg.h"),
     "termin-thirdparty/libvorbis": ("CMakeLists.txt", "include/vorbis/vorbisfile.h"),
     "termin-thirdparty/cgltf": ("cgltf.h",),
+    "termin-thirdparty/spirv-cross": ("CMakeLists.txt",),
     "termin-thirdparty/sdl2": ("CMakeLists.txt", "include/SDL.h"),
     "termin-thirdparty/vulkan-memory-allocator": ("include/vk_mem_alloc.h",),
     "termin-thirdparty/openxr-sdk": ("include/openxr/openxr.h",),
@@ -43,6 +44,7 @@ SDK_NATIVE_SUBMODULES = (
     "termin-thirdparty/libogg",
     "termin-thirdparty/libvorbis",
     "termin-thirdparty/cgltf",
+    "termin-thirdparty/spirv-cross",
 )
 
 SDK_GRAPHICS_SUBMODULES = (
@@ -52,6 +54,7 @@ SDK_GRAPHICS_SUBMODULES = (
     "termin-thirdparty/libpng",
     "termin-thirdparty/libjpeg-turbo",
     "termin-thirdparty/libwebp",
+    "termin-thirdparty/spirv-cross",
 )
 
 
@@ -163,20 +166,33 @@ def ensure_submodules(repo_root: Path, paths: list[str]) -> int:
     print("Initializing missing third-party submodules:")
     for path in missing:
         print(f"  - {path}")
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo_root),
-            "submodule",
-            "update",
-            "--init",
-            "--recursive",
-            "--",
-            *missing,
-        ],
-        check=False,
-    )
+    command = [
+        "git",
+        "-C",
+        str(repo_root),
+        "submodule",
+        "update",
+        "--init",
+        "--recursive",
+        "--",
+        *missing,
+    ]
+    if sys.platform == "win32":
+        git_executable = Path(shutil.which("git") or "")
+        git_bash = git_executable.parent.parent / "bin" / "sh.exe"
+        if git_bash.is_file():
+            # Git for Windows implements `git submodule` as a shell script.
+            # Starting it through the bundled login shell gives that script the
+            # /usr/bin tools it requires even when only Git's cmd/ directory is
+            # present in the caller's PATH.
+            command = [
+                str(git_bash),
+                "-lc",
+                'exec git "$@"',
+                "termin-git",
+                *command[1:],
+            ]
+    result = subprocess.run(command, check=False)
     if result.returncode != 0:
         return result.returncode
     still_missing = missing_submodules(repo_root, missing)
