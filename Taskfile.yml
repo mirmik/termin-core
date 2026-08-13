@@ -41,7 +41,7 @@ tasks:
       - ./scripts/build/android.sh {{.CLI_ARGS}}
 
   build:web:
-    desc: Build the native Web SDK
+    desc: Ensure Emscripten and build the native Web SDK
     platforms: [linux]
     cmds:
       - ./scripts/build/web.sh {{.CLI_ARGS}}

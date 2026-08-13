@@ -34,8 +34,13 @@ wheels:
 
 ```console
 task build:android -- --ndk /absolute/path/to/android-ndk
-task build:web -- --setup
+task build:web
 ```
+
+The first Web build installs the pinned Emscripten version into the shared
+versioned cache under `${XDG_CACHE_HOME:-~/.cache}/termin/toolchains/`. Other
+Termin repositories reuse that toolchain. Set `TERMIN_EMSDK_DIR` to override
+its location explicitly.
 
 Android output is written to `sdk-platform/android/<abi>/`, Web output to
 `sdk-platform/web/wasm32/`. Each tree has a `termin-core-platform.json` that

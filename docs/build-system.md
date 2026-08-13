@@ -24,14 +24,14 @@ shell launcher on POSIX systems and a PowerShell launcher on Windows.
 | `task smoke:installed` | Verify an external consumer through installed SDK artifacts only. |
 | `task smoke:relocated` | Copy and verify the SDK from a different location. |
 | `task build:android -- <args>` | Build the native Android SDK on Linux. |
-| `task build:web -- <args>` | Build the native Web SDK on Linux. |
+| `task build:web -- <args>` | Ensure Emscripten and build the native Web SDK on Linux. |
 
 Arguments following `--` are passed to the underlying platform launcher. For
 example:
 
 ```console
 task build:android -- --ndk /absolute/path/to/android-ndk
-task build:web -- --setup
+task build:web
 ```
 
 ## Internal launchers
@@ -91,6 +91,20 @@ do not contain the host Python runtime or wheels.
 
 - Android installs into `sdk-platform/android/<abi>/`.
 - Web installs into `sdk-platform/web/wasm32/`.
+
+The Web build resolves Emscripten in this order:
+
+1. the exact directory provided through `TERMIN_EMSDK_DIR`;
+2. `${XDG_CACHE_HOME}/termin/toolchains/emscripten/<version>/emsdk`;
+3. `~/.cache/termin/toolchains/emscripten/<version>/emsdk` when
+   `XDG_CACHE_HOME` is unset.
+
+Missing toolchains are installed automatically. The version-qualified shared
+cache prevents every Termin repository from downloading another copy and
+allows different pinned versions to coexist. Installation is protected by a
+per-version lock so concurrent repository builds cannot initialize the same
+cache entry simultaneously. Passing `--setup` forces the idempotent
+install/activate step; `task build:web` normally needs no additional flags.
 
 Each platform tree is verified after installation and cannot substitute for a
 host SDK or for a platform SDK with a different identity.

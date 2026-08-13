@@ -71,10 +71,10 @@ jobs:
       - name: Cache pinned Emscripten toolchain
         uses: actions/cache@v4
         with:
-          path: build/toolchains/emsdk
+          path: ~/.cache/termin/toolchains/emscripten
           key: termin-core-emsdk-${{ hashFiles('build-system/emscripten-version.txt') }}
       - name: Build verified Web Core SDK
-        run: task build:web -- --setup
+        run: task build:web
       - name: Publish Web Core SDK input
         uses: actions/upload-artifact@v4
         with:

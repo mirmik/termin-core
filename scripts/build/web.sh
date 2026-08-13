@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 version="$(tr -d '[:space:]' < "$repo_root/build-system/emscripten-version.txt")"
-emsdk_dir="${TERMIN_EMSDK_DIR:-$repo_root/build/toolchains/emsdk}"
+emsdk_dir="$("$repo_root/scripts/build/setup-web-toolchain.sh" --print-path)"
 build_dir="${TERMIN_CORE_WEB_BUILD_DIR:-$repo_root/build/platform/web/wasm32}"
 sdk_root="${TERMIN_CORE_WEB_SDK:-$repo_root/sdk-platform/web/wasm32}"
 clean=0
@@ -23,13 +23,13 @@ while (($#)); do
     esac
 done
 
-if ((setup)); then
-    "$repo_root/scripts/build/setup-web-toolchain.sh"
-fi
 emcmake="$emsdk_dir/upstream/emscripten/emcmake"
 emcc="$emsdk_dir/upstream/emscripten/emcc"
+if ((setup)) || [[ ! -x "$emcmake" || ! -x "$emcc" ]]; then
+    "$repo_root/scripts/build/setup-web-toolchain.sh"
+fi
 if [[ ! -x "$emcmake" || ! -x "$emcc" ]]; then
-    echo "ERROR: pinned Emscripten is missing; run $0 --setup" >&2
+    echo "ERROR: pinned Emscripten setup did not produce a usable toolchain" >&2
     exit 1
 fi
 actual_version="$($emcc --version | head -n 1)"
