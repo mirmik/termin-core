@@ -11,12 +11,12 @@ tasks:
   build:
     desc: Build the complete host SDK
     cmds:
-      - '{{if eq OS "windows"}}powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build\sdk.ps1 {{.CLI_ARGS}}{{else}}./scripts/build/sdk.sh {{.CLI_ARGS}}{{end}}'
+      - '{{if eq OS "windows"}}powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build/sdk.ps1 {{.CLI_ARGS}}{{else}}./scripts/build/sdk.sh {{.CLI_ARGS}}{{end}}'
 
   test:
     desc: Build and verify the complete repository
     cmds:
-      - '{{if eq OS "windows"}}powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test\all.ps1 {{.CLI_ARGS}}{{else}}./scripts/test/all.sh {{.CLI_ARGS}}{{end}}'
+      - '{{if eq OS "windows"}}powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test/all.ps1 {{.CLI_ARGS}}{{else}}./scripts/test/all.sh {{.CLI_ARGS}}{{end}}'
 
   smoke:
     desc: Verify installed and relocated SDK consumption
@@ -27,12 +27,12 @@ tasks:
   smoke:installed:
     desc: Verify consumption through the installed SDK boundary
     cmds:
-      - '{{if eq OS "windows"}}.\sdk\bin\termin_python.exe -I scripts\smoke-installed-core-consumers --sdk-root sdk{{else}}./sdk/bin/termin_python -I scripts/smoke-installed-core-consumers --sdk-root sdk{{end}}'
+      - '{{if eq OS "windows"}}./sdk/bin/termin_python.exe -I scripts/smoke-installed-core-consumers --sdk-root sdk{{else}}./sdk/bin/termin_python -I scripts/smoke-installed-core-consumers --sdk-root sdk{{end}}'
 
   smoke:relocated:
     desc: Verify the SDK after relocation
     cmds:
-      - '{{if eq OS "windows"}}.\sdk\bin\termin_python.exe -m termin_build.relocated_sdk_smoke --sdk-root sdk{{else}}./sdk/bin/termin_python -m termin_build.relocated_sdk_smoke --sdk-root sdk{{end}}'
+      - '{{if eq OS "windows"}}./sdk/bin/termin_python.exe -m termin_build.relocated_sdk_smoke --sdk-root sdk{{else}}./sdk/bin/termin_python -m termin_build.relocated_sdk_smoke --sdk-root sdk{{end}}'
 
   build:android:
     desc: Build the native Android SDK

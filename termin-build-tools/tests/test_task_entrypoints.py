@@ -21,9 +21,10 @@ def test_taskfile_is_the_cross_platform_public_command_interface() -> None:
         assert f"  {task_name}:\n" in taskfile
 
     assert "./scripts/build/sdk.sh" in taskfile
-    assert ".\\scripts\\build\\sdk.ps1" in taskfile
+    assert "./scripts/build/sdk.ps1" in taskfile
     assert "./scripts/test/all.sh" in taskfile
-    assert ".\\scripts\\test\\all.ps1" in taskfile
+    assert "./scripts/test/all.ps1" in taskfile
+    assert "\\" not in taskfile
 
 
 def test_root_has_no_platform_launcher_scripts() -> None:
