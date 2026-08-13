@@ -706,7 +706,14 @@ def _install_python_layer_packages(
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    _, local_wheels = _runtime_wheel_dirs(repo_root)
+    external_wheels, local_wheels = _runtime_wheel_dirs(repo_root)
+    result = _prepare_external_runtime_wheels(
+        repo_root,
+        external_wheels,
+        isolated_build_python,
+    )
+    if result != 0:
+        return result
     result = _build_local_package_wheels(
         repo_root=repo_root,
         termin_sdk=termin_sdk,
@@ -745,8 +752,12 @@ def _install_python_layer_packages(
             "--no-deps",
             "--no-compile",
             "--no-cache-dir",
+            "--find-links",
+            str(external_wheels),
             "--target",
             str(site_packages),
+            "-r",
+            str(repo_root / _active_sdk_profile(repo_root).runtime_lock),
             *(str(wheel) for wheel in wheels),
         ],
         cwd=repo_root,
