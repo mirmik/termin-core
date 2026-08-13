@@ -13,6 +13,13 @@ jobs:
           submodules: recursive
       - name: Build and test standalone Core
         run: ./run-tests.sh
+      - name: Publish Linux Core SDK input
+        uses: actions/upload-artifact@v4
+        with:
+          name: termin-core-sdk-linux-x86_64-py314t
+          path: sdk/
+          if-no-files-found: error
+          retention-days: 14
 
   windows:
     runs-on: windows-latest
@@ -23,3 +30,10 @@ jobs:
       - name: Build and test standalone Core
         shell: pwsh
         run: .\run-tests.ps1
+      - name: Publish Windows Core SDK input
+        uses: actions/upload-artifact@v4
+        with:
+          name: termin-core-sdk-windows-x86_64-py314t
+          path: sdk/
+          if-no-files-found: error
+          retention-days: 14

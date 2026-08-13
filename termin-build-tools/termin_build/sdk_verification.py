@@ -14,6 +14,8 @@ import zipfile
 from .artifact_manifest import (
     ArtifactManifest,
     ArtifactManifestError,
+    BUILD_MANIFEST_KIND,
+    BUILD_MANIFEST_NAME,
     SDK_MANIFEST_KIND,
     SDK_MANIFEST_NAME,
 )
@@ -130,46 +132,38 @@ def verify_no_duplicate_libraries(sdk_prefix: Path) -> int:
 
 def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
     print("Verifying: SDK artifacts are up to date")
-    build_bin = build_dir / "bin"
-    if not build_bin.is_dir():
-        print(f"  WARNING: build bin directory not found: {build_bin}")
-        return 0
+    try:
+        build_manifest = ArtifactManifest.load(build_dir / BUILD_MANIFEST_NAME)
+        build_manifest.require_kind(BUILD_MANIFEST_KIND)
+        sdk_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
+        sdk_manifest.require_kind(SDK_MANIFEST_KIND)
+        build_manifest.validate_all(expected_python_abi=sdk_manifest.python_abi)
+        sdk_manifest.validate_all(expected_python_abi=build_manifest.python_abi)
+    except ArtifactManifestError as error:
+        print(f"FAILED: cannot validate SDK artifact provenance: {error}", file=sys.stderr)
+        return 1
 
-    stale = []
-    same_second = 0
-    patterns = ("*.dll", "*.pyd") if _is_windows() else ("*.so",)
-    build_artifacts = []
-    for pattern in patterns:
-        build_artifacts.extend(build_bin.glob(pattern))
-    for build_artifact in build_artifacts:
-        build_mtime = build_artifact.stat().st_mtime
-        for sdk_artifact in sdk_prefix.rglob(build_artifact.name):
-            sdk_text = _normalize_path(str(sdk_artifact))
-            android_prefix = _normalize_path(str(sdk_prefix / "android")) + "/"
-            if sdk_text.startswith(android_prefix):
-                continue
-            if "/csharp/runtimes/" in sdk_text:
-                continue
-            sdk_mtime = sdk_artifact.stat().st_mtime
-            if int(sdk_mtime) < int(build_mtime):
-                stale.append((sdk_artifact, build_artifact))
-            elif int(sdk_mtime) == int(build_mtime) and sdk_mtime < build_mtime:
-                same_second += 1
-    if stale:
-        for sdk_artifact, build_artifact in stale:
-            print(f"  STALE: {sdk_artifact}")
-            print(f"    older than: {build_artifact}")
+    build_targets = {
+        (entry["extension"], entry["target"])
+        for entry in build_manifest.data["artifacts"]
+    }
+    sdk_targets = {
+        (entry["extension"], entry["target"])
+        for entry in sdk_manifest.data["artifacts"]
+    }
+    if build_targets != sdk_targets:
+        missing = sorted(build_targets - sdk_targets)
+        unexpected = sorted(sdk_targets - build_targets)
+        for extension, target in missing:
+            print(f"  MISSING: {extension} (target {target})")
+        for extension, target in unexpected:
+            print(f"  UNEXPECTED: {extension} (target {target})")
         print(
-            f"FAILED: {len(stale)} stale SDK artifact(s) found",
+            "FAILED: SDK and build/input manifests declare different native artifacts",
             file=sys.stderr,
         )
         return 1
-    print("  OK: SDK artifacts are not older than matching build artifacts")
-    if same_second:
-        print(
-            f"  NOTE: {same_second} matching artifact(s) differed only within "
-            "timestamp sub-second precision"
-        )
+    print("  OK: SDK and build/input manifests have valid matching native artifacts")
     return 0
 
 
