@@ -28,6 +28,7 @@ from .application_payload import load_application_payloads
 from .package_manifest import load_manifest as load_package_manifest
 from .package_manifest import repo_root_from
 from .process_smoke import ProcessSmokeRun, execute_process_smoke_suites
+from .product_manifest import validate_repository_product_manifests
 from .pytest_orchestration import (
     host_platform as _host_platform,
     load_pytest_duration_cache as _load_pytest_duration_cache,
@@ -1242,6 +1243,7 @@ def run_process_smoke_plan(
 def _load_valid_catalog(repo_root: Path) -> RepositoryCatalog:
     catalog = load_catalog(repo_root)
     errors = validate_catalog(repo_root, catalog)
+    errors.extend(validate_repository_product_manifests(repo_root))
     if errors:
         raise ManifestError("\n".join(errors))
     return catalog

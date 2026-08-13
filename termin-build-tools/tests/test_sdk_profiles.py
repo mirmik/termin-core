@@ -42,6 +42,31 @@ def test_graphics_sdk_profile_has_no_desktop_application_payload() -> None:
     assert payloads == ()
 
 
+def test_core_sdk_profile_is_projected_from_product_manifest() -> None:
+    packages = select_python_packages(
+        sdk_profile("core"),
+        load_manifest(REPO_ROOT),
+        repo_root=REPO_ROOT,
+    )
+
+    assert [str(package.path) for package in packages] == [
+        "termin-build-tools",
+        "termin-nanobind-sdk",
+        "termin-base",
+        "termin-dispatch",
+        "termin-inspect",
+    ]
+
+
+def test_core_sdk_profile_has_no_application_payload() -> None:
+    payloads = select_application_payloads(
+        sdk_profile("core"),
+        load_application_payloads(REPO_ROOT),
+    )
+
+    assert payloads == ()
+
+
 def test_graphics_shader_runtime_declares_only_its_core_dependency() -> None:
     metadata = (REPO_ROOT / "termin-shader-runtime" / "setup.py").read_text(
         encoding="utf-8"

@@ -119,6 +119,41 @@ def test_sdk_build_propagates_one_absolute_python_to_child_stages(
     assert child_env["PYTHON_EXECUTABLE"] == str(interpreter)
 
 
+def test_core_sdk_build_uses_isolated_prefix_and_build_directory(
+    tmp_path,
+    monkeypatch,
+):
+    interpreter = tmp_path / "python"
+    interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        sdk,
+        "prepare_pinned_python_build_environment",
+        lambda _root: interpreter,
+    )
+    captured = []
+
+    def run(command, *, cwd, env=None):
+        captured.append((command, cwd, env))
+        return 1
+
+    monkeypatch.setattr(sdk, "_run", run)
+
+    result = sdk.run_sdk_build(
+        repo_root=tmp_path,
+        build_type="Release",
+        stage_args=[],
+        build_csharp=True,
+        dry_run=False,
+        profile_name="core",
+    )
+
+    assert result == 1
+    command, _, child_env = captured[0]
+    assert "--profile=core" in command
+    assert child_env["SDK_PREFIX"] == str(tmp_path / "sdk-core")
+    assert child_env["BUILD_DIR"] == str(tmp_path / "build" / "Release-core")
+
+
 def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
     tmp_path,
     monkeypatch,
@@ -266,6 +301,21 @@ def test_windows_bindings_keep_d3d11_shader_artifacts_without_opengl() -> None:
         'if ($TerminEnableOpenGl -eq "ON") { "d3d11;opengl330" } else { "d3d11" }'
         in windows_script
     )
+
+
+def test_bindings_entrypoints_expose_core_profile_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    linux_script = (repo_root / "build-sdk-bindings.sh").read_text(
+        encoding="utf-8"
+    )
+    windows_script = (repo_root / "build-sdk-bindings.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "full|graphics|core" in linux_script
+    assert 'DOCTOR_PROFILE="sdk-bindings-core"' in linux_script
+    assert '@("full", "graphics", "core")' in windows_script
+    assert '"core" { "sdk-bindings-core" }' in windows_script
 
 
 def test_no_sdl_disables_only_the_profiler_gui() -> None:
@@ -456,12 +506,12 @@ def test_native_test_configuration_does_not_mutate_render_product_target():
     assert product_target_mutation.search(test_configuration) is None
 
 
-def test_root_resets_python_only_cli_mode_for_non_graphics_profiles():
+def test_root_enables_python_only_cli_mode_for_library_profiles():
     repo_root = sdk.repo_root_from(Path(__file__))
     root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
 
     profile_selection = re.search(
-        r'if\(TERMIN_SDK_PROFILE STREQUAL "graphics"\)\s*'
+        r'if\(NOT TERMIN_SDK_PROFILE STREQUAL "full"\)\s*'
         r'set\(_termin_cli_python_only ON\)\s*'
         r'else\(\)\s*'
         r'set\(_termin_cli_python_only OFF\)\s*'

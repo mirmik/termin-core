@@ -49,6 +49,11 @@ _GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS = (
     "termin.visual_scene",
     "termin.gui_native",
 )
+_CORE_PRODUCT_IMPORT_GRAPH_ROOTS = (
+    "tcbase",
+    "termin.dispatch",
+    "termin.inspect",
+)
 _GIL_WARNING_FILTER = (
     r"error:The global interpreter lock \(GIL\) has been enabled:RuntimeWarning"
 )
@@ -188,6 +193,8 @@ def verify_sdk(
     *,
     require_product_hosts: bool = True,
     require_engine_package: bool = True,
+    core_only: bool = False,
+    forbidden_artifact_markers: tuple[str, ...] = (),
 ) -> int:
     result = verify_sdk_artifacts(sdk_prefix, build_dir)
     if result != 0:
@@ -196,6 +203,8 @@ def verify_sdk(
         sdk_prefix,
         require_product_hosts=require_product_hosts,
         require_engine_package=require_engine_package,
+        core_only=core_only,
+        forbidden_artifact_markers=forbidden_artifact_markers,
     )
 
 
@@ -204,6 +213,8 @@ def verify_relocated_sdk(
     *,
     require_product_hosts: bool = True,
     require_engine_package: bool = True,
+    core_only: bool = False,
+    forbidden_artifact_markers: tuple[str, ...] = (),
 ) -> int:
     """Verify a self-contained SDK tree without consulting its build tree."""
 
@@ -219,6 +230,9 @@ def verify_relocated_sdk(
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result
+    result = verify_forbidden_product_content(sdk_prefix, forbidden_artifact_markers)
+    if result != 0:
+        return result
     if require_product_hosts:
         result = verify_embedded_python_hosts(sdk_prefix)
         if result != 0:
@@ -226,18 +240,47 @@ def verify_relocated_sdk(
     result = verify_sdk_python_launcher(
         sdk_prefix,
         require_engine_package=require_engine_package,
+        core_only=core_only,
     )
     if result != 0:
         return result
-    product_import_roots = (
-        _FULL_PRODUCT_IMPORT_GRAPH_ROOTS
-        if require_engine_package
-        else _GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS
-    )
+    if core_only:
+        product_import_roots = _CORE_PRODUCT_IMPORT_GRAPH_ROOTS
+    elif require_engine_package:
+        product_import_roots = _FULL_PRODUCT_IMPORT_GRAPH_ROOTS
+    else:
+        product_import_roots = _GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS
     return verify_nanobind_extensions(
         sdk_prefix,
         product_import_roots=product_import_roots,
     )
+
+
+def verify_forbidden_product_content(
+    sdk_prefix: Path,
+    forbidden_markers: tuple[str, ...],
+) -> int:
+    if not forbidden_markers:
+        return 0
+    print("Verifying: product boundary excludes forbidden domain artifacts")
+    normalized_markers = {marker.lower() for marker in forbidden_markers}
+    leaked = sorted(
+        path.relative_to(sdk_prefix).as_posix()
+        for path in sdk_prefix.rglob("*")
+        if path.is_file()
+        and any(
+            marker in path.relative_to(sdk_prefix).as_posix().lower()
+            for marker in normalized_markers
+        )
+    )
+    if leaked:
+        print(
+            "FAILED: SDK contains forbidden domain artifacts: " + ", ".join(leaked),
+            file=sys.stderr,
+        )
+        return 1
+    print("  OK: no forbidden domain artifacts")
+    return 0
 
 
 def _hostile_python_environment(sdk_prefix: Path) -> dict[str, str]:
@@ -277,6 +320,7 @@ def verify_sdk_python_launcher(
     sdk_prefix: Path,
     *,
     require_engine_package: bool = True,
+    core_only: bool = False,
 ) -> int:
     launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
     launcher = sdk_prefix / "bin" / launcher_name
@@ -334,13 +378,21 @@ def verify_sdk_python_launcher(
             )
             return 1
 
-    profile_imports = "termin.engine, " if require_engine_package else "tcplot, termin.visual_scene, "
+    if core_only:
+        profile_imports = "termin.dispatch, termin.inspect"
+        profile_anchor = "termin.inspect"
+    elif require_engine_package:
+        profile_imports = "termin.engine, termin.tween"
+        profile_anchor = "termin.tween"
+    else:
+        profile_imports = "tcplot, termin.visual_scene, termin.tween"
+        profile_anchor = "termin.tween"
     smoke = (
-        f"import pathlib, site, sys, tcbase, {profile_imports}termin.tween; "
+        f"import pathlib, site, sys, tcbase, {profile_imports}; "
         f"root = pathlib.Path({str(expected_root)!r}); "
         f"python_home = pathlib.Path({str(expected_python_home)!r}); "
         "assert pathlib.Path(tcbase.__file__).resolve().is_relative_to(root); "
-        "assert pathlib.Path(termin.tween.__file__).resolve().is_relative_to(root); "
+        f"assert pathlib.Path({profile_anchor}.__file__).resolve().is_relative_to(root); "
         "assert site.ENABLE_USER_SITE is False; "
         "assert pathlib.Path(sys.prefix).resolve() == python_home"
     )

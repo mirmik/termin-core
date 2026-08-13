@@ -30,6 +30,37 @@ def test_graphics_build_profiles_require_spirv_cross(profile_name):
     assert "termin-thirdparty/spirv-cross" in PROFILES[profile_name].submodules
 
 
+@pytest.mark.parametrize("profile_name", ["sdk-core", "sdk-bindings-core"])
+def test_core_build_profiles_have_no_graphics_submodules(profile_name):
+    assert PROFILES[profile_name].submodules == ()
+
+
+def test_core_product_boundary_rejects_forbidden_domain_artifact(tmp_path):
+    leaked = tmp_path / "lib" / "libtermin_graphics.so"
+    leaked.parent.mkdir(parents=True)
+    leaked.write_bytes(b"not a library")
+
+    result = sdk_verification.verify_forbidden_product_content(
+        tmp_path,
+        ("tgfx", "termin/assets", "termin/engine", "termin_graphics"),
+    )
+
+    assert result == 1
+
+
+def test_core_product_boundary_accepts_core_artifacts(tmp_path):
+    library = tmp_path / "lib" / "libtermin_base.so"
+    library.parent.mkdir(parents=True)
+    library.write_bytes(b"not a library")
+
+    result = sdk_verification.verify_forbidden_product_content(
+        tmp_path,
+        ("tgfx", "termin/assets", "termin/engine", "termin_graphics"),
+    )
+
+    assert result == 0
+
+
 def test_sdk_doctor_profile_checks_copy_backend(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sdk, "_is_windows", lambda: False)
     monkeypatch.setattr(

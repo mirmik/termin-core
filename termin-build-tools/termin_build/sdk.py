@@ -64,7 +64,9 @@ from .sdk_python_layout import (
     resolve_sdk_python_layout,
 )
 from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
+from .product_manifest import load_product_manifest
 from .sdk_profiles import (
+    CORE_SDK_PROFILE,
     FULL_SDK_PROFILE,
     SDK_PROFILE_NAMES,
     sdk_profile,
@@ -110,7 +112,11 @@ def _active_sdk_profile_name() -> str:
 
 def _sdk_packages(repo_root: Path) -> list[PackageEntry]:
     profile = sdk_profile(_active_sdk_profile_name())
-    return select_python_packages(profile, load_manifest(repo_root))
+    return select_python_packages(
+        profile,
+        load_manifest(repo_root),
+        repo_root=repo_root,
+    )
 
 
 def _sdk_application_payloads(repo_root: Path):
@@ -1370,12 +1376,20 @@ def _verify_library_wheel_subset_install(
     wheel_dir: Path,
     build_python: Path,
 ) -> int:
-    wheel_patterns = (
-        "tcbase-*.whl",
-        "tgfx-*.whl",
-        "termin_gui_native-*.whl",
-    )
-    if _active_sdk_profile_name() == FULL_SDK_PROFILE:
+    profile_name = _active_sdk_profile_name()
+    if profile_name == CORE_SDK_PROFILE:
+        wheel_patterns = (
+            "tcbase-*.whl",
+            "termin_dispatch-*.whl",
+            "termin_inspect-*.whl",
+        )
+    else:
+        wheel_patterns = (
+            "tcbase-*.whl",
+            "tgfx-*.whl",
+            "termin_gui_native-*.whl",
+        )
+    if profile_name == FULL_SDK_PROFILE:
         wheel_patterns = (*wheel_patterns, "termin_display-*.whl")
     wheels = []
     for pattern in wheel_patterns:
@@ -1479,9 +1493,18 @@ from .sdk_verification import (
 )
 
 
-def _build_dir(repo_root: Path, build_type: str) -> Path:
+def _build_dir(
+    repo_root: Path,
+    build_type: str,
+    profile_name: str = FULL_SDK_PROFILE,
+) -> Path:
     env_build_dir = os.environ.get("BUILD_DIR")
-    return Path(env_build_dir) if env_build_dir else repo_root / "build" / build_type
+    default_name = (
+        build_type
+        if profile_name == FULL_SDK_PROFILE
+        else f"{build_type}-{profile_name}"
+    )
+    return Path(env_build_dir) if env_build_dir else repo_root / "build" / default_name
 
 
 def _bundled_site_packages_hint(sdk_prefix: Path) -> Path:
@@ -1506,10 +1529,15 @@ def _run_sdk_build_impl(
     dry_run: bool,
     profile_name: str = FULL_SDK_PROFILE,
 ) -> int:
-    sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
-    build_dir = _build_dir(repo_root, build_type)
+    default_sdk = repo_root / (
+        "sdk-core" if profile_name == CORE_SDK_PROFILE else "sdk"
+    )
+    sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(default_sdk)))
+    build_dir = _build_dir(repo_root, build_type, profile_name)
     build_env = os.environ.copy()
     build_env["TERMIN_SDK_PROFILE"] = profile_name
+    build_env["SDK_PREFIX"] = str(sdk_prefix)
+    build_env["BUILD_DIR"] = str(build_dir)
     if dry_run:
         print("+ ensure pinned free-threaded Python toolchain")
         build_python = Path(_python_executable())
@@ -1547,7 +1575,7 @@ def _run_sdk_build_impl(
     print("  Stage 2/4: C# bindings")
     print("========================================")
     print("")
-    if build_csharp:
+    if build_csharp and profile_name != CORE_SDK_PROFILE:
         csharp_profile = "plot-d3d11" if profile_name == "graphics" else "full"
         command = (
             _stage_script(repo_root, "build-sdk-csharp")
@@ -1632,11 +1660,18 @@ def _run_sdk_build_impl(
     if dry_run:
         print("+ verify SDK duplicate libraries and stale artifacts")
     else:
+        forbidden_artifact_markers: tuple[str, ...] = ()
+        if profile_name == CORE_SDK_PROFILE:
+            forbidden_artifact_markers = load_product_manifest(
+                repo_root, "core"
+            ).forbidden_artifact_markers
         result = verify_sdk(
             sdk_prefix,
             build_dir,
             require_product_hosts=profile_name == FULL_SDK_PROFILE,
             require_engine_package=profile_name == FULL_SDK_PROFILE,
+            core_only=profile_name == CORE_SDK_PROFILE,
+            forbidden_artifact_markers=forbidden_artifact_markers,
         )
         if result != 0:
             return result

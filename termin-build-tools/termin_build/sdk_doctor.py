@@ -111,6 +111,21 @@ PROFILES = {
         needs_copy_backend=True,
         needs_sdk_writable=True,
     ),
+    "sdk-core": DoctorProfile(
+        name="sdk-core",
+        submodules=(),
+        needs_nanobind=True,
+        needs_pip=True,
+        needs_copy_backend=True,
+        needs_sdk_writable=True,
+    ),
+    "sdk-bindings-core": DoctorProfile(
+        name="sdk-bindings-core",
+        submodules=(),
+        needs_nanobind=True,
+        needs_copy_backend=True,
+        needs_sdk_writable=True,
+    ),
     "cpp-tests": DoctorProfile(
         name="cpp-tests",
         submodules=SDK_NATIVE_SUBMODULES + ("termin-thirdparty/guard",),
