@@ -4,6 +4,7 @@
   "profiles": [
     {
       "id": "core",
+      "artifact_kind": "standalone",
       "python_packages": null,
       "product_manifest": "core",
       "application_payloads": [],

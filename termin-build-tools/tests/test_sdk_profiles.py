@@ -44,6 +44,7 @@ def test_core_sdk_profile_has_no_application_payload() -> None:
 def test_core_sdk_profile_owns_minimal_runtime_and_verification_recipe() -> None:
     profile = PROFILES.profile("core")
 
+    assert profile.artifact_kind == "standalone"
     assert profile.runtime_lock.as_posix() == "build-system/python-runtime-core-lock.txt"
     assert profile.sdk_prefix == "sdk"
     assert profile.csharp_profile is None

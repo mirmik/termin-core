@@ -180,7 +180,7 @@ def verify_sdk(
 def verify_relocated_sdk(
     sdk_prefix: Path,
 ) -> int:
-    """Verify a self-contained SDK tree without consulting its build tree."""
+    """Verify an installed standalone SDK or a relocatable SDK layer."""
 
     try:
         product = load_installed_sdk_product(sdk_prefix)
@@ -205,6 +205,9 @@ def verify_relocated_sdk(
     )
     if result != 0:
         return result
+    if product.artifact_kind == "layer":
+        print("  OK: SDK layer structure verified; runtime imports require composition")
+        return 0
     if product.embedded_python_hosts:
         result = verify_embedded_python_hosts(
             sdk_prefix, product.embedded_python_hosts

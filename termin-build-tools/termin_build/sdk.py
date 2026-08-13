@@ -181,13 +181,19 @@ def _source_built_sdk_packages(
 def _composed_sdk_wheel_count(
     repo_root: Path, *, expected_python_abi: PythonAbiIdentity
 ) -> int:
+    profile = _active_sdk_profile(repo_root)
     core_input = _installed_core_input(expected_python_abi=expected_python_abi)
-    return len(
+    repository_count = len(
         _source_built_sdk_packages(
             repo_root,
             expected_python_abi=expected_python_abi,
         )
-    ) + (len(core_input.distributions) if core_input is not None else 0)
+    )
+    if profile.artifact_kind == "layer":
+        return repository_count
+    return repository_count + (
+        len(core_input.distributions) if core_input is not None else 0
+    )
 
 
 def _sdk_application_payloads(repo_root: Path):
@@ -545,6 +551,27 @@ def install_python_packages(
         info,
         context="SDK target Python",
     )
+    profile = _active_sdk_profile(repo_root)
+    if profile.artifact_kind == "layer":
+        version = str(info["version"])
+        abi_suffix = "t" if bool(info.get("free_threaded", False)) else ""
+        bundled_site_packages = (
+            sdk_prefix / "lib" / f"python{version}{abi_suffix}" / "site-packages"
+        )
+        print(f"Layer Python site-packages: {bundled_site_packages}")
+    else:
+        bundled_site_packages = None
+
+    if bundled_site_packages is not None:
+        return _install_python_layer_packages(
+            repo_root=repo_root,
+            sdk_prefix=sdk_prefix,
+            build_dir=build_dir,
+            build_python=Path(py_exec),
+            site_packages=bundled_site_packages,
+            target_python_abi=target_python_abi,
+        )
+
     _remove_incompatible_bundled_python_runtimes(sdk_prefix, info)
     try:
         bundled_py_dir = _find_bundled_python_dir(
@@ -655,6 +682,91 @@ def install_python_packages(
         )
     except RuntimeError as error:
         print(f"ERROR: failed to write SDK Python runtime manifest: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _install_python_layer_packages(
+    *,
+    repo_root: Path,
+    sdk_prefix: Path,
+    build_dir: Path,
+    build_python: Path,
+    site_packages: Path,
+    target_python_abi: PythonAbiIdentity,
+) -> int:
+    try:
+        termin_sdk = _resolve_sdk_prefix(repo_root, sdk_prefix)
+        bindings_dir = _resolve_bindings_dir(repo_root, build_dir)
+        isolated_build_python = _ensure_sdk_python_build_environment(
+            repo_root,
+            base_python=build_python,
+        )
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+
+    _, local_wheels = _runtime_wheel_dirs(repo_root)
+    result = _build_local_package_wheels(
+        repo_root=repo_root,
+        termin_sdk=termin_sdk,
+        bindings_dir=bindings_dir,
+        wheel_dir=local_wheels,
+        build_python=isolated_build_python,
+    )
+    if result != 0:
+        return result
+
+    try:
+        expected_count = _composed_sdk_wheel_count(
+            repo_root,
+            expected_python_abi=target_python_abi,
+        )
+        validate_local_wheel_artifact_set(
+            local_wheels,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=expected_count,
+        )
+        if site_packages.exists():
+            shutil.rmtree(site_packages)
+        site_packages.mkdir(parents=True)
+    except (LocalWheelArtifactError, OSError, RuntimeError) as error:
+        print(f"ERROR: cannot install SDK Python layer: {error}", file=sys.stderr)
+        return 1
+
+    wheels = sorted(local_wheels.glob("*.whl"))
+    result = _run(
+        [
+            str(isolated_build_python),
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--no-deps",
+            "--no-compile",
+            "--no-cache-dir",
+            "--target",
+            str(site_packages),
+            *(str(wheel) for wheel in wheels),
+        ],
+        cwd=repo_root,
+        env=os.environ.copy(),
+    )
+    if result != 0:
+        return result
+
+    try:
+        write_python_runtime_manifest(
+            repo_root,
+            sdk_prefix,
+            site_packages,
+            runtime_python_abi=target_python_abi,
+            packages=_sdk_packages(repo_root),
+            additional_local_distributions=(),
+            runtime_lock_relative=_active_sdk_profile(repo_root).runtime_lock,
+        )
+    except RuntimeError as error:
+        print(f"ERROR: failed to write SDK Python layer manifest: {error}", file=sys.stderr)
         return 1
     return 0
 
@@ -1525,7 +1637,7 @@ def _build_local_package_wheels(
     if result != 0:
         return result
     core_input = _installed_core_input(expected_python_abi=python_abi)
-    if core_input is None:
+    if core_input is None or _active_sdk_profile(repo_root).artifact_kind == "layer":
         return 0
     try:
         compose_local_wheel_artifact_set(

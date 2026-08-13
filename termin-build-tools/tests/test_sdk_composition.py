@@ -26,6 +26,7 @@ def _write_core_sdk(root: Path, abi: PythonAbiIdentity) -> str:
             {
                 "schema": 1,
                 "profile_id": "core",
+                "artifact_kind": "standalone",
                 "embedded_python_hosts": [],
                 "launcher_import_roots": [],
                 "native_import_roots": [],

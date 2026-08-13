@@ -17,6 +17,10 @@
   are repository-owned recipes in `build-system/sdk-profiles.json` and
   `build-system/sdk-doctor-profiles.json`; they are not compiled into this
   package.
+- SDK profiles explicitly declare whether their artifact is `standalone` or a
+  thin `layer`. Standalone products own the Python runtime; layers publish only
+  their own libraries, packages and resources and are verified again after
+  collision-free composition with their recorded SDK inputs.
 - Installed SDK verification is driven by the hash-bound `sdk-product.json`
   written into each SDK. A copied SDK therefore verifies and smoke-tests
   without access to the source repository or its product recipes.

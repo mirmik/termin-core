@@ -27,6 +27,7 @@ class SdkProfileError(ValueError):
 @dataclass(frozen=True)
 class SdkProfile:
     name: str
+    artifact_kind: str
     python_package_paths: frozenset[str] | None
     application_payload_names: frozenset[str] | None
     product_manifest_id: str | None
@@ -63,6 +64,7 @@ class SdkProfileSet:
 @dataclass(frozen=True)
 class InstalledSdkProduct:
     profile_id: str
+    artifact_kind: str
     embedded_python_hosts: tuple[str, ...]
     launcher_import_roots: tuple[str, ...]
     native_import_roots: tuple[str, ...]
@@ -78,6 +80,7 @@ def write_installed_sdk_product(
     payload = {
         "schema": INSTALLED_SDK_PRODUCT_SCHEMA,
         "profile_id": profile.name,
+        "artifact_kind": profile.artifact_kind,
         "embedded_python_hosts": list(profile.embedded_python_hosts),
         "launcher_import_roots": list(profile.launcher_import_roots),
         "native_import_roots": list(profile.native_import_roots),
@@ -100,6 +103,7 @@ def load_installed_sdk_product(sdk_prefix: Path) -> InstalledSdkProduct:
     fields = {
         "schema",
         "profile_id",
+        "artifact_kind",
         "embedded_python_hosts",
         "launcher_import_roots",
         "native_import_roots",
@@ -111,6 +115,7 @@ def load_installed_sdk_product(sdk_prefix: Path) -> InstalledSdkProduct:
         raise SdkProfileError(f"{path}: unsupported schema {raw['schema']!r}")
     return InstalledSdkProduct(
         profile_id=_string(raw["profile_id"], f"{path}: profile_id"),
+        artifact_kind=_artifact_kind(raw["artifact_kind"], f"{path}: artifact_kind"),
         embedded_python_hosts=_strings(
             raw["embedded_python_hosts"], f"{path}: embedded_python_hosts"
         ),
@@ -166,6 +171,7 @@ def _parse_profile(value: object, context: str) -> SdkProfile:
         raise SdkProfileError(f"{context}: profile must be an object")
     fields = {
         "id",
+        "artifact_kind",
         "python_packages",
         "product_manifest",
         "application_payloads",
@@ -202,6 +208,9 @@ def _parse_profile(value: object, context: str) -> SdkProfile:
         )
     return SdkProfile(
         name=_string(value["id"], f"{context}.id"),
+        artifact_kind=_artifact_kind(
+            value["artifact_kind"], f"{context}.artifact_kind"
+        ),
         python_package_paths=(
             None if python_packages is None else frozenset(python_packages)
         ),
@@ -239,6 +248,13 @@ def _suffix(value: object, context: str) -> str:
     if not isinstance(value, str) or "/" in value or "\\" in value:
         raise SdkProfileError(f"{context}: expected a simple string suffix")
     return value
+
+
+def _artifact_kind(value: object, context: str) -> str:
+    result = _string(value, context)
+    if result not in {"standalone", "layer"}:
+        raise SdkProfileError(f"{context}: expected 'standalone' or 'layer'")
+    return result
 
 
 def _strings(value: object, context: str) -> tuple[str, ...]:
