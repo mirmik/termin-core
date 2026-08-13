@@ -24,6 +24,8 @@ def test_graphics_sdk_profile_has_only_graphics_python_closure() -> None:
     paths = [package.path for package in packages]
     assert "tcplot" in paths
     assert "termin-gui-native" in paths
+    assert "termin-mcp" in paths
+    assert "termin-graphics-mcp" in paths
     assert "termin-nodegraph" in paths
     assert "termin-visual-scene" in paths
     assert "termin-window" in paths
@@ -55,6 +57,7 @@ def test_core_sdk_profile_is_projected_from_product_manifest() -> None:
         "termin-base",
         "termin-dispatch",
         "termin-inspect",
+        "termin-mcp",
     ]
 
 

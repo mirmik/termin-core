@@ -296,9 +296,13 @@ def test_windows_bindings_keep_d3d11_shader_artifacts_without_opengl() -> None:
         encoding="utf-8"
     )
 
-    assert '$TerminBuildBuiltinShaderArtifacts = "ON"' in windows_script
     assert (
-        'if ($TerminEnableOpenGl -eq "ON") { "d3d11;opengl330" } else { "d3d11" }'
+        '$TerminBuildBuiltinShaderArtifacts = if ($Profile -eq "core") '
+        '{ "OFF" } else { "ON" }'
+        in windows_script
+    )
+    assert (
+        '} elseif ($TerminEnableOpenGl -eq "ON") {\n    "d3d11;opengl330"'
         in windows_script
     )
 
@@ -316,6 +320,21 @@ def test_bindings_entrypoints_expose_core_profile_contract() -> None:
     assert 'DOCTOR_PROFILE="sdk-bindings-core"' in linux_script
     assert '@("full", "graphics", "core")' in windows_script
     assert '"core" { "sdk-bindings-core" }' in windows_script
+    assert 'if [[ "$SDK_PROFILE" == "core" ]]; then' in linux_script
+    assert 'if ($Profile -eq "core") {' in windows_script
+
+
+def test_root_core_profile_forces_graphics_backends_off() -> None:
+    repo_root = sdk.repo_root_from(Path(__file__))
+    root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
+    core_branch = root_cmake.split(
+        'if(TERMIN_SDK_PROFILE STREQUAL "graphics" OR TERMIN_SDK_PROFILE STREQUAL "core")',
+        1,
+    )[1].split("else()\n    set(TERMIN_RENDER_CORE_ONLY OFF", 1)[0]
+
+    assert "set(TERMIN_ENABLE_OPENGL OFF" in core_branch
+    assert "set(TERMIN_ENABLE_VULKAN OFF" in core_branch
+    assert "set(TERMIN_ENABLE_SDL OFF" in core_branch
 
 
 def test_no_sdl_disables_only_the_profiler_gui() -> None:

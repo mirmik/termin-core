@@ -213,7 +213,6 @@ class PythonScriptExecutor:
         try:
             import termin
             from termin.geombase import GeneralPose3, Pose3, Quat, Vec3, Vec4
-            from termin.scene import GeneralTransform3
         except Exception as exc:
             log.warning(f"[{self._log_prefix}] common Termin MCP context is incomplete: {exc}")
             return
@@ -224,7 +223,6 @@ class PythonScriptExecutor:
         namespace["Quat"] = Quat
         namespace["Pose3"] = Pose3
         namespace["GeneralPose3"] = GeneralPose3
-        namespace["GeneralTransform3"] = GeneralTransform3
 
     def _add_runtime_context(self, namespace: dict[str, object | None]) -> None:
         del namespace

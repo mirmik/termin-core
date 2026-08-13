@@ -45,9 +45,9 @@ The first Core repository contains:
 - Core-native and Python tests;
 - external CMake and Python consumer smoke fixtures.
 
-`termin-mcp` is admitted when its scene and image dependencies have been moved
-to host adapters. That work can run in parallel after the initial closure is
-frozen and does not block the first Core artifact.
+`termin-mcp` is included in Core after its scene context moved to host adapters
+and screenshot/readback support moved to the graphics-owned
+`termin-graphics-mcp` distribution.
 
 ## Non-goals
 

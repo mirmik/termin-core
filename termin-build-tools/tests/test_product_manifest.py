@@ -28,6 +28,7 @@ def test_core_product_manifest_matches_repository_closure() -> None:
         "termin-dispatch",
         "termin-inspect",
         "termin-python-host",
+        "termin-mcp",
         "termin-cli",
     )
     assert manifest.python_runtime.owner == "core"
@@ -48,6 +49,7 @@ def test_core_python_package_projection_uses_product_order() -> None:
         "tcbase",
         "termin-dispatch",
         "termin-inspect",
+        "termin-mcp",
     ]
 
 

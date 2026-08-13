@@ -1382,6 +1382,7 @@ def _verify_library_wheel_subset_install(
             "tcbase-*.whl",
             "termin_dispatch-*.whl",
             "termin_inspect-*.whl",
+            "termin_mcp-*.whl",
         )
     else:
         wheel_patterns = (

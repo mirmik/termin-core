@@ -16,6 +16,15 @@ def test_executor_exposes_only_host_supplied_asset_context() -> None:
     assert result.output == "True\n"
 
 
+def test_executor_does_not_inject_scene_context() -> None:
+    executor = PythonScriptExecutor(lambda: {})
+
+    result = executor.execute_script("print('GeneralTransform3' in globals())")
+
+    assert result.ok
+    assert result.output == "False\n"
+
+
 def test_repl_blank_line_completes_buffered_multiline_statement():
     executor = PythonScriptExecutor(lambda: {})
 

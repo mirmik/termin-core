@@ -24,6 +24,8 @@ _GRAPHICS_PYTHON_PACKAGES = frozenset(
         "termin-tween",
         "termin-mesh",
         "termin-graphics",
+        "termin-mcp",
+        "termin-graphics-mcp",
         "termin-visual-scene",
         "termin-inspect",
         "termin-shader-runtime",

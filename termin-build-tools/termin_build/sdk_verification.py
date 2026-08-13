@@ -53,6 +53,7 @@ _CORE_PRODUCT_IMPORT_GRAPH_ROOTS = (
     "tcbase",
     "termin.dispatch",
     "termin.inspect",
+    "termin.mcp",
 )
 _GIL_WARNING_FILTER = (
     r"error:The global interpreter lock \(GIL\) has been enabled:RuntimeWarning"
@@ -379,8 +380,8 @@ def verify_sdk_python_launcher(
             return 1
 
     if core_only:
-        profile_imports = "termin.dispatch, termin.inspect"
-        profile_anchor = "termin.inspect"
+        profile_imports = "termin.dispatch, termin.inspect, termin.mcp"
+        profile_anchor = "termin.mcp"
     elif require_engine_package:
         profile_imports = "termin.engine, termin.tween"
         profile_anchor = "termin.tween"
