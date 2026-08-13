@@ -9,6 +9,33 @@ option(TERMIN_USE_CCACHE "Use ccache when available" ON)
 option(TERMIN_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
 option(TERMIN_ENABLE_PCH "Enable precompiled headers" ON)
 
+set(TERMIN_CORE_TARGET_SYSTEM "host" CACHE STRING
+    "Core SDK target system: host, android or web")
+set_property(CACHE TERMIN_CORE_TARGET_SYSTEM PROPERTY STRINGS host android web)
+if(ANDROID)
+    set(_termin_detected_target_system android)
+elseif(EMSCRIPTEN)
+    set(_termin_detected_target_system web)
+else()
+    set(_termin_detected_target_system host)
+endif()
+if(NOT TERMIN_CORE_TARGET_SYSTEM STREQUAL _termin_detected_target_system)
+    message(FATAL_ERROR
+        "TERMIN_CORE_TARGET_SYSTEM=${TERMIN_CORE_TARGET_SYSTEM} does not match "
+        "the active toolchain (${_termin_detected_target_system})")
+endif()
+if(NOT TERMIN_CORE_TARGET_SYSTEM STREQUAL "host")
+    set(TERMIN_BUILD_PYTHON OFF CACHE BOOL
+        "Cross-compiled Core SDKs do not contain desktop Python" FORCE)
+    set(TERMIN_BUILD_TESTS OFF CACHE BOOL
+        "Cross-compiled Core tests run in their consumer environment" FORCE)
+    set(TERMIN_ENABLE_PCH OFF CACHE BOOL
+        "Cross-compiled Core SDKs do not use host PCH" FORCE)
+    set(TERMIN_BASE_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(TERMIN_DISPATCH_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(TI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)

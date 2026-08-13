@@ -29,6 +29,21 @@ libraries, the isolated `bin/termin_python` launcher, Core wheels, provenance
 manifests and the canonical CPython 3.14t runtime. The first build may download
 the exact toolchain inputs recorded under `build-system/`.
 
+Native-only platform SDKs are separate products. They contain static Core
+libraries, headers and installed CMake packages, but no host Python runtime or
+wheels:
+
+```bash
+./build-sdk-android.sh --ndk /absolute/path/to/android-ndk
+./build-sdk-web.sh --setup
+```
+
+Android output is written to `sdk-platform/android/<abi>/`, Web output to
+`sdk-platform/web/wasm32/`. Each tree has a `termin-core-platform.json` that
+binds its system, architecture, API/toolchain version, owned artifact hashes
+and `native_build_id`. Consumers must pin both the SDK tree and that identity;
+a host, Android or Web Core SDK is never substituted for another platform.
+
 Verify installed external consumption and relocation with:
 
 ```bash

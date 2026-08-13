@@ -37,3 +37,36 @@ jobs:
           path: sdk/
           if-no-files-found: error
           retention-days: 14
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build verified Android Core SDK
+        run: ./build-sdk-android.sh --ndk "$ANDROID_NDK_LATEST_HOME"
+      - name: Publish Android Core SDK input
+        uses: actions/upload-artifact@v4
+        with:
+          name: termin-core-sdk-android-arm64-v8a
+          path: sdk-platform/android/arm64-v8a/
+          if-no-files-found: error
+          retention-days: 14
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pinned Emscripten toolchain
+        uses: actions/cache@v4
+        with:
+          path: build/toolchains/emsdk
+          key: termin-core-emsdk-${{ hashFiles('build-system/emscripten-version.txt') }}
+      - name: Build verified Web Core SDK
+        run: ./build-sdk-web.sh --setup
+      - name: Publish Web Core SDK input
+        uses: actions/upload-artifact@v4
+        with:
+          name: termin-core-sdk-web-wasm32
+          path: sdk-platform/web/wasm32/
+          if-no-files-found: error
+          retention-days: 14

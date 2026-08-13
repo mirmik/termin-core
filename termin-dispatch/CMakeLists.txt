@@ -9,6 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(TERMIN_BUILD_PYTHON "Build Python bindings" OFF)
 option(TERMIN_DISPATCH_BUILD_TESTS "Build termin-dispatch tests" ON)
+option(TERMIN_DISPATCH_BUILD_SHARED "Build termin-dispatch as a shared library" ON)
 
 if(COMMAND termin_require_package)
     termin_require_package(termin_base tcbase::termin_base)
@@ -19,10 +20,16 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
 include(TerminRpath)
 
-add_library(termin_dispatch SHARED src/dispatcher.cpp)
+if(TERMIN_DISPATCH_BUILD_SHARED)
+    add_library(termin_dispatch SHARED src/dispatcher.cpp)
+else()
+    add_library(termin_dispatch STATIC src/dispatcher.cpp)
+endif()
 add_library(termin_dispatch::termin_dispatch ALIAS termin_dispatch)
 
-target_compile_definitions(termin_dispatch PRIVATE TERMIN_DISPATCH_EXPORTS)
+if(TERMIN_DISPATCH_BUILD_SHARED)
+    target_compile_definitions(termin_dispatch PRIVATE TERMIN_DISPATCH_EXPORTS)
+endif()
 target_include_directories(termin_dispatch
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
