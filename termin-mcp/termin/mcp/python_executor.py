@@ -214,13 +214,10 @@ class PythonScriptExecutor:
             import termin
             from termin.geombase import GeneralPose3, Pose3, Quat, Vec3, Vec4
             from termin.scene import GeneralTransform3
-            from termin_assets import get_resource_manager
         except Exception as exc:
             log.warning(f"[{self._log_prefix}] common Termin MCP context is incomplete: {exc}")
             return
 
-        namespace["rm"] = get_resource_manager()
-        namespace["resource_manager"] = namespace["rm"]
         namespace["termin"] = termin
         namespace["Vec3"] = Vec3
         namespace["Vec4"] = Vec4

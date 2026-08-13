@@ -4,6 +4,18 @@ import time
 from termin.mcp.python_executor import PythonScriptExecutor
 
 
+def test_executor_exposes_only_host_supplied_asset_context() -> None:
+    resource_manager = object()
+    executor = PythonScriptExecutor(
+        lambda: {"rm": resource_manager, "resource_manager": resource_manager}
+    )
+
+    result = executor.execute_script("print(rm is resource_manager)")
+
+    assert result.ok
+    assert result.output == "True\n"
+
+
 def test_repl_blank_line_completes_buffered_multiline_statement():
     executor = PythonScriptExecutor(lambda: {})
 

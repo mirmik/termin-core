@@ -17,7 +17,6 @@ _GRAPHICS_PYTHON_PACKAGES = frozenset(
         "termin-base",
         "termin-dispatch",
         "termin-image",
-        "termin-assets",
         "termin-tween",
         "termin-mesh",
         "termin-graphics",

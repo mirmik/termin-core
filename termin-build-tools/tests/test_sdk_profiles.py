@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from termin_build.application_payload import load_application_payloads
@@ -26,6 +27,7 @@ def test_graphics_sdk_profile_has_only_graphics_python_closure() -> None:
     assert "termin-nodegraph" in paths
     assert "termin-visual-scene" in paths
     assert "termin-window" in paths
+    assert "termin-assets" not in paths
     assert "termin-engine" not in paths
     assert "termin-render" not in paths
     assert "termin-physics" not in paths
@@ -38,3 +40,25 @@ def test_graphics_sdk_profile_has_no_desktop_application_payload() -> None:
     )
 
     assert payloads == ()
+
+
+def test_graphics_shader_runtime_declares_only_its_core_dependency() -> None:
+    metadata = (REPO_ROOT / "termin-shader-runtime" / "setup.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(metadata)
+    setup_call = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "setup"
+    )
+    install_requires = next(
+        keyword.value
+        for keyword in setup_call.keywords
+        if keyword.arg == "install_requires"
+    )
+
+    assert isinstance(install_requires, ast.List)
+    assert [ast.literal_eval(element) for element in install_requires.elts] == ["tcbase"]
