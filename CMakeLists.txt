@@ -67,8 +67,6 @@ set(TERMIN_BASE_BUILD_TESTS ${TERMIN_BUILD_TESTS} CACHE BOOL "" FORCE)
 set(TERMIN_DISPATCH_BUILD_TESTS ${TERMIN_BUILD_TESTS} CACHE BOOL "" FORCE)
 set(TI_BUILD_TESTS ${TERMIN_BUILD_TESTS} CACHE BOOL "" FORCE)
 set(TI_BUILD_PYTHON_TESTS ${TERMIN_BUILD_PYTHON} CACHE BOOL "" FORCE)
-set(TERMIN_CLI_PYTHON_ONLY ON CACHE BOOL "" FORCE)
-
 if(TERMIN_BUILD_PYTHON)
     include(TerminPython)
     termin_require_canonical_python(Interpreter Development)
@@ -94,7 +92,6 @@ endif()
 add_subdirectory(termin-base)
 add_subdirectory(termin-dispatch)
 add_subdirectory(termin-inspect)
-add_subdirectory(termin-cli)
 
 configure_package_config_file(
     cmake/terminConfig.cmake.in

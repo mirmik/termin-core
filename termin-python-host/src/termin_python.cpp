@@ -2,7 +2,6 @@
 #include <Python.h>
 
 #include "termin/python_host/python_host.hpp"
-#include "termin_python_backend.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -13,9 +12,53 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace {
 
     namespace fs = std::filesystem;
+
+    fs::path executable_dir() {
+#ifdef _WIN32
+        std::vector<char> buffer(MAX_PATH);
+        DWORD size = GetModuleFileNameA(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        while (size == buffer.size()) {
+            buffer.resize(buffer.size() * 2);
+            size = GetModuleFileNameA(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        }
+        if (size == 0) {
+            throw std::runtime_error("could not resolve the termin_python executable path");
+        }
+        return fs::path(std::string(buffer.data(), size)).parent_path();
+#else
+        std::vector<char> buffer(4096);
+        const ssize_t size = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+        if (size <= 0) {
+            throw std::runtime_error("could not resolve the termin_python executable path");
+        }
+        buffer[static_cast<std::size_t>(size)] = '\0';
+        return fs::path(buffer.data()).parent_path();
+#endif
+    }
+
+    void set_env_value(const char* name, const std::string& value) {
+#ifdef _WIN32
+        if (_putenv_s(name, value.c_str()) != 0) {
+            throw std::runtime_error(std::string("could not set environment variable ") + name);
+        }
+#else
+        if (setenv(name, value.c_str(), 1) != 0) {
+            throw std::runtime_error(std::string("could not set environment variable ") + name);
+        }
+#endif
+    }
 
     struct PythonLayout {
         fs::path sdk_root;
@@ -57,7 +100,7 @@ namespace {
 
     PythonLayout resolve_layout() {
         PythonLayout layout;
-        layout.sdk_root = termin_cli::python_backend::executable_dir().parent_path();
+        layout.sdk_root = executable_dir().parent_path();
 #ifdef _WIN32
         layout.python_home = layout.sdk_root / "python";
         layout.stdlib = layout.python_home / "Lib";
@@ -171,7 +214,7 @@ namespace {
     }
 
     int run_python(const PythonLayout& layout, const LauncherOptions& options) {
-        termin_cli::python_backend::set_env_value("TERMIN_SDK", layout.sdk_root.string());
+        set_env_value("TERMIN_SDK", layout.sdk_root.string());
 
         termin::python_host::Config config;
         config.host_name = "termin_python";

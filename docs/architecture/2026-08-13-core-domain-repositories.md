@@ -87,7 +87,7 @@ The intended first closure is:
 | Generic type and inspection contracts | `termin-inspect` |
 | Native Python binding ABI support | `termin-nanobind-sdk` |
 | Embeddable canonical Python host | `termin-python-host` |
-| Isolated SDK Python launcher | Python-only `termin-cli` target |
+| Isolated SDK Python launcher | `termin-python-host` |
 | Generic SDK manifest, lock and composition primitives | the domain-neutral subset of `termin-build-tools` |
 | Shared process diagnostics | `termin-mcp` transport, session and executor runtime |
 

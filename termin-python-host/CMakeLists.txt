@@ -27,6 +27,19 @@ target_link_libraries(termin_python_host PRIVATE Python::Python)
 
 include(TerminRpath)
 termin_set_rpath_lib(termin_python_host)
+
+function(termin_python_host_add_tool target)
+    add_executable(${target} ${ARGN})
+endfunction()
+
+termin_python_host_add_tool(termin_python src/termin_python.cpp)
+target_link_libraries(
+    termin_python
+    PRIVATE
+        Python::Python
+        termin_python_host::termin_python_host
+)
+termin_set_rpath_tool(termin_python)
 if(NOT WIN32)
     execute_process(
         COMMAND "${Python_EXECUTABLE}" -I -c
@@ -53,7 +66,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-install(TARGETS termin_python_host
+install(TARGETS termin_python_host termin_python
     EXPORT termin_python_hostTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

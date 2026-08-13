@@ -571,26 +571,6 @@ def test_native_test_configuration_does_not_mutate_render_product_target():
     assert product_target_mutation.search(test_configuration) is None
 
 
-def test_root_enables_python_only_cli_mode_for_library_profiles():
-    repo_root = sdk.repo_root_from(Path(__file__))
-    root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
-
-    profile_selection = re.search(
-        r'if\(NOT TERMIN_SDK_PROFILE STREQUAL "full"\)\s*'
-        r'set\(_termin_cli_python_only ON\)\s*'
-        r'else\(\)\s*'
-        r'set\(_termin_cli_python_only OFF\)\s*'
-        r'endif\(\)',
-        root_cmake,
-    )
-
-    assert profile_selection is not None
-    assert (
-        "set(TERMIN_CLI_PYTHON_ONLY ${_termin_cli_python_only} CACHE BOOL"
-        in root_cmake
-    )
-
-
 def test_openxr_package_declares_all_public_target_dependencies():
     repo_root = sdk.repo_root_from(Path(__file__))
     package_config = (repo_root / "termin-openxr/cmake/termin_openxrConfig.cmake.in").read_text(encoding="utf-8")

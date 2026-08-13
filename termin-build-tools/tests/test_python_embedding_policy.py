@@ -7,7 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION_EMBED_SOURCES = (
     REPO_ROOT / "termin-app/cpp/app/main_launcher.cpp",
     REPO_ROOT / "termin-app/cpp/app/main_minimal.cpp",
-    REPO_ROOT / "termin-cli/src/termin_python.cpp",
+    REPO_ROOT / "termin-python-host/src/termin_python.cpp",
     REPO_ROOT / "termin-modules/src/module_python_backend.cpp",
     REPO_ROOT / "termin-player/src/player_runtime_host.cpp",
 )

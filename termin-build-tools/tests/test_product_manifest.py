@@ -29,7 +29,6 @@ def test_core_product_manifest_matches_repository_closure() -> None:
         "termin-inspect",
         "termin-python-host",
         "termin-mcp",
-        "termin-cli",
     )
     assert manifest.python_runtime.owner == "core"
     assert manifest.python_runtime.abi == "cp314t"

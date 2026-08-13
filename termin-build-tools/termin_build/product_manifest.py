@@ -435,7 +435,7 @@ def _discover_native_targets(module_dir: Path) -> set[str]:
     targets: set[str] = set()
     for text in texts:
         for match in re.finditer(
-            r"(add_library|nanobind_add_module|nanobind_build_library|termin_cli_add_tool)"
+            r"(add_library|nanobind_add_module|nanobind_build_library|termin_[A-Za-z0-9_]+_add_tool)"
             r"\s*\(\s*(\"[^\"]+\"|[^\s\)]+)(?:\s+([^\s\)]+))?",
             text,
         ):

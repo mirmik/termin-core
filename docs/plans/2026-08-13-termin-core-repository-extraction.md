@@ -38,7 +38,7 @@ The first Core repository contains:
 - `termin-inspect`;
 - `termin-nanobind-sdk`;
 - `termin-python-host`;
-- the Python-only `termin-cli` launcher target;
+- the isolated launcher owned by `termin-python-host`;
 - the generic subset of SDK/build tooling required to build, verify and publish
   Core;
 - the canonical bundled Python runtime inputs and lock machinery;

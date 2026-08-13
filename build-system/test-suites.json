@@ -522,12 +522,6 @@
       "roots": ["termin-build-tools/tests", "scripts/tests"]
     },
     {
-      "id": "termin-cli-tests",
-      "module": "termin-cli",
-      "executor": "pytest",
-      "roots": ["termin-cli/tests"]
-    },
-    {
       "id": "termin-collision-tests",
       "module": "termin-collision",
       "executor": "pytest",
