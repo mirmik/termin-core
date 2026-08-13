@@ -756,6 +756,18 @@ def _install_python_layer_packages(
         return result
 
     try:
+        install_application_payloads(
+            repo_root=repo_root,
+            sdk_prefix=sdk_prefix,
+            site_packages=site_packages,
+            resolve_native_artifact=lambda target: _find_native_artifact(
+                build_dir,
+                target,
+                python_abi=target_python_abi,
+            ),
+            runtime_python_abi=target_python_abi,
+            payloads=_sdk_application_payloads(repo_root),
+        )
         write_python_runtime_manifest(
             repo_root,
             sdk_prefix,
