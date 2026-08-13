@@ -40,7 +40,7 @@ namespace termin::python_host {
         std::string soabi;
         bool free_threaded = false;
 
-        std::string describe() const;
+        TERMIN_PYTHON_HOST_API std::string describe() const;
     };
 
     TERMIN_PYTHON_HOST_API InitResult initialize(const Config& config);

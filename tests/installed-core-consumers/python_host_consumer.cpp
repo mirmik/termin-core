@@ -11,7 +11,12 @@ int main(int argc, char** argv) {
 
     termin::python_host::Config config;
     config.host_name = "Termin Core installed consumer";
-    config.home = std::filesystem::absolute(argv[1]);
+    const auto sdk_root = std::filesystem::absolute(argv[1]);
+#ifdef _WIN32
+    config.home = sdk_root / "python";
+#else
+    config.home = sdk_root;
+#endif
     config.argv = {"core_python_host_consumer"};
     const auto initialized = termin::python_host::initialize(config);
     if (!initialized.ok) {
