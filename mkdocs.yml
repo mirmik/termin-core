@@ -12,6 +12,8 @@ not_in_nav: |
 theme:
   name: material
   language: ru
+  icon:
+    logo: material/cube-outline
   features:
     - navigation.sections
     - navigation.top
@@ -20,12 +22,12 @@ theme:
     - search.highlight
   palette:
     - media: "(prefers-color-scheme: light)"
-      scheme: termin-day
+      scheme: default
       toggle:
         icon: material/weather-night
         name: Переключить на тёмную сторону
     - media: "(prefers-color-scheme: dark)"
-      scheme: termin-night
+      scheme: slate
       toggle:
         icon: material/weather-sunny
         name: Вернуться к дневному свету
