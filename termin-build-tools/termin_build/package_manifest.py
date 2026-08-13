@@ -40,6 +40,7 @@ class PackageEntry:
     distribution: str
     features: tuple[str, ...]
     native_extensions: tuple[NativeExtension, ...]
+    source: str = "repository"
 
 
 def repo_root_from(start: Path) -> Path:
@@ -75,6 +76,7 @@ def load_manifest(repo_root: Path) -> list[PackageEntry]:
             PackageEntry(
                 path=raw_package["path"],
                 distribution=raw_package["distribution"],
+                source=raw_package.get("source", "repository"),
                 features=tuple(raw_package.get("features", [])),
                 native_extensions=tuple(native_extensions),
             )
@@ -212,6 +214,13 @@ def validate(repo_root: Path) -> list[str]:
         )
 
     for package in packages:
+        if package.source not in {"repository", "installed-core"}:
+            errors.append(
+                f"{package.path}: unsupported package source {package.source!r}"
+            )
+            continue
+        if package.source == "installed-core":
+            continue
         package_dir = repo_root / package.path
         if not package_dir.is_dir():
             errors.append(f"package path does not exist: {package.path}")

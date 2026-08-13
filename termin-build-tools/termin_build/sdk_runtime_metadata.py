@@ -267,6 +267,7 @@ def write_python_runtime_manifest(
     *,
     runtime_python_abi: PythonAbiIdentity,
     packages: Iterable[PackageEntry] | None = None,
+    additional_local_distributions: Iterable[str] = (),
     runtime_lock_relative: Path = RUNTIME_LOCK_RELATIVE,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
@@ -278,6 +279,10 @@ def write_python_runtime_manifest(
         _normalized_distribution_name(package.distribution)
         for package in effective_packages
     }
+    local_names.update(
+        _normalized_distribution_name(distribution)
+        for distribution in additional_local_distributions
+    )
     entries = _runtime_distribution_entries(site_packages, runtime_lock, local_names)
     lock_path = repo_root / runtime_lock_relative
     installed_lock = sdk_prefix / "python-runtime-lock.txt"

@@ -234,6 +234,58 @@ def build_local_wheel_artifact_set(
     return 0
 
 
+def compose_local_wheel_artifact_set(
+    primary: Path,
+    additions: Sequence[tuple[Path, Path, int]],
+    destination: Path,
+    *,
+    sdk_prefix: Path,
+    expected_primary_wheel_count: int,
+) -> None:
+    """Atomically combine validated first-party wheel sets."""
+    validate_local_wheel_artifact_set(
+        primary,
+        sdk_prefix=sdk_prefix,
+        expected_wheel_count=expected_primary_wheel_count,
+    )
+    for wheel_dir, input_sdk, expected_count in additions:
+        validate_local_wheel_artifact_set(
+            wheel_dir,
+            sdk_prefix=input_sdk,
+            expected_wheel_count=expected_count,
+        )
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{destination.name}.compose-",
+        dir=destination.parent,
+    ) as temporary_root:
+        prepared = Path(temporary_root) / "wheels"
+        prepared.mkdir()
+        for source in (primary, *(item[0] for item in additions)):
+            for wheel in sorted(source.glob("*.whl")):
+                target = prepared / wheel.name
+                if target.exists():
+                    raise LocalWheelArtifactError(
+                        f"composed SDK wheel collision for {wheel.name}"
+                    )
+                shutil.copy2(wheel, target)
+        expected_total = expected_primary_wheel_count + sum(
+            item[2] for item in additions
+        )
+        write_local_wheel_manifest(
+            prepared,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=expected_total,
+        )
+        validate_local_wheel_artifact_set(
+            prepared,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=expected_total,
+        )
+        _replace_directory(prepared, destination)
+
+
 def publish_local_wheel_artifact_set(
     source: Path,
     destination: Path,
