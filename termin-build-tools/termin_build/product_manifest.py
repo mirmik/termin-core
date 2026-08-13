@@ -12,7 +12,9 @@ from .package_manifest import PackageEntry, load_manifest as load_package_manife
 
 
 PRODUCT_MANIFEST_DIR = Path("build-system/products")
-_MODULE_ROLES = frozenset({"binding-runtime", "build-tooling", "runtime"})
+_MODULE_ROLES = frozenset(
+    {"application", "binding-runtime", "build-tooling", "runtime"}
+)
 
 
 class ProductManifestError(ValueError):
@@ -24,9 +26,24 @@ class ProductModule:
     path: str
     role: str
     internal_dependencies: tuple[str, ...]
+    external_dependencies: tuple[str, ...]
+    inactive_dependencies: tuple[str, ...]
     native_targets: tuple[str, ...]
     inactive_native_targets: tuple[str, ...]
     python_distribution: str | None
+
+
+@dataclass(frozen=True)
+class ProductExternalModule:
+    path: str
+    python_distribution: str | None
+
+
+@dataclass(frozen=True)
+class ProductExternalProduct:
+    id: str
+    modules: tuple[ProductExternalModule, ...]
+    cmake_packages: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -41,6 +58,7 @@ class ProductManifest:
     id: str
     description: str
     modules: tuple[ProductModule, ...]
+    external_products: tuple[ProductExternalProduct, ...]
     cmake_packages: tuple[str, ...]
     python_runtime: ProductPythonRuntime
     test_suites: tuple[str, ...]
@@ -75,6 +93,9 @@ def load_product_manifest(repo_root: Path, product_id: str) -> ProductManifest:
 
 def _parse_product_manifest(data: object, path: Path) -> ProductManifest:
     root = _object(data, str(path))
+    schema = root.get("schema")
+    if schema not in {1, 2}:
+        raise ProductManifestError(f"{path}: unsupported schema {schema!r}")
     _require_keys(
         root,
         {
@@ -91,9 +112,23 @@ def _parse_product_manifest(data: object, path: Path) -> ProductManifest:
             "forbidden_artifact_markers",
         },
         str(path),
+        allowed={
+            "schema",
+            "id",
+            "description",
+            "modules",
+            "external_products",
+            "cmake_packages",
+            "python_runtime",
+            "test_suites",
+            "smoke_fixtures",
+            "resources",
+            "forbidden_dependency_roots",
+            "forbidden_artifact_markers",
+        },
     )
-    if root["schema"] != 1:
-        raise ProductManifestError(f"{path}: unsupported schema {root['schema']!r}")
+    if schema == 2 and "external_products" not in root:
+        raise ProductManifestError(f"{path}: schema 2 requires external_products")
 
     product_id = _non_empty_string(root["id"], f"{path}: id")
     if path.stem != product_id:
@@ -110,11 +145,15 @@ def _parse_product_manifest(data: object, path: Path) -> ProductManifest:
             "path",
             "role",
             "internal_dependencies",
+            "external_dependencies",
+            "inactive_dependencies",
             "native_targets",
             "inactive_native_targets",
             "python_distribution",
         }
-        required = allowed - {"python_distribution", "inactive_native_targets"}
+        required = {"path", "role", "internal_dependencies", "native_targets"}
+        if schema == 2:
+            required.update({"external_dependencies", "inactive_dependencies"})
         _require_keys(raw, required, context, allowed=allowed)
         role = _non_empty_string(raw["role"], f"{context}.role")
         if role not in _MODULE_ROLES:
@@ -136,6 +175,16 @@ def _parse_product_manifest(data: object, path: Path) -> ProductManifest:
                     f"{context}.internal_dependencies",
                     relative_paths=True,
                 ),
+                external_dependencies=_string_tuple(
+                    raw.get("external_dependencies", []),
+                    f"{context}.external_dependencies",
+                    relative_paths=True,
+                ),
+                inactive_dependencies=_string_tuple(
+                    raw.get("inactive_dependencies", []),
+                    f"{context}.inactive_dependencies",
+                    relative_paths=True,
+                ),
                 native_targets=_string_tuple(
                     raw["native_targets"], f"{context}.native_targets"
                 ),
@@ -144,6 +193,46 @@ def _parse_product_manifest(data: object, path: Path) -> ProductManifest:
                     f"{context}.inactive_native_targets",
                 ),
                 python_distribution=distribution,
+            )
+        )
+
+    external_products: list[ProductExternalProduct] = []
+    for product_index, value in enumerate(
+        _list(root.get("external_products", []), f"{path}: external_products")
+    ):
+        context = f"{path}: external_products[{product_index}]"
+        raw_product = _object(value, context)
+        _require_keys(raw_product, {"id", "modules", "cmake_packages"}, context)
+        external_modules: list[ProductExternalModule] = []
+        for module_index, module_value in enumerate(
+            _list(raw_product["modules"], f"{context}.modules")
+        ):
+            module_context = f"{context}.modules[{module_index}]"
+            raw_module = _object(module_value, module_context)
+            _require_keys(
+                raw_module,
+                {"path", "python_distribution"},
+                module_context,
+            )
+            distribution = raw_module["python_distribution"]
+            if distribution is not None:
+                distribution = _non_empty_string(
+                    distribution,
+                    f"{module_context}.python_distribution",
+                )
+            external_modules.append(
+                ProductExternalModule(
+                    path=_relative_path(raw_module["path"], f"{module_context}.path"),
+                    python_distribution=distribution,
+                )
+            )
+        external_products.append(
+            ProductExternalProduct(
+                id=_non_empty_string(raw_product["id"], f"{context}.id"),
+                modules=tuple(external_modules),
+                cmake_packages=_string_tuple(
+                    raw_product["cmake_packages"], f"{context}.cmake_packages"
+                ),
             )
         )
 
@@ -162,6 +251,7 @@ def _parse_product_manifest(data: object, path: Path) -> ProductManifest:
         id=product_id,
         description=_non_empty_string(root["description"], f"{path}: description"),
         modules=tuple(modules),
+        external_products=tuple(external_products),
         cmake_packages=_string_tuple(root["cmake_packages"], f"{path}: cmake_packages"),
         python_runtime=runtime,
         test_suites=_string_tuple(root["test_suites"], f"{path}: test_suites"),
@@ -188,8 +278,24 @@ def validate_product_manifest(repo_root: Path, manifest: ProductManifest) -> lis
     module_paths = manifest.module_paths
     module_set = set(module_paths)
     forbidden = set(manifest.forbidden_dependency_roots)
+    external_product_ids = tuple(product.id for product in manifest.external_products)
+    external_modules = tuple(
+        module
+        for product in manifest.external_products
+        for module in product.modules
+    )
+    external_module_paths = tuple(module.path for module in external_modules)
+    external_module_set = set(external_module_paths)
+    external_cmake_packages = tuple(
+        package
+        for product in manifest.external_products
+        for package in product.cmake_packages
+    )
 
     _append_duplicates(errors, "module path", module_paths)
+    _append_duplicates(errors, "external product id", external_product_ids)
+    _append_duplicates(errors, "external module path", external_module_paths)
+    _append_duplicates(errors, "external CMake package", external_cmake_packages)
     _append_duplicates(errors, "Python distribution", manifest.python_distributions)
     _append_duplicates(errors, "CMake package", manifest.cmake_packages)
     _append_duplicates(errors, "test suite", manifest.test_suites)
@@ -200,19 +306,47 @@ def validate_product_manifest(repo_root: Path, manifest: ProductManifest) -> lis
     overlap = sorted(module_set & forbidden)
     if overlap:
         errors.append("product modules are also forbidden: " + ", ".join(overlap))
-    if manifest.python_runtime.owner != manifest.id:
+    external_overlap = sorted(module_set & external_module_set)
+    if external_overlap:
         errors.append(
-            f"Python runtime owner must be {manifest.id!r}, got "
-            f"{manifest.python_runtime.owner!r}"
+            "product modules are also external: " + ", ".join(external_overlap)
+        )
+    valid_runtime_owners = {manifest.id, *external_product_ids}
+    if manifest.python_runtime.owner not in valid_runtime_owners:
+        errors.append(
+            "Python runtime owner must be the product or a declared external "
+            f"product, got {manifest.python_runtime.owner!r}"
         )
 
     packages = load_package_manifest(repo_root)
     packages_by_path = {package.path: package for package in packages}
+    package_sources = _package_sources(repo_root)
     modules_by_path = _repository_modules(repo_root, packages)
+    module_paths_by_id = {
+        module_id: module_path for module_path, module_id in modules_by_path.items()
+    }
     cmake_internal_packages = {
         path.replace("-", "_"): path for path in modules_by_path
     }
     test_suites = _test_suites(repo_root)
+
+    for external_module in external_modules:
+        package = packages_by_path.get(external_module.path)
+        if package is None:
+            errors.append(
+                f"external module is absent from package catalog: {external_module.path}"
+            )
+            continue
+        if package_sources[external_module.path] == "repository":
+            errors.append(
+                f"external module is repository-owned: {external_module.path}"
+            )
+        if package.distribution != external_module.python_distribution:
+            errors.append(
+                f"{external_module.path}: external distribution "
+                f"{external_module.python_distribution!r} does not match package "
+                f"catalog {package.distribution!r}"
+            )
 
     for module in manifest.modules:
         module_dir = repo_root / module.path
@@ -234,30 +368,64 @@ def validate_product_manifest(repo_root: Path, manifest: ProductManifest) -> lis
                 f"{module.path}: forbidden dependencies: "
                 + ", ".join(forbidden_dependencies)
             )
+        external_dependencies = set(module.external_dependencies)
+        unknown_external = sorted(external_dependencies - external_module_set)
+        if unknown_external:
+            errors.append(
+                f"{module.path}: external dependencies outside declared products: "
+                + ", ".join(unknown_external)
+            )
+        forbidden_external = sorted(external_dependencies & forbidden)
+        if forbidden_external:
+            errors.append(
+                f"{module.path}: forbidden external dependencies: "
+                + ", ".join(forbidden_external)
+            )
+        inactive_dependencies = set(module.inactive_dependencies)
+        unknown_inactive = sorted(inactive_dependencies - modules_by_path.keys())
+        if unknown_inactive:
+            errors.append(
+                f"{module.path}: inactive dependencies outside repository catalog: "
+                + ", ".join(unknown_inactive)
+            )
+        dependency_sets = {
+            "internal": declared_dependencies,
+            "external": external_dependencies,
+            "inactive": inactive_dependencies,
+        }
+        dependency_items = tuple(dependency_sets.items())
+        for index, (left_name, left) in enumerate(dependency_items):
+            for right_name, right in dependency_items[index + 1 :]:
+                dependency_overlap = sorted(left & right)
+                if dependency_overlap:
+                    errors.append(
+                        f"{module.path}: dependencies are both {left_name} and "
+                        f"{right_name}: " + ", ".join(dependency_overlap)
+                    )
 
         package = packages_by_path.get(module.path)
-        if module.python_distribution is None:
-            if package is not None:
+        if module.python_distribution is not None:
+            if package is None:
                 errors.append(
-                    f"{module.path}: package catalog distribution {package.distribution!r} "
-                    "is not declared by the product"
+                    f"{module.path}: Python distribution {module.python_distribution!r} "
+                    "has no package catalog entry"
                 )
-        elif package is None:
-            errors.append(
-                f"{module.path}: Python distribution {module.python_distribution!r} "
-                "has no package catalog entry"
-            )
-        elif package.distribution != module.python_distribution:
-            errors.append(
-                f"{module.path}: product distribution {module.python_distribution!r} "
-                f"does not match package catalog {package.distribution!r}"
-            )
+            elif package.distribution != module.python_distribution:
+                errors.append(
+                    f"{module.path}: product distribution {module.python_distribution!r} "
+                    f"does not match package catalog {package.distribution!r}"
+                )
 
         discovered = _discover_internal_dependencies(
             repo_root, module, packages_by_path, cmake_internal_packages
         )
-        undeclared = sorted(discovered - declared_dependencies)
+        accounted_dependencies = (
+            declared_dependencies | external_dependencies | inactive_dependencies
+        )
+        undeclared = sorted(discovered - accounted_dependencies)
         stale = sorted(declared_dependencies - discovered)
+        stale_external = sorted(external_dependencies - discovered)
+        stale_inactive = sorted(inactive_dependencies - discovered)
         if undeclared:
             errors.append(
                 f"{module.path}: discovered undeclared internal dependencies: "
@@ -267,6 +435,16 @@ def validate_product_manifest(repo_root: Path, manifest: ProductManifest) -> lis
             errors.append(
                 f"{module.path}: declared internal dependencies not found in metadata: "
                 + ", ".join(stale)
+            )
+        if stale_external:
+            errors.append(
+                f"{module.path}: declared external dependencies not found in metadata: "
+                + ", ".join(stale_external)
+            )
+        if stale_inactive:
+            errors.append(
+                f"{module.path}: declared inactive dependencies not found in metadata: "
+                + ", ".join(stale_inactive)
             )
 
         discovered_targets = _discover_native_targets(module_dir)
@@ -302,7 +480,7 @@ def validate_product_manifest(repo_root: Path, manifest: ProductManifest) -> lis
         owner = test_suites.get(suite)
         if owner is None:
             errors.append(f"unknown test suite: {suite}")
-        elif owner not in module_set:
+        elif module_paths_by_id.get(owner, owner) not in module_set:
             errors.append(
                 f"test suite {suite} belongs to module outside product closure: {owner}"
             )
@@ -356,6 +534,15 @@ def _repository_modules(
     for raw in data["modules"]:
         result[raw["path"]] = raw["id"]
     return result
+
+
+def _package_sources(repo_root: Path) -> dict[str, str]:
+    path = repo_root / "build-system/packages.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        raw["path"]: raw.get("source", "repository")
+        for raw in data["packages"]
+    }
 
 
 def _test_suites(repo_root: Path) -> dict[str, str]:

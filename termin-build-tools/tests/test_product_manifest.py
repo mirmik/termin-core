@@ -97,3 +97,23 @@ def test_product_manifest_rejects_unknown_fields(tmp_path: Path) -> None:
 
     with pytest.raises(ProductManifestError, match="unknown fields: fallback_source_root"):
         load_product_manifest(tmp_path, "core")
+
+
+def test_product_manifest_schema_two_accepts_explicit_external_closure(
+    tmp_path: Path,
+) -> None:
+    data = json.loads(
+        (REPO_ROOT / "build-system/products/core.json").read_text(encoding="utf-8")
+    )
+    data["schema"] = 2
+    data["external_products"] = []
+    for module in data["modules"]:
+        module["external_dependencies"] = []
+        module["inactive_dependencies"] = []
+    target = tmp_path / "build-system/products/core.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps(data), encoding="utf-8")
+
+    manifest = load_product_manifest(tmp_path, "core")
+
+    assert manifest.external_products == ()

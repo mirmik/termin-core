@@ -97,9 +97,10 @@ def _write_empty_artifact_manifest(sdk_prefix: Path) -> None:
         ),
         encoding="utf-8",
     )
+    profiles = sdk.load_sdk_profiles(REPO_ROOT)
     sdk.write_installed_sdk_product(
         sdk_prefix,
-        sdk.load_sdk_profiles(REPO_ROOT).profile("full"),
+        profiles.profile(profiles.default_profile),
     )
 
 
@@ -1924,6 +1925,36 @@ def test_runtime_manifest_records_declared_distributions_and_verifies_hashes(
         "termin",
     ]
     assert sdk.verify_python_runtime_manifest(sdk_prefix) == 0
+
+
+def test_runtime_manifest_records_distributions_from_composed_sdk_inputs(
+    tmp_path,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
+    site_packages.mkdir(parents=True)
+    _write_empty_artifact_manifest(sdk_prefix)
+    lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")
+    _write_test_distribution(site_packages, "numpy", "2.2.6", "numpy_stub")
+    _write_test_distribution(site_packages, "tcbase", "0.1.0", "tcbase")
+
+    output = sdk.write_python_runtime_manifest(
+        repo_root,
+        sdk_prefix,
+        site_packages,
+        runtime_python_abi=artifact_manifest.PythonAbiIdentity.current(),
+        packages=(),
+        additional_local_distributions=("tcbase",),
+    )
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert [(entry["name"], entry["kind"]) for entry in data["distributions"]] == [
+        ("numpy", "runtime"),
+        ("tcbase", "termin"),
+    ]
 
 
 def test_runtime_manifest_rejects_undeclared_and_modified_distributions(

@@ -10,6 +10,7 @@ from termin_build.local_wheel_artifacts import (
     LOCAL_WHEEL_MANIFEST_NAME,
     LocalWheelArtifactError,
     build_local_wheel_artifact_set,
+    compose_local_wheel_artifact_set,
     publish_local_wheel_artifact_set,
     validate_local_wheel_artifact_set,
     write_local_wheel_manifest,
@@ -136,3 +137,65 @@ def test_failed_rebuild_preserves_previous_artifact_set(tmp_path: Path) -> None:
     assert result == 1
     assert previous_wheel.read_bytes() == b"previous"
     assert (wheel_dir / LOCAL_WHEEL_MANIFEST_NAME).read_bytes() == previous_manifest
+
+
+def test_composition_replaces_previous_set_with_primary_and_input_wheels(
+    tmp_path: Path,
+) -> None:
+    sdk_prefix = tmp_path / "sdk"
+    primary = tmp_path / "primary"
+    addition = tmp_path / "addition"
+    destination = tmp_path / "composed"
+    _write_sdk_manifest(sdk_prefix)
+    for wheel_dir, filename in (
+        (primary, "graphics-1-py3-none-any.whl"),
+        (addition, "core-1-py3-none-any.whl"),
+    ):
+        wheel_dir.mkdir()
+        (wheel_dir / filename).write_bytes(filename.encode())
+        write_local_wheel_manifest(
+            wheel_dir,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=1,
+        )
+    destination.mkdir()
+    (destination / "stale-1-py3-none-any.whl").write_bytes(b"stale")
+
+    compose_local_wheel_artifact_set(
+        primary,
+        ((addition, sdk_prefix, 1),),
+        destination,
+        sdk_prefix=sdk_prefix,
+        expected_primary_wheel_count=1,
+    )
+
+    validate_local_wheel_artifact_set(
+        destination,
+        sdk_prefix=sdk_prefix,
+        expected_wheel_count=2,
+    )
+    assert not (destination / "stale-1-py3-none-any.whl").exists()
+
+
+def test_composition_rejects_wheel_filename_collisions(tmp_path: Path) -> None:
+    sdk_prefix = tmp_path / "sdk"
+    primary = tmp_path / "primary"
+    addition = tmp_path / "addition"
+    _write_sdk_manifest(sdk_prefix)
+    for wheel_dir in (primary, addition):
+        wheel_dir.mkdir()
+        (wheel_dir / "same-1-py3-none-any.whl").write_bytes(str(wheel_dir).encode())
+        write_local_wheel_manifest(
+            wheel_dir,
+            sdk_prefix=sdk_prefix,
+            expected_wheel_count=1,
+        )
+
+    with pytest.raises(LocalWheelArtifactError, match="wheel collision"):
+        compose_local_wheel_artifact_set(
+            primary,
+            ((addition, sdk_prefix, 1),),
+            tmp_path / "composed",
+            sdk_prefix=sdk_prefix,
+            expected_primary_wheel_count=1,
+        )
