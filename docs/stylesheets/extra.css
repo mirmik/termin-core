@@ -85,17 +85,17 @@ body {
 }
 
 .md-grid {
-  max-width: 82rem;
+  max-width: 68rem;
 }
 
 .md-content__inner {
-  max-width: 50rem;
+  max-width: 43rem;
   padding-bottom: 4rem;
 }
 
 .md-typeset {
-  font-size: 0.86rem;
-  line-height: 1.75;
+  font-size: 0.78rem;
+  line-height: 1.68;
 }
 
 .md-typeset h1,
@@ -107,7 +107,7 @@ body {
 
 .md-typeset h1 {
   margin: 0 0 1.2rem;
-  font-size: clamp(2.25rem, 5vw, 3.25rem);
+  font-size: clamp(2rem, 4vw, 2.65rem);
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1.03;
@@ -117,7 +117,7 @@ body {
   margin-top: 2.4em;
   padding-top: 0.45em;
   border-top: 1px solid var(--md-default-fg-color--lightest);
-  font-size: 1.62rem;
+  font-size: 1.38rem;
   font-weight: 650;
   letter-spacing: -0.02em;
 }
@@ -128,7 +128,7 @@ body {
 }
 
 .termin-lead {
-  max-width: 47rem;
+  max-width: 41rem;
   margin: 1.5rem 0 2.25rem;
   padding: 1.2rem 1.4rem 1.3rem 1.55rem;
   border: 1px solid var(--md-default-fg-color--lightest);
@@ -140,8 +140,8 @@ body {
     var(--md-default-bg-color)
   );
   font-family: var(--termin-display-font);
-  font-size: 1.28rem;
-  line-height: 1.58;
+  font-size: 1.07rem;
+  line-height: 1.55;
 }
 
 .termin-lead p {
@@ -197,11 +197,11 @@ body {
 
 @media screen and (max-width: 44.984375em) {
   .md-typeset {
-    font-size: 0.82rem;
+    font-size: 0.77rem;
   }
 
   .termin-lead {
     padding: 1rem 1rem 1.1rem 1.15rem;
-    font-size: 1.12rem;
+    font-size: 1rem;
   }
 }
