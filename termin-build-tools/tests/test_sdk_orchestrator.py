@@ -255,6 +255,19 @@ def test_graphics_sdk_profile_selects_chart_capable_native_and_csharp_stages(
     assert "build-sdk-csharp.ps1 --profile=plot-d3d11 --no-sdl" in output
 
 
+def test_windows_bindings_keep_d3d11_shader_artifacts_without_opengl() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    windows_script = (repo_root / "build-sdk-bindings.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert '$TerminBuildBuiltinShaderArtifacts = "ON"' in windows_script
+    assert (
+        'if ($TerminEnableOpenGl -eq "ON") { "d3d11;opengl330" } else { "d3d11" }'
+        in windows_script
+    )
+
+
 def test_no_sdl_disables_only_the_profiler_gui() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     root_cmake = (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
