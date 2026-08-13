@@ -21,7 +21,7 @@ $OpenGlMode = "on"
 $CcacheMode = "on"
 $UnityMode = "off"
 $PchMode = "on"
-$Profile = "full"
+$Profile = "core"
 $BuildJobs = if ($env:BUILD_JOBS) { [int]$env:BUILD_JOBS } else { [Environment]::ProcessorCount }
 $CmakeGeneratorName = if ($env:CMAKE_GENERATOR_NAME) { $env:CMAKE_GENERATOR_NAME } elseif ($env:TERMIN_CMAKE_GENERATOR) { $env:TERMIN_CMAKE_GENERATOR } else { $null }
 
@@ -45,7 +45,7 @@ function Show-Help {
     Write-Host "  --sdl             Enable SDL2 support (default)"
     Write-Host "  --no-opengl       Disable OpenGL backend; keep Vulkan render/editor targets"
     Write-Host "  --opengl          Enable desktop OpenGL targets (default)"
-    Write-Host "  --profile=NAME    SDK graph profile: full (default), graphics, or core"
+    Write-Host "  --profile=NAME    SDK graph profile: core (the only supported profile)"
     Write-Host "  --help, -h        Show this help"
     Write-Host ""
     Write-Host "Environment:"
@@ -95,8 +95,8 @@ foreach ($arg in $args) {
     }
 }
 
-if ($Profile -notin @("full", "graphics", "core")) {
-    throw "Unsupported SDK profile: $Profile. Expected 'full', 'graphics', or 'core'."
+if ($Profile -ne "core") {
+    throw "Unsupported SDK profile: $Profile. Termin Core supports only 'core'."
 }
 $env:TERMIN_SDK_PROFILE = $Profile
 
@@ -175,11 +175,7 @@ if ($oldPythonPath) {
     $env:PYTHONPATH = "$env:PYTHONPATH$([IO.Path]::PathSeparator)$oldPythonPath"
 }
 
-$DoctorProfile = switch ($Profile) {
-    "graphics" { "sdk-bindings-graphics" }
-    "core" { "sdk-bindings-core" }
-    default { "sdk-bindings" }
-}
+$DoctorProfile = "sdk-bindings"
 & $pythonExec -m termin_build.sdk --repo-root $ScriptDir doctor --profile $DoctorProfile --vulkan $TerminEnableVulkan --sdl $TerminEnableSdl --init-submodules
 if ($LASTEXITCODE -ne 0) { throw "SDK bindings preflight failed" }
 
