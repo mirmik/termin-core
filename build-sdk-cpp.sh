@@ -19,7 +19,7 @@ BUILD_JOBS="${BUILD_JOBS:-$(nproc)}"
 CCACHE_MODE="on"
 UNITY_MODE="off"
 PCH_MODE="on"
-SDK_PROFILE="full"
+SDK_PROFILE="core"
 CMAKE_GENERATOR_NAME="${CMAKE_GENERATOR_NAME:-${TERMIN_CMAKE_GENERATOR:-}}"
 
 for arg in "$@"; do
@@ -81,10 +81,14 @@ done
 
 
 case "$SDK_PROFILE" in
-    full|graphics) ;;
-    *) echo "Unsupported SDK profile: $SDK_PROFILE (expected full or graphics)"; exit 1 ;;
+    core) ;;
+    *) echo "Unsupported SDK profile: $SDK_PROFILE (termin-core has one product)"; exit 1 ;;
 esac
 export TERMIN_SDK_PROFILE="$SDK_PROFILE"
+
+VULKAN_MODE="off"
+SDL_MODE="off"
+OPENGL_MODE="off"
 
 if [[ $NO_PARALLEL -eq 1 ]]; then
     BUILD_JOBS=1
@@ -168,9 +172,6 @@ if [[ -z "$PY_EXEC" ]]; then
     exit 1
 fi
 DOCTOR_PROFILE="sdk-cpp"
-if [[ "$SDK_PROFILE" == "graphics" ]]; then
-    DOCTOR_PROFILE="sdk-cpp-graphics"
-fi
 PYTHONPATH="$SCRIPT_DIR/termin-build-tools${PYTHONPATH:+:$PYTHONPATH}" \
     "$PY_EXEC" -m termin_build.sdk --repo-root "$SCRIPT_DIR" doctor \
     --profile "$DOCTOR_PROFILE" \

@@ -12,6 +12,11 @@ import sysconfig
 import pytest
 
 from termin_build import sdk_verification
+from termin_build.sdk_profiles import load_sdk_profiles
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROFILES = load_sdk_profiles(REPO_ROOT)
 
 
 def test_installed_product_roots_include_payload_player_and_headless(
@@ -35,7 +40,10 @@ def test_installed_product_roots_include_payload_player_and_headless(
         encoding="utf-8",
     )
 
-    roots = sdk_verification._installed_product_import_roots(tmp_path)
+    roots = sdk_verification._installed_product_import_roots(
+        tmp_path,
+        product_import_roots=PROFILES.profile("full").native_import_roots,
+    )
 
     assert roots == [
         "termin.editor",
@@ -60,7 +68,7 @@ def test_graphics_import_roots_exclude_engine_product(tmp_path):
 
     roots = sdk_verification._installed_product_import_roots(
         tmp_path,
-        product_import_roots=sdk_verification._GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS,
+        product_import_roots=PROFILES.profile("graphics").native_import_roots,
     )
 
     assert roots == ["tcplot", "termin.visual_scene", "termin.gui_native"]

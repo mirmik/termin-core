@@ -1,7 +1,8 @@
-"""Build prerequisites and third-party submodule diagnostics."""
+"""Generic build prerequisite and repository-declared submodule diagnostics."""
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -9,53 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-EXPECTED_SUBMODULE_FILES = {
-    "termin-thirdparty/eigen": ("CMakeLists.txt",),
-    "termin-thirdparty/manifold": ("CMakeLists.txt",),
-    "termin-thirdparty/clipper2": ("CPP/CMakeLists.txt",),
-    "termin-thirdparty/guard": ("guard_c.h", "guard_main.h"),
-    "termin-thirdparty/zlib": ("CMakeLists.txt", "zlib.h"),
-    "termin-thirdparty/libpng": ("CMakeLists.txt", "png.h"),
-    "termin-thirdparty/libjpeg-turbo": ("CMakeLists.txt", "src/jpeglib.h"),
-    "termin-thirdparty/libwebp": ("CMakeLists.txt", "src/webp/decode.h"),
-    "termin-thirdparty/libogg": ("CMakeLists.txt", "include/ogg/ogg.h"),
-    "termin-thirdparty/libvorbis": ("CMakeLists.txt", "include/vorbis/vorbisfile.h"),
-    "termin-thirdparty/cgltf": ("cgltf.h",),
-    "termin-thirdparty/spirv-cross": ("CMakeLists.txt",),
-    "termin-thirdparty/sdl2": ("CMakeLists.txt", "include/SDL.h"),
-    "termin-thirdparty/vulkan-memory-allocator": ("include/vk_mem_alloc.h",),
-    "termin-thirdparty/openxr-sdk": ("include/openxr/openxr.h",),
-    "termin-thirdparty/recastnavigation": (
-        "Recast/CMakeLists.txt",
-        "Detour/CMakeLists.txt",
-    ),
-}
+DOCTOR_PROFILES_RELATIVE = Path("build-system/sdk-doctor-profiles.json")
 
 
-SDK_NATIVE_SUBMODULES = (
-    "termin-thirdparty/manifold",
-    "termin-thirdparty/clipper2",
-    "termin-thirdparty/recastnavigation",
-    "termin-thirdparty/eigen",
-    "termin-thirdparty/zlib",
-    "termin-thirdparty/libpng",
-    "termin-thirdparty/libjpeg-turbo",
-    "termin-thirdparty/libwebp",
-    "termin-thirdparty/libogg",
-    "termin-thirdparty/libvorbis",
-    "termin-thirdparty/cgltf",
-    "termin-thirdparty/spirv-cross",
-)
-
-SDK_GRAPHICS_SUBMODULES = (
-    "termin-thirdparty/recastnavigation",
-    "termin-thirdparty/eigen",
-    "termin-thirdparty/zlib",
-    "termin-thirdparty/libpng",
-    "termin-thirdparty/libjpeg-turbo",
-    "termin-thirdparty/libwebp",
-    "termin-thirdparty/spirv-cross",
-)
+class DoctorProfileError(ValueError):
+    """Raised when repository doctor policy violates its closed schema."""
 
 
 @dataclass(frozen=True)
@@ -70,80 +29,128 @@ class DoctorProfile:
     needs_sdk_writable: bool = False
 
 
-PROFILES = {
-    "sdk": DoctorProfile(
-        name="sdk",
-        submodules=SDK_NATIVE_SUBMODULES,
-        needs_nanobind=True,
-        needs_pip=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "sdk-cpp": DoctorProfile(
-        name="sdk-cpp",
-        submodules=SDK_NATIVE_SUBMODULES,
-        needs_sdk_writable=True,
-    ),
-    "sdk-bindings": DoctorProfile(
-        name="sdk-bindings",
-        submodules=SDK_NATIVE_SUBMODULES,
-        needs_nanobind=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "sdk-graphics": DoctorProfile(
-        name="sdk-graphics",
-        submodules=SDK_GRAPHICS_SUBMODULES,
-        needs_nanobind=True,
-        needs_pip=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "sdk-cpp-graphics": DoctorProfile(
-        name="sdk-cpp-graphics",
-        submodules=SDK_GRAPHICS_SUBMODULES,
-        needs_sdk_writable=True,
-    ),
-    "sdk-bindings-graphics": DoctorProfile(
-        name="sdk-bindings-graphics",
-        submodules=SDK_GRAPHICS_SUBMODULES,
-        needs_nanobind=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "sdk-core": DoctorProfile(
-        name="sdk-core",
-        submodules=(),
-        needs_nanobind=True,
-        needs_pip=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "sdk-bindings-core": DoctorProfile(
-        name="sdk-bindings-core",
-        submodules=(),
-        needs_nanobind=True,
-        needs_copy_backend=True,
-        needs_sdk_writable=True,
-    ),
-    "cpp-tests": DoctorProfile(
-        name="cpp-tests",
-        submodules=SDK_NATIVE_SUBMODULES + ("termin-thirdparty/guard",),
-    ),
-}
+@dataclass(frozen=True)
+class DoctorProfiles:
+    profiles: tuple[DoctorProfile, ...]
+    expected_submodule_files: dict[str, tuple[str, ...]]
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return tuple(profile.name for profile in self.profiles)
+
+    def profile(self, name: str) -> DoctorProfile:
+        for profile in self.profiles:
+            if profile.name == name:
+                return profile
+        raise DoctorProfileError(
+            f"unsupported doctor profile {name!r}; expected: {', '.join(self.names)}"
+        )
 
 
-def _normalize_path(path: str) -> str:
-    return path.replace("\\", "/")
+def load_doctor_profiles(repo_root: Path) -> DoctorProfiles:
+    path = repo_root / DOCTOR_PROFILES_RELATIVE
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise DoctorProfileError(f"cannot read doctor profile manifest {path}: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != {"schema", "submodules", "profiles"}:
+        raise DoctorProfileError(f"{path}: invalid root schema")
+    if raw["schema"] != 1:
+        raise DoctorProfileError(f"{path}: unsupported schema {raw['schema']!r}")
+    raw_submodules = raw["submodules"]
+    if not isinstance(raw_submodules, dict):
+        raise DoctorProfileError(f"{path}: submodules must be an object")
+    expected: dict[str, tuple[str, ...]] = {}
+    for submodule, files in raw_submodules.items():
+        normalized = _safe_relative_path(submodule, f"{path}: submodule")
+        expected[normalized] = _string_list(files, f"{path}: submodules.{submodule}")
+    raw_profiles = raw["profiles"]
+    if not isinstance(raw_profiles, list) or not raw_profiles:
+        raise DoctorProfileError(f"{path}: profiles must be a non-empty list")
+    profiles = tuple(
+        _parse_profile(value, f"{path}: profiles[{index}]")
+        for index, value in enumerate(raw_profiles)
+    )
+    names = tuple(profile.name for profile in profiles)
+    if len(names) != len(set(names)):
+        raise DoctorProfileError(f"{path}: duplicate doctor profile id")
+    undeclared = sorted(
+        {submodule for profile in profiles for submodule in profile.submodules}
+        - expected.keys()
+    )
+    if undeclared:
+        raise DoctorProfileError(
+            f"{path}: profiles reference undeclared submodules: {', '.join(undeclared)}"
+        )
+    return DoctorProfiles(profiles=profiles, expected_submodule_files=expected)
 
 
-def _submodule_ready(repo_root: Path, relative_path: str) -> bool:
+def _parse_profile(value: object, context: str) -> DoctorProfile:
+    if not isinstance(value, dict):
+        raise DoctorProfileError(f"{context}: expected object")
+    fields = {
+        "id",
+        "submodules",
+        "needs_nanobind",
+        "needs_pip",
+        "needs_copy_backend",
+        "needs_sdk_writable",
+    }
+    if set(value) != fields:
+        raise DoctorProfileError(f"{context}: fields must be exactly {sorted(fields)!r}")
+    flags = {}
+    for field in fields - {"id", "submodules"}:
+        flag = value[field]
+        if not isinstance(flag, bool):
+            raise DoctorProfileError(f"{context}.{field}: expected boolean")
+        flags[field] = flag
+    return DoctorProfile(
+        name=_non_empty_string(value["id"], f"{context}.id"),
+        submodules=tuple(
+            _safe_relative_path(path, f"{context}.submodules")
+            for path in _string_list(value["submodules"], f"{context}.submodules")
+        ),
+        **flags,
+    )
+
+
+def _non_empty_string(value: object, context: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise DoctorProfileError(f"{context}: expected non-empty string")
+    return value
+
+
+def _string_list(value: object, context: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise DoctorProfileError(f"{context}: expected list")
+    result = tuple(
+        _non_empty_string(item, f"{context}[{index}]")
+        for index, item in enumerate(value)
+    )
+    if len(result) != len(set(result)):
+        raise DoctorProfileError(f"{context}: duplicate value")
+    return result
+
+
+def _safe_relative_path(value: object, context: str) -> str:
+    text = _non_empty_string(value, context).replace("\\", "/")
+    path = Path(text)
+    if path.is_absolute() or ".." in path.parts:
+        raise DoctorProfileError(f"{context}: expected safe relative path")
+    return path.as_posix()
+
+
+def _submodule_ready(
+    repo_root: Path,
+    relative_path: str,
+    expected_files: dict[str, tuple[str, ...]],
+) -> bool:
     full_path = repo_root / relative_path
     if not full_path.is_dir():
         return False
-    expected_files = EXPECTED_SUBMODULE_FILES.get(relative_path)
-    if expected_files:
-        return all((full_path / expected).exists() for expected in expected_files)
+    required = expected_files.get(relative_path, ())
+    if required:
+        return all((full_path / expected).exists() for expected in required)
     try:
         next(full_path.iterdir())
     except StopIteration:
@@ -151,23 +158,28 @@ def _submodule_ready(repo_root: Path, relative_path: str) -> bool:
     return True
 
 
-def missing_submodules(repo_root: Path, paths: list[str]) -> list[str]:
-    normalized = []
-    seen = set()
-    for path in paths:
-        normalized_path = _normalize_path(path)
-        if normalized_path in seen:
-            continue
-        seen.add(normalized_path)
-        normalized.append(normalized_path)
+def missing_submodules(
+    repo_root: Path,
+    paths: list[str],
+    *,
+    expected_files: dict[str, tuple[str, ...]] | None = None,
+) -> list[str]:
+    expected_files = expected_files or {}
+    normalized = list(dict.fromkeys(path.replace("\\", "/") for path in paths))
     return [
-        path for path in normalized
-        if not _submodule_ready(repo_root, path)
+        path
+        for path in normalized
+        if not _submodule_ready(repo_root, path, expected_files)
     ]
 
 
-def ensure_submodules(repo_root: Path, paths: list[str]) -> int:
-    missing = missing_submodules(repo_root, paths)
+def ensure_submodules(
+    repo_root: Path,
+    paths: list[str],
+    *,
+    expected_files: dict[str, tuple[str, ...]] | None = None,
+) -> int:
+    missing = missing_submodules(repo_root, paths, expected_files=expected_files)
     if not missing:
         return 0
     if shutil.which("git") is None:
@@ -182,35 +194,22 @@ def ensure_submodules(repo_root: Path, paths: list[str]) -> int:
     for path in missing:
         print(f"  - {path}")
     command = [
-        "git",
-        "-C",
-        str(repo_root),
-        "submodule",
-        "update",
-        "--init",
-        "--recursive",
-        "--",
-        *missing,
+        "git", "-C", str(repo_root), "submodule", "update", "--init",
+        "--recursive", "--", *missing,
     ]
     if sys.platform == "win32":
         git_executable = Path(shutil.which("git") or "")
         git_bash = git_executable.parent.parent / "bin" / "sh.exe"
         if git_bash.is_file():
-            # Git for Windows implements `git submodule` as a shell script.
-            # Starting it through the bundled login shell gives that script the
-            # /usr/bin tools it requires even when only Git's cmd/ directory is
-            # present in the caller's PATH.
             command = [
-                str(git_bash),
-                "-lc",
-                'exec git "$@"',
-                "termin-git",
-                *command[1:],
+                str(git_bash), "-lc", 'exec git "$@"', "termin-git", *command[1:]
             ]
     result = subprocess.run(command, check=False)
     if result.returncode != 0:
         return result.returncode
-    still_missing = missing_submodules(repo_root, missing)
+    still_missing = missing_submodules(
+        repo_root, missing, expected_files=expected_files
+    )
     if still_missing:
         print(
             "ERROR: required git submodules are still missing after initialization:",
@@ -222,10 +221,13 @@ def ensure_submodules(repo_root: Path, paths: list[str]) -> int:
     return 0
 
 
-def profile_submodules(profile: DoctorProfile, vulkan: str, sdl: str = "OFF") -> list[str]:
-    paths = list(profile.submodules)
-    if vulkan == "ON":
-        paths.append("termin-thirdparty/vulkan-memory-allocator")
-    if sdl == "ON":
-        paths.append("termin-thirdparty/sdl2")
-    return paths
+def profile_submodules(
+    profile: DoctorProfile,
+    vulkan: str,
+    sdl: str = "OFF",
+) -> list[str]:
+    # Backend-specific requirements are product policy and must be declared by
+    # the repository as ordinary profile submodules. The arguments remain for
+    # CLI compatibility while repositories migrate their callers.
+    del vulkan, sdl
+    return list(profile.submodules)

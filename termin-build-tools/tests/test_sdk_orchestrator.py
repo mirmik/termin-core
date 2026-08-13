@@ -21,6 +21,41 @@ from termin_build.package_manifest import PackageEntry
 from termin_build.setup_helpers import native_extensions_for_source
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _repository_profiles_for_mechanism_tests(monkeypatch):
+    """Use the real repository recipe when a synthetic repo omits product policy."""
+    real_loader = sdk.load_sdk_profiles
+    real_packages = sdk.load_manifest
+    real_payloads = sdk.load_application_payloads
+
+    def load_profiles(repo_root: Path):
+        manifest = repo_root / "build-system" / "sdk-profiles.json"
+        return real_loader(repo_root if manifest.is_file() else REPO_ROOT)
+
+    monkeypatch.setattr(sdk, "load_sdk_profiles", load_profiles)
+    monkeypatch.setattr(
+        sdk,
+        "load_manifest",
+        lambda repo_root: real_packages(
+            repo_root
+            if (repo_root / "build-system" / "packages.json").is_file()
+            else REPO_ROOT
+        ),
+    )
+    monkeypatch.setattr(
+        sdk,
+        "load_application_payloads",
+        lambda repo_root: real_payloads(
+            repo_root
+            if (repo_root / "build-system" / "application-python-payloads.json").is_file()
+            else REPO_ROOT
+        ),
+    )
+
+
 def _write_test_distribution(
     site_packages: Path,
     name: str,
@@ -61,6 +96,10 @@ def _write_empty_artifact_manifest(sdk_prefix: Path) -> None:
             }
         ),
         encoding="utf-8",
+    )
+    sdk.write_installed_sdk_product(
+        sdk_prefix,
+        sdk.load_sdk_profiles(REPO_ROOT).profile("full"),
     )
 
 
@@ -438,13 +477,19 @@ def test_native_extensions_for_source_reads_manifest():
     ]
 
 
-def test_sdk_runtime_seed_includes_pytest_and_excludes_heavy_optional_packages():
+def test_repository_profiles_own_distinct_runtime_locks():
     repo_root = sdk.repo_root_from(Path(__file__))
-    runtime_requirement_names = set(sdk._load_runtime_lock(repo_root))
+    profiles = sdk.load_sdk_profiles(repo_root)
+    full_requirement_names = set(
+        sdk._load_runtime_lock(repo_root, profiles.profile("full").runtime_lock)
+    )
+    core_requirement_names = set(
+        sdk._load_runtime_lock(repo_root, profiles.profile("core").runtime_lock)
+    )
 
-    assert "scipy" not in runtime_requirement_names
-    assert "pyopengl" not in runtime_requirement_names
-    assert runtime_requirement_names == {
+    assert "scipy" not in full_requirement_names
+    assert "pyopengl" not in full_requirement_names
+    assert full_requirement_names == {
         "colorama",
         "exceptiongroup",
         "glfw",
@@ -459,6 +504,7 @@ def test_sdk_runtime_seed_includes_pytest_and_excludes_heavy_optional_packages()
         "typing-extensions",
         "watchdog",
     }
+    assert core_requirement_names == {"packaging"}
 
 
 def test_repo_installs_umbrella_termin_cmake_package():
@@ -726,7 +772,9 @@ def test_target_metadata_cleanup_does_not_follow_record_paths_outside_target(
 def test_verify_sdk_python_launcher_rejects_missing_launcher(tmp_path, capsys):
     sdk_prefix = tmp_path / "sdk"
 
-    assert sdk.verify_sdk_python_launcher(sdk_prefix) == 1
+    assert sdk.verify_sdk_python_launcher(
+        sdk_prefix, import_roots=("tcbase",)
+    ) == 1
     assert "SDK Python launcher is missing" in capsys.readouterr().err
 
 
@@ -766,7 +814,9 @@ def test_verify_sdk_python_launcher_checks_platform_layout_isolation_and_imports
     monkeypatch.setattr(sdk_verification, "_is_windows", lambda: is_windows)
     monkeypatch.setattr(sdk.subprocess, "run", fake_run)
 
-    assert sdk.verify_sdk_python_launcher(sdk_prefix) == 0
+    assert sdk.verify_sdk_python_launcher(
+        sdk_prefix, import_roots=("tcbase", "termin.engine")
+    ) == 0
     assert len(commands) == 2
     assert "termin.engine" in commands[1][0][-1]
     for _command, kwargs in commands:
@@ -805,7 +855,7 @@ def test_sdk_python_launcher_uses_graphics_smoke_imports(tmp_path, monkeypatch):
 
     assert sdk.verify_sdk_python_launcher(
         sdk_prefix,
-        require_engine_package=False,
+        import_roots=("tcbase", "tcplot", "termin.visual_scene"),
     ) == 0
     smoke = commands[1][0][-1]
     assert "tcplot" in smoke
@@ -1919,5 +1969,31 @@ def test_runtime_manifest_rejects_undeclared_and_modified_distributions(
 
     payload.write_text("VALUE = 2\n", encoding="utf-8")
     _write_test_distribution(site_packages, "unexpected", "1.0", "unexpected")
+
+    assert sdk.verify_python_runtime_manifest(sdk_prefix) == 1
+
+
+def test_runtime_manifest_rejects_tampered_installed_product_recipe(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    sdk_prefix = repo_root / "sdk"
+    site_packages = sdk_prefix / "lib" / "python3.10" / "site-packages"
+    site_packages.mkdir(parents=True)
+    _write_empty_artifact_manifest(sdk_prefix)
+    lock_path = repo_root / sdk.RUNTIME_LOCK_RELATIVE
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("numpy==2.2.6\n", encoding="utf-8")
+    _write_test_distribution(site_packages, "numpy", "2.2.6", "numpy_stub")
+    monkeypatch.setattr(sdk_runtime_metadata, "load_manifest", lambda _root: [])
+
+    sdk.write_python_runtime_manifest(
+        repo_root,
+        sdk_prefix,
+        site_packages,
+        runtime_python_abi=artifact_manifest.PythonAbiIdentity.current(),
+    )
+    (sdk_prefix / "sdk-product.json").write_text("{}\n", encoding="utf-8")
 
     assert sdk.verify_python_runtime_manifest(sdk_prefix) == 1

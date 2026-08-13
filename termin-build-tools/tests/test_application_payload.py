@@ -265,6 +265,10 @@ def test_application_native_extension_is_not_attributed_to_a_distribution(
     installed_artifact.write_bytes(b"native")
     monkeypatch.setattr(sdk, "_native_runtime_dependencies", lambda _path: [])
     monkeypatch.setattr(sdk, "write_desktop_capabilities", lambda **_kwargs: None)
+    repository_profiles = sdk.load_sdk_profiles(_repo_root())
+    monkeypatch.setattr(
+        sdk, "load_sdk_profiles", lambda _repo_root: repository_profiles
+    )
 
     assert sdk.write_artifacts(repo_root, repo_root / "build", sdk_root) == 0
 

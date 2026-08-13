@@ -21,7 +21,7 @@ from .python_interpreter import resolve_python_executable
 
 RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
 RUNTIME_MANIFEST_NAME = "python-runtime-manifest.json"
-RUNTIME_MANIFEST_SCHEMA = 3
+RUNTIME_MANIFEST_SCHEMA = 4
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
     "Pillow": ("PIL", "pillow.libs", "Pillow.libs"),
 }
@@ -99,8 +99,11 @@ _EXACT_REQUIREMENT_RE = re.compile(
 )
 
 
-def _load_runtime_lock(repo_root: Path) -> dict[str, tuple[str, str]]:
-    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+def _load_runtime_lock(
+    repo_root: Path,
+    runtime_lock_relative: Path = RUNTIME_LOCK_RELATIVE,
+) -> dict[str, tuple[str, str]]:
+    lock_path = repo_root / runtime_lock_relative
     if not lock_path.is_file():
         raise RuntimeError(f"SDK Python runtime lock is missing: {lock_path}")
 
@@ -264,20 +267,26 @@ def write_python_runtime_manifest(
     *,
     runtime_python_abi: PythonAbiIdentity,
     packages: Iterable[PackageEntry] | None = None,
+    runtime_lock_relative: Path = RUNTIME_LOCK_RELATIVE,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
     artifact_manifest.require_kind(SDK_MANIFEST_KIND)
     artifact_manifest.validate_all(expected_python_abi=runtime_python_abi)
-    runtime_lock = _load_runtime_lock(repo_root)
+    runtime_lock = _load_runtime_lock(repo_root, runtime_lock_relative)
     effective_packages = packages if packages is not None else load_manifest(repo_root)
     local_names = {
         _normalized_distribution_name(package.distribution)
         for package in effective_packages
     }
     entries = _runtime_distribution_entries(site_packages, runtime_lock, local_names)
-    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    lock_path = repo_root / runtime_lock_relative
     installed_lock = sdk_prefix / "python-runtime-lock.txt"
     shutil.copy2(lock_path, installed_lock)
+    installed_product = sdk_prefix / "sdk-product.json"
+    if not installed_product.is_file():
+        raise RuntimeError(
+            f"installed SDK product manifest is missing: {installed_product}"
+        )
     artifact_manifest.python_abi.require_matches(
         runtime_python_abi,
         context="SDK artifact/runtime Python ABI",
@@ -289,6 +298,8 @@ def write_python_runtime_manifest(
         "platform": sys.platform,
         "runtime_lock": installed_lock.relative_to(sdk_prefix).as_posix(),
         "runtime_lock_sha256": _sha256_file(installed_lock),
+        "sdk_product": installed_product.relative_to(sdk_prefix).as_posix(),
+        "sdk_product_sha256": _sha256_file(installed_product),
         "site_packages": site_packages.relative_to(sdk_prefix).as_posix(),
         "distributions": entries,
     }

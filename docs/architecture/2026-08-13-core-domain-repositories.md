@@ -98,6 +98,15 @@ inputs, test suites and forbidden domain dependency roots. Build profiles and
 the future extracted repository consume this product declaration rather than
 maintaining a second hand-written Core list.
 
+SDK orchestration policy is repository-owned as well. The typed mechanism in
+`termin-build-tools` loads `build-system/sdk-profiles.json` and
+`build-system/sdk-doctor-profiles.json`; it contains no built-in list of Core,
+Graphics or Full package roots. A built SDK records the resolved verification
+contract in `sdk-product.json`, and the Python runtime manifest hash-binds that
+file. Relocation and release verification therefore use installed evidence,
+not a source-repository profile switch. Core has its own minimal runtime lock;
+it does not inherit editor/test/graphics runtime dependencies from Full.
+
 Core owns the canonical bundled Python runtime and its ABI identity. Domain
 packs contribute wheels and native extensions, but do not ship competing Python
 runtimes or bootstrap implementations. Native-only consumers may use the Core

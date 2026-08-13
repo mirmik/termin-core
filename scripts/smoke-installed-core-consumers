@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Build and run consumers against a copied, installed Core SDK only."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_ROOT = REPO_ROOT / "tests" / "installed-core-consumers"
+
+
+def _run(command: list[str], *, env: dict[str, str], cwd: Path | None = None) -> None:
+    print("+", subprocess.list2cmdline(command), flush=True)
+    result = subprocess.run(command, cwd=cwd, env=env, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"command failed with exit code {result.returncode}: "
+            + subprocess.list2cmdline(command)
+        )
+
+
+def _clean_environment(sdk_root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    for name in (
+        "CMAKE_PREFIX_PATH",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONUSERBASE",
+        "TERMIN_PYTHON_OVERLAY",
+        "TERMIN_SDK",
+    ):
+        env.pop(name, None)
+    library_path_name = "PATH" if os.name == "nt" else "LD_LIBRARY_PATH"
+    runtime_paths = [sdk_root / "bin", sdk_root / "lib"]
+    existing = env.get(library_path_name)
+    if existing:
+        runtime_paths.append(Path(existing))
+    env[library_path_name] = os.pathsep.join(str(path) for path in runtime_paths)
+    return env
+
+
+def _executable(build_root: Path, name: str) -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    matches = sorted(build_root.rglob(name + suffix))
+    if len(matches) != 1:
+        raise RuntimeError(f"expected one {name + suffix} in {build_root}, got {matches}")
+    return matches[0]
+
+
+def _extension(build_root: Path) -> Path:
+    suffix = ".pyd" if os.name == "nt" else ".so"
+    matches = sorted(build_root.rglob(f"core_fixture*{suffix}"))
+    if len(matches) != 1:
+        raise RuntimeError(f"expected one Core fixture extension, got {matches}")
+    return matches[0]
+
+
+def _configure(
+    source_root: Path,
+    build_root: Path,
+    sdk_root: Path,
+    python: Path,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[bytes]:
+    command = [
+        "cmake",
+        "-S",
+        str(source_root),
+        "-B",
+        str(build_root),
+        "-DCORE_SDK_ROOT=" + str(sdk_root),
+        "-DCMAKE_PREFIX_PATH=" + str(sdk_root),
+        "-DPython_EXECUTABLE=" + str(python),
+        "-DCMAKE_BUILD_TYPE=Release",
+    ]
+    print("+", subprocess.list2cmdline(command), flush=True)
+    return subprocess.run(command, env=env, check=False)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sdk-root", type=Path, required=True)
+    parser.add_argument("--work-root", type=Path)
+    args = parser.parse_args()
+
+    source_sdk = args.sdk_root.resolve()
+    launcher_name = "termin_python.exe" if os.name == "nt" else "termin_python"
+    if not (source_sdk / "bin" / launcher_name).is_file():
+        parser.error(f"Core SDK launcher is missing: {source_sdk / 'bin' / launcher_name}")
+
+    temporary = None
+    if args.work_root is None:
+        temporary = tempfile.TemporaryDirectory(prefix="termin-core-consumers-")
+        work_root = Path(temporary.name)
+    else:
+        work_root = args.work_root.resolve()
+        if work_root.exists():
+            parser.error(f"work root already exists: {work_root}")
+        work_root.mkdir(parents=True)
+
+    try:
+        relocated_sdk = work_root / "sdk"
+        fixture = work_root / "consumer"
+        build_root = work_root / "build"
+        shutil.copytree(source_sdk, relocated_sdk, symlinks=True)
+        shutil.copytree(FIXTURE_ROOT, fixture)
+        python = relocated_sdk / "bin" / launcher_name
+        env = _clean_environment(relocated_sdk)
+
+        missing_package = relocated_sdk / "lib" / "cmake" / "termin_dispatch"
+        hidden_package = work_root / "termin_dispatch-package"
+        missing_package.rename(hidden_package)
+        try:
+            negative = _configure(
+                fixture, work_root / "negative-build", relocated_sdk, python, env
+            )
+            if negative.returncode == 0:
+                raise RuntimeError(
+                    "consumer configured without the installed termin_dispatch package; "
+                    "a source/system fallback is active"
+                )
+        finally:
+            hidden_package.rename(missing_package)
+
+        configured = _configure(fixture, build_root, relocated_sdk, python, env)
+        if configured.returncode != 0:
+            raise RuntimeError("installed Core consumer configuration failed")
+        _run(["cmake", "--build", str(build_root), "--config", "Release"], env=env)
+        _run([str(_executable(build_root, "core_native_consumer"))], env=env)
+        _run(
+            [str(_executable(build_root, "core_python_host_consumer")), str(relocated_sdk)],
+            env=env,
+        )
+
+        extension = _extension(build_root)
+        probe = (
+            "import sys; "
+            f"sys.path.insert(0, {str(extension.parent)!r}); "
+            "import core_fixture; "
+            "version, value = core_fixture.probe(); "
+            "assert version and value == 42"
+        )
+        _run([str(python), "-I", "-c", probe], env=env)
+
+        imports = (
+            "import tcbase, termin.dispatch, termin.inspect, termin.mcp; "
+            "print('Core Python imports: OK')"
+        )
+        _run([str(python), "-I", "-c", imports], env=env)
+        print("Installed relocated Core consumers: OK")
+        return 0
+    except (OSError, RuntimeError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    finally:
+        if temporary is not None:
+            temporary.cleanup()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -13,13 +13,25 @@ from termin_build import (
     sdk_verification,
 )
 from termin_build.package_manifest import NativeExtension, PackageEntry
-from termin_build.sdk_doctor import PROFILES
+from termin_build.sdk_doctor import load_doctor_profiles
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DOCTOR_PROFILES = load_doctor_profiles(REPO_ROOT)
+SDK_PROFILES = sdk.load_sdk_profiles(REPO_ROOT)
+
+
+@pytest.fixture(autouse=True)
+def _repository_doctor_profiles(monkeypatch):
+    monkeypatch.setattr(sdk, "load_doctor_profiles", lambda _root: DOCTOR_PROFILES)
+    monkeypatch.setattr(sdk, "load_sdk_profiles", lambda _root: SDK_PROFILES)
 
 
 @pytest.mark.parametrize("profile_name", ["sdk", "sdk-cpp", "sdk-bindings", "cpp-tests"])
 def test_native_build_profiles_require_shader_compiler_submodules(profile_name):
-    assert "termin-thirdparty/eigen" in PROFILES[profile_name].submodules
-    assert "termin-thirdparty/spirv-cross" in PROFILES[profile_name].submodules
+    profile = DOCTOR_PROFILES.profile(profile_name)
+    assert "termin-thirdparty/eigen" in profile.submodules
+    assert "termin-thirdparty/spirv-cross" in profile.submodules
 
 
 @pytest.mark.parametrize(
@@ -27,12 +39,12 @@ def test_native_build_profiles_require_shader_compiler_submodules(profile_name):
     ["sdk-graphics", "sdk-cpp-graphics", "sdk-bindings-graphics"],
 )
 def test_graphics_build_profiles_require_spirv_cross(profile_name):
-    assert "termin-thirdparty/spirv-cross" in PROFILES[profile_name].submodules
+    assert "termin-thirdparty/spirv-cross" in DOCTOR_PROFILES.profile(profile_name).submodules
 
 
 @pytest.mark.parametrize("profile_name", ["sdk-core", "sdk-bindings-core"])
 def test_core_build_profiles_have_no_graphics_submodules(profile_name):
-    assert PROFILES[profile_name].submodules == ()
+    assert DOCTOR_PROFILES.profile(profile_name).submodules == ()
 
 
 def test_core_product_boundary_rejects_forbidden_domain_artifact(tmp_path):
@@ -71,7 +83,9 @@ def test_sdk_doctor_profile_checks_copy_backend(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sdk, "_nanobind_error", lambda: None)
     monkeypatch.setattr(sdk, "_pip_error", lambda: None)
     monkeypatch.setattr(sdk, "_pip_cache_warning", lambda: None)
-    monkeypatch.setattr(sdk, "missing_submodules", lambda _repo_root, _paths: [])
+    monkeypatch.setattr(
+        sdk, "missing_submodules", lambda _repo_root, _paths, **_kwargs: []
+    )
 
     result = sdk.doctor(
         repo_root=tmp_path,
@@ -93,7 +107,9 @@ def test_sdk_doctor_profile_checks_pip(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sdk, "_nanobind_error", lambda: None)
     monkeypatch.setattr(sdk, "_pip_error", lambda: "pip is not available")
     monkeypatch.setattr(sdk, "_pip_cache_warning", lambda: None)
-    monkeypatch.setattr(sdk, "missing_submodules", lambda _repo_root, _paths: [])
+    monkeypatch.setattr(
+        sdk, "missing_submodules", lambda _repo_root, _paths, **_kwargs: []
+    )
 
     result = sdk.doctor(
         repo_root=tmp_path,

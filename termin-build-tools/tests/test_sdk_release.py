@@ -25,7 +25,7 @@ def _minimal_sdk(tmp_path: Path, *, platform: str = "win32") -> Path:
     (sdk / "python-runtime-manifest.json").write_text(
         json.dumps(
             {
-                "schema": 3,
+                "schema": 4,
                 "platform": platform,
                 "native_build_id": "0123456789abcdefghij",
                 "python_abi": abi,

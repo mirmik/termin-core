@@ -1,112 +1,48 @@
-# Termin
+# Termin Core
 
-Termin — активно развивающийся 3D-движок и редактор для интерактивных
-приложений, игр, робототехники и физического моделирования. Проект объединяет
-редактирование сцен, компонентную модель, рендеринг, симуляцию и сборку
-приложений в одном workflow.
+Termin Core is the independently buildable common foundation for Termin
+domain SDKs. It owns common values and geometry, deferred dispatch, inspection
+contracts, the canonical free-threaded Python runtime and nanobind ABI,
+embedded-Python hosting, and process-neutral MCP support.
 
-> [!IMPORTANT]
-> Termin находится в активной разработке. API, формат проектов и отдельные
-> пользовательские сценарии пока могут меняться без обратной совместимости.
-> Основной способ получить Termin — собрать SDK из исходников.
+Core deliberately contains no graphics, image, mesh, asset, scene, physics,
+editor or engine facilities. Domain repositories consume a versioned installed
+Core SDK; sibling source checkouts are not a supported dependency mechanism.
 
-## Что уже есть
+## Build
 
-- **Нативный редактор сцен:** иерархия сущностей, 3D viewport, инспектор
-  свойств, project browser, undo/redo и Play Mode.
-- **Сцены и компоненты:** сущности образуют иерархию, а поведение собирается из
-  C++- и Python-компонентов.
-- **Графика:** материалы, текстуры, PBR-рендеринг, источники света, тени,
-  настраиваемые render targets и pipelines.
-- **Физика и моделирование:** коллизии, rigid-body dynamics, кинематика,
-  навигация и специализированные FEM/QP-модели.
-- **Ресурсы:** встроенные ресурсы проекта и импорт GLB/glTF-сцен, мешей,
-  материалов и анимаций.
-- **Расширение проекта:** Python- и C++-модули с интеграцией в редактор и
-  runtime.
-- **Сборка приложений:** самостоятельные desktop bundles, Android/Vulkan и
-  Quest/OpenXR APK через project build profiles.
-
-## Быстрый запуск
-
-Для сборки из checkout нужны Git, CMake, C/C++ toolchain и системный Python,
-запускающий build orchestration. Точный Python runtime и его зависимости
-формируются самим SDK из закреплённых версий; первая сборка требует доступ к
-сети.
-
-На Linux выполните:
+The repository is one product, so there is no SDK profile or graphics-backend
+selection:
 
 ```bash
 ./build-sdk.sh
 ```
 
-На Windows используйте соответствующий PowerShell-скрипт:
+On Windows:
 
 ```powershell
 .\build-sdk.ps1
 ```
 
-После сборки можно запустить launcher:
+The result is written to `sdk/` and contains installed CMake packages, headers,
+libraries, the isolated `bin/termin_python` launcher, Core wheels, provenance
+manifests and the canonical CPython 3.14t runtime. The first build may download
+the exact toolchain inputs recorded under `build-system/`.
+
+Verify installed external consumption and relocation with:
 
 ```bash
-./run-termin.sh
+./sdk/bin/termin_python -I scripts/smoke-installed-core-consumers --sdk-root sdk
+./sdk/bin/termin_python -m termin_build.relocated_sdk_smoke --sdk-root sdk
 ```
 
-Или сразу открыть готовую физическую сцену:
+Run the repository tests through `./run-tests.sh` after initializing the one
+test-only submodule:
 
 ```bash
-./sdk/bin/termin_editor \
-  test-projects/desktop-physics-showcase/DesktopPhysicsShowcase.terminproj
-```
-
-Нажмите **Play** на панели редактора или клавишу **F5**. Тела начнут падать,
-сталкиваться с ареной и отбрасывать тени. Повторный переход из Play Mode
-возвращает сцену к сохранённому состоянию.
-
-Подробный маршрут от сборки до собственного проекта находится в
-[первых шагах](docs/getting-started.md).
-
-## Новый проект
-
-`termin` — общая командная точка входа SDK. Из корня checkout временно добавьте
-её в текущий shell, затем создайте проект:
-
-```bash
-export PATH="$PWD/sdk/bin:$PATH"
-mkdir MyTerminProject
-cd MyTerminProject
-termin init
-termin editor .
-```
-
-Команда `termin init` создаёт минимальный проект с готовой сценой: камерой,
-освещением, плоскостью и кубом. Существующие project-owned файлы она не
-перезаписывает.
-
-## Документация
-
-- [Первые шаги](docs/getting-started.md) — собрать SDK, посмотреть showcase и
-  создать первый проект.
-- [Документация Termin](docs/index.md) — пользовательские и инженерные маршруты
-  чтения.
-- [Termin CLI](termin-app/docs/termin-cli.md) — команды проекта, build profiles
-  и запуск собранного приложения.
-- [Система сборки](docs/build-system.md) — профили SDK, toolchain и устройство
-  артефактов.
-- [Карта модулей](docs/modules.md) — границы подсистем монорепозитория.
-- [Тестовые проекты](test-projects/README.md) — законченные сцены для desktop,
-  Android и Quest/OpenXR.
-
-## Разработка Termin
-
-Полная сборка и тесты запускаются через единые точки входа:
-
-```bash
-./build-sdk.sh
+git submodule update --init termin-thirdparty/guard
 ./run-tests.sh
-./build-docs.sh
 ```
 
-Python редактора и bundled-библиотеки исполняются через
-`sdk/bin/termin_python`. Для тестового source overlay используется
-`./setup-sdk-python-env.sh`; root virtual environment проекту не требуется.
+See [the repository boundary](docs/architecture/2026-08-13-core-domain-repositories.md)
+and [the extraction plan](docs/plans/2026-08-13-termin-core-repository-extraction.md).

@@ -36,25 +36,10 @@ from .sdk_runtime_metadata import (
     _verify_distribution_records,
 )
 from .python_abi import PythonAbiError, PythonAbiIdentity
+from .sdk_profiles import SdkProfileError, load_installed_sdk_product
 from .wheelhouse import require_wheel_python_abi as _require_wheel_python_abi
 
 
-_FULL_PRODUCT_IMPORT_GRAPH_ROOTS = (
-    "termin.engine",
-    "termin.player",
-    "termin.player.headless",
-)
-_GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS = (
-    "tcplot",
-    "termin.visual_scene",
-    "termin.gui_native",
-)
-_CORE_PRODUCT_IMPORT_GRAPH_ROOTS = (
-    "tcbase",
-    "termin.dispatch",
-    "termin.inspect",
-    "termin.mcp",
-)
 _GIL_WARNING_FILTER = (
     r"error:The global interpreter lock \(GIL\) has been enabled:RuntimeWarning"
 )
@@ -191,33 +176,23 @@ def verify_sdk_artifacts(sdk_prefix: Path, build_dir: Path) -> int:
 def verify_sdk(
     sdk_prefix: Path,
     build_dir: Path,
-    *,
-    require_product_hosts: bool = True,
-    require_engine_package: bool = True,
-    core_only: bool = False,
-    forbidden_artifact_markers: tuple[str, ...] = (),
 ) -> int:
     result = verify_sdk_artifacts(sdk_prefix, build_dir)
     if result != 0:
         return result
-    return verify_relocated_sdk(
-        sdk_prefix,
-        require_product_hosts=require_product_hosts,
-        require_engine_package=require_engine_package,
-        core_only=core_only,
-        forbidden_artifact_markers=forbidden_artifact_markers,
-    )
+    return verify_relocated_sdk(sdk_prefix)
 
 
 def verify_relocated_sdk(
     sdk_prefix: Path,
-    *,
-    require_product_hosts: bool = True,
-    require_engine_package: bool = True,
-    core_only: bool = False,
-    forbidden_artifact_markers: tuple[str, ...] = (),
 ) -> int:
     """Verify a self-contained SDK tree without consulting its build tree."""
+
+    try:
+        product = load_installed_sdk_product(sdk_prefix)
+    except SdkProfileError as error:
+        print(f"FAILED: {error}", file=sys.stderr)
+        return 1
 
     result = verify_no_duplicate_libraries(sdk_prefix)
     if result != 0:
@@ -231,29 +206,26 @@ def verify_relocated_sdk(
     result = verify_application_python_payloads(sdk_prefix)
     if result != 0:
         return result
-    result = verify_forbidden_product_content(sdk_prefix, forbidden_artifact_markers)
+    result = verify_forbidden_product_content(
+        sdk_prefix, product.forbidden_artifact_markers
+    )
     if result != 0:
         return result
-    if require_product_hosts:
-        result = verify_embedded_python_hosts(sdk_prefix)
+    if product.embedded_python_hosts:
+        result = verify_embedded_python_hosts(
+            sdk_prefix, product.embedded_python_hosts
+        )
         if result != 0:
             return result
     result = verify_sdk_python_launcher(
         sdk_prefix,
-        require_engine_package=require_engine_package,
-        core_only=core_only,
+        import_roots=product.launcher_import_roots,
     )
     if result != 0:
         return result
-    if core_only:
-        product_import_roots = _CORE_PRODUCT_IMPORT_GRAPH_ROOTS
-    elif require_engine_package:
-        product_import_roots = _FULL_PRODUCT_IMPORT_GRAPH_ROOTS
-    else:
-        product_import_roots = _GRAPHICS_PRODUCT_IMPORT_GRAPH_ROOTS
     return verify_nanobind_extensions(
         sdk_prefix,
-        product_import_roots=product_import_roots,
+        product_import_roots=product.native_import_roots,
     )
 
 
@@ -320,8 +292,7 @@ def _python_version_and_paths(py_exec: str) -> dict[str, object]:
 def verify_sdk_python_launcher(
     sdk_prefix: Path,
     *,
-    require_engine_package: bool = True,
-    core_only: bool = False,
+    import_roots: tuple[str, ...],
 ) -> int:
     launcher_name = "termin_python.exe" if _is_windows() else "termin_python"
     launcher = sdk_prefix / "bin" / launcher_name
@@ -379,21 +350,17 @@ def verify_sdk_python_launcher(
             )
             return 1
 
-    if core_only:
-        profile_imports = "termin.dispatch, termin.inspect, termin.mcp"
-        profile_anchor = "termin.mcp"
-    elif require_engine_package:
-        profile_imports = "termin.engine, termin.tween"
-        profile_anchor = "termin.tween"
-    else:
-        profile_imports = "tcplot, termin.visual_scene, termin.tween"
-        profile_anchor = "termin.tween"
+    if not import_roots:
+        print("FAILED: SDK launcher smoke has no declared import roots", file=sys.stderr)
+        return 1
     smoke = (
-        f"import pathlib, site, sys, tcbase, {profile_imports}; "
+        "import importlib, pathlib, site, sys; "
         f"root = pathlib.Path({str(expected_root)!r}); "
         f"python_home = pathlib.Path({str(expected_python_home)!r}); "
-        "assert pathlib.Path(tcbase.__file__).resolve().is_relative_to(root); "
-        f"assert pathlib.Path({profile_anchor}.__file__).resolve().is_relative_to(root); "
+        f"names = {list(import_roots)!r}; "
+        "modules = [importlib.import_module(name) for name in names]; "
+        "assert all(pathlib.Path(module.__file__).resolve().is_relative_to(root) "
+        "for module in modules); "
         "assert site.ENABLE_USER_SITE is False; "
         "assert pathlib.Path(sys.prefix).resolve() == python_home"
     )
@@ -420,7 +387,7 @@ def verify_sdk_python_launcher(
 def verify_nanobind_extensions(
     sdk_prefix: Path,
     *,
-    product_import_roots: tuple[str, ...] = _FULL_PRODUCT_IMPORT_GRAPH_ROOTS,
+    product_import_roots: tuple[str, ...],
 ) -> int:
     print("Verifying: canonical nanobind ABI and native extension import graph")
     try:
@@ -562,7 +529,7 @@ def _sdk_python_launcher(sdk_prefix: Path) -> Path:
 def _installed_product_import_roots(
     sdk_prefix: Path,
     *,
-    product_import_roots: tuple[str, ...] = _FULL_PRODUCT_IMPORT_GRAPH_ROOTS,
+    product_import_roots: tuple[str, ...],
 ) -> list[str]:
     manifest_path = sdk_prefix / APPLICATION_PAYLOAD_MANIFEST_NAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -827,51 +794,56 @@ def verify_application_python_payloads(sdk_prefix: Path) -> int:
     return 0
 
 
-def verify_embedded_python_hosts(sdk_prefix: Path) -> int:
+def verify_embedded_python_hosts(
+    sdk_prefix: Path,
+    executable_names: tuple[str, ...],
+) -> int:
     print("Verifying: embedded Python product hosts")
     executable_suffix = ".exe" if _is_windows() else ""
-    player = sdk_prefix / "bin" / f"termin_player{executable_suffix}"
-    if not player.is_file():
-        print(f"FAILED: embedded Python host is missing: {player}", file=sys.stderr)
-        return 1
-    result = subprocess.run(
-        [str(player), "--termin-python-layout-smoke"],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=_hostile_python_environment(sdk_prefix),
-        cwd=sdk_prefix,
+    for executable_name in executable_names:
+        executable = sdk_prefix / "bin" / f"{executable_name}{executable_suffix}"
+        if not executable.is_file():
+            print(
+                f"FAILED: embedded Python host is missing: {executable}",
+                file=sys.stderr,
+            )
+            return 1
+        result = subprocess.run(
+            [str(executable), "--termin-python-layout-smoke"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_hostile_python_environment(sdk_prefix),
+            cwd=sdk_prefix,
+        )
+        if result.returncode != 0:
+            print(
+                f"FAILED: {executable_name} embedded Python smoke failed: "
+                + result.stderr.strip(),
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            payload = json.loads(result.stdout.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError) as error:
+            print(
+                f"FAILED: {executable_name} embedded Python smoke returned "
+                f"invalid JSON: {error}",
+                file=sys.stderr,
+            )
+            return 1
+        if payload.get("free_threaded") is not True or payload.get("gil_enabled") is not False:
+            print(
+                f"FAILED: {executable_name} raw native module enabled the GIL: "
+                + json.dumps(payload, sort_keys=True),
+                file=sys.stderr,
+            )
+            return 1
+    print(
+        "  OK: embedded Python hosts import raw modules without enabling the GIL: "
+        + ", ".join(executable_names)
     )
-    if result.returncode != 0:
-        print(
-            "FAILED: termin_player embedded Python smoke failed: "
-            + result.stderr.strip(),
-            file=sys.stderr,
-        )
-        return 1
-    try:
-        payload = json.loads(result.stdout.strip().splitlines()[-1])
-    except (IndexError, json.JSONDecodeError) as error:
-        print(
-            f"FAILED: termin_player embedded Python smoke returned invalid JSON: {error}",
-            file=sys.stderr,
-        )
-        return 1
-    if payload.get("module") != "_termin_player_native":
-        print(
-            "FAILED: termin_player did not import its raw native module",
-            file=sys.stderr,
-        )
-        return 1
-    if payload.get("free_threaded") is not True or payload.get("gil_enabled") is not False:
-        print(
-            "FAILED: termin_player raw native module enabled the GIL: "
-            + json.dumps(payload, sort_keys=True),
-            file=sys.stderr,
-        )
-        return 1
-    print("  OK: termin_player raw module imports without enabling the GIL")
     return 0
 
 
@@ -918,6 +890,14 @@ def verify_python_runtime_manifest(sdk_prefix: Path) -> int:
         return 1
     if _sha256_file(lock_path) != manifest.get("runtime_lock_sha256"):
         print("FAILED: installed Python runtime lock hash mismatch", file=sys.stderr)
+        return 1
+
+    product_path = (sdk_prefix / str(manifest.get("sdk_product", ""))).resolve()
+    if not product_path.is_relative_to(sdk_prefix.resolve()) or not product_path.is_file():
+        print("FAILED: SDK product manifest referenced by runtime is missing", file=sys.stderr)
+        return 1
+    if _sha256_file(product_path) != manifest.get("sdk_product_sha256"):
+        print("FAILED: installed SDK product manifest hash mismatch", file=sys.stderr)
         return 1
 
     site_packages = (sdk_prefix / str(manifest.get("site_packages", ""))).resolve()

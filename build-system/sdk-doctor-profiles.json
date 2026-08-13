@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "submodules": {
+    "termin-thirdparty/guard": ["guard_c.h", "guard_main.h"]
+  },
+  "profiles": [
+    {
+      "id": "sdk",
+      "submodules": [],
+      "needs_nanobind": true,
+      "needs_pip": true,
+      "needs_copy_backend": true,
+      "needs_sdk_writable": true
+    },
+    {
+      "id": "sdk-cpp",
+      "submodules": [],
+      "needs_nanobind": false,
+      "needs_pip": false,
+      "needs_copy_backend": false,
+      "needs_sdk_writable": true
+    },
+    {
+      "id": "sdk-bindings",
+      "submodules": [],
+      "needs_nanobind": true,
+      "needs_pip": false,
+      "needs_copy_backend": true,
+      "needs_sdk_writable": true
+    },
+    {
+      "id": "cpp-tests",
+      "submodules": ["termin-thirdparty/guard"],
+      "needs_nanobind": false,
+      "needs_pip": false,
+      "needs_copy_backend": false,
+      "needs_sdk_writable": false
+    }
+  ]
+}

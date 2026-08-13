@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "default_profile": "core",
+  "profiles": [
+    {
+      "id": "core",
+      "python_packages": null,
+      "product_manifest": "core",
+      "application_payloads": [],
+      "runtime_lock": "build-system/python-runtime-core-lock.txt",
+      "sdk_prefix": "sdk",
+      "build_directory_suffix": "",
+      "csharp_profile": null,
+      "wheel_subset": [
+        "tcbase-*.whl",
+        "termin_dispatch-*.whl",
+        "termin_inspect-*.whl",
+        "termin_mcp-*.whl"
+      ],
+      "embedded_python_hosts": [],
+      "launcher_import_roots": [
+        "tcbase",
+        "termin.dispatch",
+        "termin.inspect",
+        "termin.mcp"
+      ],
+      "native_import_roots": [
+        "tcbase",
+        "termin.dispatch",
+        "termin.inspect",
+        "termin.mcp"
+      ],
+      "forbidden_artifacts_from_product": true
+    }
+  ]
+}

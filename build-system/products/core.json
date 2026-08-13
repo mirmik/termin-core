@@ -78,7 +78,7 @@
     "abi": "cp314t",
     "owner": "core",
     "inputs": [
-      "build-system/python-runtime-lock.txt",
+      "build-system/python-runtime-core-lock.txt",
       "build-system/python-toolchain-lock.json",
       "build-system/python-sdk-build-requirements.txt"
     ]
@@ -93,7 +93,9 @@
     "termin-mcp-tests",
     "termin-nanobind-tests"
   ],
-  "smoke_fixtures": [],
+  "smoke_fixtures": [
+    "tests/installed-core-consumers"
+  ],
   "resources": [],
   "forbidden_dependency_roots": [
     "termin-app",

@@ -44,9 +44,9 @@ from .sdk_bundled_python import (
     ensure_bundled_python_runtime,
 )
 from .sdk_doctor import (
-    PROFILES,
     DoctorProfile as DoctorProfile,
     ensure_submodules,
+    load_doctor_profiles,
     missing_submodules,
     profile_submodules,
 )
@@ -66,12 +66,12 @@ from .sdk_python_layout import (
 from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
 from .product_manifest import load_product_manifest
 from .sdk_profiles import (
-    CORE_SDK_PROFILE,
-    FULL_SDK_PROFILE,
-    SDK_PROFILE_NAMES,
-    sdk_profile,
+    SdkProfile,
+    load_installed_sdk_product,
+    load_sdk_profiles,
     select_application_payloads,
     select_python_packages,
+    write_installed_sdk_product,
 )
 from .wheelhouse import (
     WheelhouseError,
@@ -80,7 +80,6 @@ from .wheelhouse import (
 )
 
 
-RUNTIME_LOCK_RELATIVE = Path("build-system/python-runtime-lock.txt")
 SDK_BUILD_REQUIREMENTS_RELATIVE = Path("build-system/python-sdk-build-requirements.txt")
 
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
@@ -103,15 +102,21 @@ _SDK_PROFILE_CONTEXT: ContextVar[str | None] = ContextVar(
 )
 
 
-def _active_sdk_profile_name() -> str:
+def _active_sdk_profile_name(repo_root: Path) -> str:
     contextual = _SDK_PROFILE_CONTEXT.get()
     if contextual is not None:
         return contextual
-    return os.environ.get("TERMIN_SDK_PROFILE", FULL_SDK_PROFILE)
+    profiles = load_sdk_profiles(repo_root)
+    return os.environ.get("TERMIN_SDK_PROFILE", profiles.default_profile)
+
+
+def _active_sdk_profile(repo_root: Path) -> SdkProfile:
+    profiles = load_sdk_profiles(repo_root)
+    return profiles.profile(_active_sdk_profile_name(repo_root))
 
 
 def _sdk_packages(repo_root: Path) -> list[PackageEntry]:
-    profile = sdk_profile(_active_sdk_profile_name())
+    profile = _active_sdk_profile(repo_root)
     return select_python_packages(
         profile,
         load_manifest(repo_root),
@@ -120,7 +125,7 @@ def _sdk_packages(repo_root: Path) -> list[PackageEntry]:
 
 
 def _sdk_application_payloads(repo_root: Path):
-    profile = sdk_profile(_active_sdk_profile_name())
+    profile = _active_sdk_profile(repo_root)
     return select_application_payloads(profile, load_application_payloads(repo_root))
 
 
@@ -548,9 +553,6 @@ def install_python_packages(
     if result != 0:
         return result
     try:
-        payload_args = {}
-        if _active_sdk_profile_name() != FULL_SDK_PROFILE:
-            payload_args["payloads"] = _sdk_application_payloads(repo_root)
         install_application_payloads(
             repo_root=repo_root,
             sdk_prefix=sdk_prefix,
@@ -561,21 +563,20 @@ def install_python_packages(
                 python_abi=target_python_abi,
             ),
             runtime_python_abi=target_python_abi,
-            **payload_args,
+            payloads=_sdk_application_payloads(repo_root),
         )
     except RuntimeError as error:
         print(f"ERROR: failed to install application Python payload: {error}", file=sys.stderr)
         return 1
     try:
-        runtime_manifest_args = {}
-        if _active_sdk_profile_name() != FULL_SDK_PROFILE:
-            runtime_manifest_args["packages"] = _sdk_packages(repo_root)
+        profile = _active_sdk_profile(repo_root)
         write_python_runtime_manifest(
             repo_root,
             sdk_prefix,
             bundled_site_packages,
             runtime_python_abi=target_python_abi,
-            **runtime_manifest_args,
+            packages=_sdk_packages(repo_root),
+            runtime_lock_relative=profile.runtime_lock,
         )
     except RuntimeError as error:
         print(f"ERROR: failed to write SDK Python runtime manifest: {error}", file=sys.stderr)
@@ -803,9 +804,10 @@ def _prepare_external_runtime_wheels(
     wheel_dir: Path,
     build_python: Path,
 ) -> int:
-    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    profile = _active_sdk_profile(repo_root)
+    lock_path = repo_root / profile.runtime_lock
     try:
-        runtime_lock = _load_runtime_lock(repo_root)
+        runtime_lock = _load_runtime_lock(repo_root, profile.runtime_lock)
         python_abi = PythonAbiIdentity.from_runtime_probe(
             _python_version_and_paths(str(build_python)),
             context="SDK Python build environment",
@@ -882,7 +884,8 @@ def _install_prepared_runtime_wheels(
     sdk_prefix: Path,
 ) -> int:
     try:
-        runtime_lock = _load_runtime_lock(repo_root)
+        profile = _active_sdk_profile(repo_root)
+        runtime_lock = _load_runtime_lock(repo_root, profile.runtime_lock)
         python_abi = PythonAbiIdentity.from_runtime_probe(
             _python_version_and_paths(str(build_python)),
             context="SDK Python build environment",
@@ -914,13 +917,13 @@ def _install_prepared_runtime_wheels(
         )
         if _is_windows():
             print(
-                "Close Termin editor/player, pytest, and Python processes that may "
+                "Close pytest and Python processes that may "
                 "hold SDK .pyd/.dll files, then retry.",
                 file=sys.stderr,
             )
         return 1
 
-    lock_path = repo_root / RUNTIME_LOCK_RELATIVE
+    lock_path = repo_root / profile.runtime_lock
     print("Installing SDK Python site-packages offline from prepared wheels")
     return _run(
         [
@@ -1108,7 +1111,7 @@ def _windows_module_users(module_name: str) -> list[str]:
 
 def _windows_python_processes() -> list[str]:
     lines: list[str] = []
-    for image_name in ("python.exe", "pythonw.exe", "py.exe", "pytest.exe", "termin_editor.exe", "termin_player.exe"):
+    for image_name in ("python.exe", "pythonw.exe", "py.exe", "pytest.exe"):
         process_lines = _run_windows_tasklist(["/fi", f"imagename eq {image_name}"])
         if process_lines:
             lines.extend(process_lines)
@@ -1171,7 +1174,7 @@ def _print_install_failure_summary(
             print(f"  {line}", file=sys.stderr)
 
     print(
-        "Close Termin editor/player, pytest, Python REPLs, and stale venv processes, "
+        "Close pytest, Python REPLs, and stale environment processes, "
         "then rerun install-pip-packages.ps1 --editable --force.",
         file=sys.stderr,
     )
@@ -1361,7 +1364,7 @@ def build_wheelhouse(
     )
     if result != 0:
         return result
-    result = _verify_library_wheel_subset_install(wheel_dir, build_python)
+    result = _verify_library_wheel_subset_install(repo_root, wheel_dir, build_python)
     if result != 0:
         return result
 
@@ -1373,25 +1376,11 @@ def build_wheelhouse(
 
 
 def _verify_library_wheel_subset_install(
+    repo_root: Path,
     wheel_dir: Path,
     build_python: Path,
 ) -> int:
-    profile_name = _active_sdk_profile_name()
-    if profile_name == CORE_SDK_PROFILE:
-        wheel_patterns = (
-            "tcbase-*.whl",
-            "termin_dispatch-*.whl",
-            "termin_inspect-*.whl",
-            "termin_mcp-*.whl",
-        )
-    else:
-        wheel_patterns = (
-            "tcbase-*.whl",
-            "tgfx-*.whl",
-            "termin_gui_native-*.whl",
-        )
-    if profile_name == FULL_SDK_PROFILE:
-        wheel_patterns = (*wheel_patterns, "termin_display-*.whl")
+    wheel_patterns = _active_sdk_profile(repo_root).wheel_subset
     wheels = []
     for pattern in wheel_patterns:
         matching = sorted(wheel_dir.glob(pattern))
@@ -1403,10 +1392,6 @@ def _verify_library_wheel_subset_install(
             )
             return 1
         wheels.append(matching[0])
-    if list(wheel_dir.glob("termin_app-*.whl")):
-        print("ERROR: termin-app wheel remains in public wheelhouse", file=sys.stderr)
-        return 1
-
     with tempfile.TemporaryDirectory(prefix="termin-wheel-subset-") as temp_dir:
         result = _run(
             [
@@ -1427,16 +1412,7 @@ def _verify_library_wheel_subset_install(
         if result != 0:
             print("ERROR: representative library wheel subset install failed", file=sys.stderr)
             return result
-        installed = Path(temp_dir)
-        if list(installed.glob("termin_app-*.dist-info")) or (
-            installed / "termin/editor"
-        ).exists():
-            print(
-                "ERROR: representative library subset installed editor payload",
-                file=sys.stderr,
-            )
-            return 1
-    print("Representative editor-free library wheel subset install OK")
+    print("Representative library wheel subset install OK")
     return 0
 
 
@@ -1479,6 +1455,7 @@ def _publish_runtime_wheelhouse(repo_root: Path, sdk_prefix: Path) -> int:
 # Runtime package metadata and final verification have independent lifecycles,
 # but remain re-exported here for callers of the historical sdk module.
 from .sdk_runtime_metadata import (
+    RUNTIME_LOCK_RELATIVE as RUNTIME_LOCK_RELATIVE,
     _clear_target_python_package_metadata,
     _load_runtime_lock,
     write_python_runtime_manifest,
@@ -1497,15 +1474,18 @@ from .sdk_verification import (
 def _build_dir(
     repo_root: Path,
     build_type: str,
-    profile_name: str = FULL_SDK_PROFILE,
+    profile: SdkProfile | None = None,
 ) -> Path:
+    profile = profile or _active_sdk_profile(repo_root)
     env_build_dir = os.environ.get("BUILD_DIR")
-    default_name = (
-        build_type
-        if profile_name == FULL_SDK_PROFILE
-        else f"{build_type}-{profile_name}"
-    )
+    suffix = f"-{profile.build_directory_suffix}" if profile.build_directory_suffix else ""
+    default_name = f"{build_type}{suffix}"
     return Path(env_build_dir) if env_build_dir else repo_root / "build" / default_name
+
+
+def _sdk_prefix(repo_root: Path) -> Path:
+    profile = _active_sdk_profile(repo_root)
+    return Path(os.environ.get("SDK_PREFIX", str(repo_root / profile.sdk_prefix)))
 
 
 def _bundled_site_packages_hint(sdk_prefix: Path) -> Path:
@@ -1528,15 +1508,12 @@ def _run_sdk_build_impl(
     stage_args: list[str],
     build_csharp: bool,
     dry_run: bool,
-    profile_name: str = FULL_SDK_PROFILE,
+    profile: SdkProfile,
 ) -> int:
-    default_sdk = repo_root / (
-        "sdk-core" if profile_name == CORE_SDK_PROFILE else "sdk"
-    )
+    default_sdk = repo_root / profile.sdk_prefix
     sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(default_sdk)))
-    build_dir = _build_dir(repo_root, build_type, profile_name)
+    build_dir = _build_dir(repo_root, build_type, profile)
     build_env = os.environ.copy()
-    build_env["TERMIN_SDK_PROFILE"] = profile_name
     build_env["SDK_PREFIX"] = str(sdk_prefix)
     build_env["BUILD_DIR"] = str(build_dir)
     if dry_run:
@@ -1559,11 +1536,7 @@ def _run_sdk_build_impl(
     print("  Stage 1/4: C/C++ libraries + Python bindings")
     print("========================================")
     print("")
-    command = (
-        _stage_script(repo_root, "build-sdk-bindings")
-        + [f"--profile={profile_name}"]
-        + stage_args
-    )
+    command = _stage_script(repo_root, "build-sdk-bindings") + stage_args
     if dry_run:
         print("+ " + " ".join(command))
     else:
@@ -1576,11 +1549,10 @@ def _run_sdk_build_impl(
     print("  Stage 2/4: C# bindings")
     print("========================================")
     print("")
-    if build_csharp and profile_name != CORE_SDK_PROFILE:
-        csharp_profile = "plot-d3d11" if profile_name == "graphics" else "full"
+    if build_csharp and profile.csharp_profile is not None:
         command = (
             _stage_script(repo_root, "build-sdk-csharp")
-            + [f"--profile={csharp_profile}"]
+            + [f"--profile={profile.csharp_profile}"]
             + stage_args
         )
         if dry_run:
@@ -1597,12 +1569,30 @@ def _run_sdk_build_impl(
     print("  Stage 3/4: Populate bundled Python site-packages")
     print("========================================")
     print("")
+    forbidden_artifact_markers: tuple[str, ...] = ()
+    if profile.forbidden_artifacts_from_product:
+        if profile.product_manifest_id is None:
+            print(
+                "ERROR: SDK profile requests product boundary verification "
+                "without a product manifest",
+                file=sys.stderr,
+            )
+            return 1
+        forbidden_artifact_markers = load_product_manifest(
+            repo_root, profile.product_manifest_id
+        ).forbidden_artifact_markers
     if dry_run:
+        print("+ write installed SDK product verification manifest")
         print(
             "+ install bundled Python packages into "
             f"{_bundled_site_packages_hint(sdk_prefix)}"
         )
     else:
+        write_installed_sdk_product(
+            sdk_prefix,
+            profile,
+            forbidden_artifact_markers=forbidden_artifact_markers,
+        )
         result = install_python_packages(
             repo_root,
             sdk_prefix,
@@ -1647,6 +1637,7 @@ def _run_sdk_build_impl(
         if result != 0:
             return result
         result = _verify_library_wheel_subset_install(
+            repo_root,
             sdk_prefix / "wheels",
             build_python,
         )
@@ -1661,19 +1652,7 @@ def _run_sdk_build_impl(
     if dry_run:
         print("+ verify SDK duplicate libraries and stale artifacts")
     else:
-        forbidden_artifact_markers: tuple[str, ...] = ()
-        if profile_name == CORE_SDK_PROFILE:
-            forbidden_artifact_markers = load_product_manifest(
-                repo_root, "core"
-            ).forbidden_artifact_markers
-        result = verify_sdk(
-            sdk_prefix,
-            build_dir,
-            require_product_hosts=profile_name == FULL_SDK_PROFILE,
-            require_engine_package=profile_name == FULL_SDK_PROFILE,
-            core_only=profile_name == CORE_SDK_PROFILE,
-            forbidden_artifact_markers=forbidden_artifact_markers,
-        )
+        result = verify_sdk(sdk_prefix, build_dir)
         if result != 0:
             return result
 
@@ -1690,9 +1669,10 @@ def run_sdk_build(
     stage_args: list[str],
     build_csharp: bool,
     dry_run: bool,
-    profile_name: str = FULL_SDK_PROFILE,
+    profile_name: str | None = None,
 ) -> int:
-    profile = sdk_profile(profile_name)
+    profiles = load_sdk_profiles(repo_root)
+    profile = profiles.profile(profile_name or profiles.default_profile)
     token = _SDK_PROFILE_CONTEXT.set(profile.name)
     try:
         return _run_sdk_build_impl(
@@ -1701,7 +1681,7 @@ def run_sdk_build(
             stage_args=stage_args,
             build_csharp=build_csharp,
             dry_run=dry_run,
-            profile_name=profile.name,
+            profile=profile,
         )
     finally:
         _SDK_PROFILE_CONTEXT.reset(token)
@@ -1716,7 +1696,8 @@ def doctor(
     sdk_prefix: Path,
     sdl: str = "OFF",
 ) -> int:
-    profile = PROFILES[profile_name]
+    recipe = load_doctor_profiles(repo_root)
+    profile = recipe.profile(profile_name)
     errors = []
     warnings = []
 
@@ -1750,12 +1731,24 @@ def doctor(
         warnings.append(warning)
 
     required_submodules = profile_submodules(profile, vulkan, sdl)
-    missing = missing_submodules(repo_root, required_submodules)
+    missing = missing_submodules(
+        repo_root,
+        required_submodules,
+        expected_files=recipe.expected_submodule_files,
+    )
     if missing and init_submodules:
-        result = ensure_submodules(repo_root, required_submodules)
+        result = ensure_submodules(
+            repo_root,
+            required_submodules,
+            expected_files=recipe.expected_submodule_files,
+        )
         if result != 0:
             return result
-        missing = missing_submodules(repo_root, required_submodules)
+        missing = missing_submodules(
+            repo_root,
+            required_submodules,
+            expected_files=recipe.expected_submodule_files,
+        )
     if missing:
         errors.append(
             "required submodules are missing: "
@@ -1789,7 +1782,6 @@ def main(argv: list[str] | None = None) -> int:
     doctor_parser = subparsers.add_parser("doctor", help="Run build preflight checks.")
     doctor_parser.add_argument(
         "--profile",
-        choices=sorted(PROFILES),
         default="sdk-bindings",
     )
     doctor_parser.add_argument(
@@ -1938,9 +1930,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     build_parser.add_argument(
         "--profile",
-        choices=SDK_PROFILE_NAMES,
-        default=FULL_SDK_PROFILE,
-        help="SDK target graph profile (default: full).",
+        default=None,
+        help="Repository-declared SDK product profile (default: manifest default).",
     )
 
     args, unknown_args = parser.parse_known_args(argv)
@@ -1960,7 +1951,12 @@ def main(argv: list[str] | None = None) -> int:
             sdk_prefix=sdk_prefix,
         )
     if args.command == "ensure-submodules":
-        return ensure_submodules(repo_root, args.paths)
+        recipe = load_doctor_profiles(repo_root)
+        return ensure_submodules(
+            repo_root,
+            args.paths,
+            expected_files=recipe.expected_submodule_files,
+        )
     if args.command == "write-artifacts":
         return write_artifacts(
             repo_root=repo_root,
@@ -1977,7 +1973,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "install-python":
         build_dir = _build_dir(repo_root, args.build_type)
-        sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
+        sdk_prefix = _sdk_prefix(repo_root)
         try:
             python_executable = prepare_pinned_python_build_environment(repo_root)
         except (
@@ -2047,7 +2043,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         build_dir = _build_dir(repo_root, args.build_type)
-        sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
+        sdk_prefix = _sdk_prefix(repo_root)
         return install_pip_packages(
             repo_root=repo_root,
             sdk_prefix=sdk_prefix,
@@ -2058,7 +2054,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "wheels":
         build_dir = _build_dir(repo_root, args.build_type)
-        sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
+        sdk_prefix = _sdk_prefix(repo_root)
         wheel_args = list(unknown_args)
         try:
             python_executable = prepare_pinned_python_build_environment(repo_root)
@@ -2082,13 +2078,15 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "verify-sdk":
         build_dir = _build_dir(repo_root, args.build_type)
-        sdk_prefix = Path(os.environ.get("SDK_PREFIX", str(repo_root / "sdk")))
+        sdk_prefix = _sdk_prefix(repo_root)
         return verify_sdk(sdk_prefix=sdk_prefix, build_dir=build_dir)
     if args.command == "verify-python-import-graph":
-        sdk_prefix = args.sdk_prefix or Path(
-            os.environ.get("SDK_PREFIX", str(repo_root / "sdk"))
+        sdk_prefix = (args.sdk_prefix or _sdk_prefix(repo_root)).resolve()
+        product = load_installed_sdk_product(sdk_prefix)
+        return verify_nanobind_extensions(
+            sdk_prefix,
+            product_import_roots=product.native_import_roots,
         )
-        return verify_nanobind_extensions(sdk_prefix.resolve())
     if args.command == "build":
         obsolete_wheel_flags = {"--no-wheels", "--wheels"} & set(unknown_args)
         if obsolete_wheel_flags:

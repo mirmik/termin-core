@@ -1,0 +1,3 @@
+[submodule "termin-thirdparty/guard"]
+	path = termin-thirdparty/guard
+	url = git@github.com:mirmik/guard.git

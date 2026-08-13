@@ -111,7 +111,33 @@ Exit criteria:
 - `termin.image`, `tmesh`, `tgfx`, `termin.scene`, `termin.assets` and product
   hosts are absent.
 
-## Stage 2: prove installed external consumption
+## Stage 2: separate generic build tooling from product recipes
+
+Refactor only the tooling needed for cross-repository use:
+
+- Core-owned artifact schema and verifier;
+- Core/Python runtime lock and offline installer;
+- pack compatibility and collision checks;
+- generic composition primitives;
+- repository-local product manifest loading.
+
+Keep graphics profile closure, shader checks, showcase rules and engine
+application payload knowledge outside the shared package. Shared tooling accepts
+typed manifests; it does not contain a growing switch over every Termin product.
+
+The installed SDK carries a hash-bound resolved product contract, so release
+and relocation checks do not reopen repository-local recipes. Product-owned
+showcase tests live with the showcase rather than in the shared tooling suite.
+
+Exit criteria:
+
+- Core tooling can be packaged and tested without importing monorepo product
+  modules;
+- the existing full/graphics build can consume the same generic manifest and
+  verification primitives;
+- domain-specific rules remain in their owning repository.
+
+## Stage 3: prove installed external consumption
 
 Add consumers located outside the Core source tree:
 
@@ -126,34 +152,29 @@ Add consumers located outside the Core source tree:
 The smoke harness must remove source overlay variables and prevent the source
 tree from appearing on `PYTHONPATH` or `CMAKE_PREFIX_PATH`.
 
+The repository-owned command is:
+
+```bash
+./scripts/smoke-installed-core-consumers --sdk-root ./sdk-core
+```
+
+On Windows, invoke the same Python script with the installed launcher:
+
+```powershell
+sdk-core\bin\termin_python.exe scripts\smoke-installed-core-consumers --sdk-root sdk-core
+```
+
+The harness copies both SDK and fixture to a temporary tree, clears ambient
+Python/CMake overlays, verifies that removing an installed package makes CMake
+configuration fail, then builds and runs native, nanobind and embedded-Python
+consumers.
+
 Exit criteria:
 
 - all fixtures configure, build and run from a copied/relocated Core SDK;
 - a deliberately missing installed dependency fails instead of finding a
   source checkout;
 - no fixture links or imports a build-tree artifact accidentally.
-
-## Stage 3: separate generic build tooling from product recipes
-
-Refactor only the tooling needed for cross-repository use:
-
-- Core-owned artifact schema and verifier;
-- Core/Python runtime lock and offline installer;
-- pack compatibility and collision checks;
-- generic composition primitives;
-- repository-local product manifest loading.
-
-Keep graphics profile closure, shader checks, showcase rules and engine
-application payload knowledge outside the shared package. Shared tooling accepts
-typed manifests; it does not contain a growing switch over every Termin product.
-
-Exit criteria:
-
-- Core tooling can be packaged and tested without importing monorepo product
-  modules;
-- the existing full/graphics build can consume the same generic manifest and
-  verification primitives;
-- domain-specific rules remain in their owning repository.
 
 ## Stage 4: extract the physical repository
 

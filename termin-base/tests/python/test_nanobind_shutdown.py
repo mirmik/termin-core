@@ -8,8 +8,6 @@ import pytest
     "module_name",
     [
         "tcbase._geom_native",
-        "termin.colliders",
-        "termin.physics",
     ],
 )
 def test_native_import_exits_without_nanobind_leak_diagnostics(module_name: str) -> None:

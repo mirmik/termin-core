@@ -1,3 +1,10 @@
+# Test-only packages; these are not part of the distributable Core runtime.
+iniconfig==2.3.0
+numpy==2.5.1
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==9.1.1
+PyYAML==6.0.3
 ruff==0.15.20
 scipy==1.18.0
 setuptools==83.0.0

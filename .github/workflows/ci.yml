@@ -1,0 +1,25 @@
+name: Core SDK
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build and test standalone Core
+        run: ./run-tests.sh
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build and test standalone Core
+        shell: pwsh
+        run: .\run-tests.ps1

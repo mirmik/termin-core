@@ -33,7 +33,7 @@ def test_core_product_manifest_matches_repository_closure() -> None:
     )
     assert manifest.python_runtime.owner == "core"
     assert manifest.python_runtime.abi == "cp314t"
-    assert manifest.smoke_fixtures == ()
+    assert manifest.smoke_fixtures == ("tests/installed-core-consumers",)
     assert manifest.resources == ()
     assert validate_product_manifest(REPO_ROOT, manifest) == []
 
