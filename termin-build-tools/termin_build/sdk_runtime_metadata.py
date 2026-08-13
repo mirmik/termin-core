@@ -102,6 +102,8 @@ _EXACT_REQUIREMENT_RE = re.compile(
 def _load_runtime_lock(
     repo_root: Path,
     runtime_lock_relative: Path = RUNTIME_LOCK_RELATIVE,
+    *,
+    allow_empty: bool = False,
 ) -> dict[str, tuple[str, str]]:
     lock_path = repo_root / runtime_lock_relative
     if not lock_path.is_file():
@@ -126,7 +128,7 @@ def _load_runtime_lock(
         if normalized in requirements:
             raise RuntimeError(f"duplicate runtime lock distribution: {name}")
         requirements[normalized] = (name, version)
-    if not requirements:
+    if not requirements and not allow_empty:
         raise RuntimeError(f"SDK Python runtime lock is empty: {lock_path}")
     return requirements
 
@@ -269,11 +271,16 @@ def write_python_runtime_manifest(
     packages: Iterable[PackageEntry] | None = None,
     additional_local_distributions: Iterable[str] = (),
     runtime_lock_relative: Path = RUNTIME_LOCK_RELATIVE,
+    allow_empty_runtime_lock: bool = False,
 ) -> Path:
     artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
     artifact_manifest.require_kind(SDK_MANIFEST_KIND)
     artifact_manifest.validate_all(expected_python_abi=runtime_python_abi)
-    runtime_lock = _load_runtime_lock(repo_root, runtime_lock_relative)
+    runtime_lock = _load_runtime_lock(
+        repo_root,
+        runtime_lock_relative,
+        allow_empty=allow_empty_runtime_lock,
+    )
     effective_packages = packages if packages is not None else load_manifest(repo_root)
     local_names = {
         _normalized_distribution_name(package.distribution)

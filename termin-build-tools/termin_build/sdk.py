@@ -764,6 +764,7 @@ def _install_python_layer_packages(
             packages=_sdk_packages(repo_root),
             additional_local_distributions=(),
             runtime_lock_relative=_active_sdk_profile(repo_root).runtime_lock,
+            allow_empty_runtime_lock=True,
         )
     except RuntimeError as error:
         print(f"ERROR: failed to write SDK Python layer manifest: {error}", file=sys.stderr)
