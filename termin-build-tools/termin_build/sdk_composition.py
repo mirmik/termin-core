@@ -35,7 +35,7 @@ def load_installed_sdk_input(
     root: Path,
     *,
     expected_product: str,
-    expected_build_id: str,
+    expected_build_id: str | None = None,
     expected_python_abi: PythonAbiIdentity,
 ) -> InstalledSdkInput:
     root = root.resolve()
@@ -51,7 +51,10 @@ def load_installed_sdk_input(
     manifest = ArtifactManifest.load(manifest_path)
     manifest.require_kind(SDK_MANIFEST_KIND)
     manifest.validate_all(expected_python_abi=expected_python_abi)
-    if manifest.native_build_id != expected_build_id:
+    if (
+        expected_build_id is not None
+        and manifest.native_build_id != expected_build_id
+    ):
         raise RuntimeError(
             f"installed {expected_product} SDK build identity mismatch: "
             f"expected {expected_build_id}, got {manifest.native_build_id}"

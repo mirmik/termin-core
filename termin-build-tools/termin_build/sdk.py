@@ -14,6 +14,8 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from .artifact_manifest import (
+    ArtifactManifest,
+    ArtifactManifestError,
     BUILD_MANIFEST_KIND,
     BUILD_MANIFEST_NAME,
     SCHEMA_VERSION as ARTIFACT_MANIFEST_SCHEMA,
@@ -30,6 +32,7 @@ from .package_manifest import PackageEntry, load_manifest, repo_root_from
 from .local_wheel_artifacts import (
     LocalWheelArtifactError,
     build_local_wheel_artifact_set,
+    compose_local_wheel_artifact_set,
     publish_local_wheel_artifact_set,
     validate_local_wheel_artifact_set,
 )
@@ -64,6 +67,7 @@ from .sdk_python_layout import (
     resolve_sdk_python_layout,
 )
 from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
+from .sdk_composition import InstalledSdkInput, load_installed_sdk_input
 from .product_manifest import load_product_manifest
 from .sdk_profiles import (
     SdkProfile,
@@ -81,6 +85,8 @@ from .wheelhouse import (
 
 
 SDK_BUILD_REQUIREMENTS_RELATIVE = Path("build-system/python-sdk-build-requirements.txt")
+CORE_SDK_ENV = "TERMIN_CORE_SDK"
+CORE_BUILD_ID_ENV = "TERMIN_CORE_BUILD_ID"
 
 LEGACY_BUNDLED_RUNTIME_PACKAGES = {
     # Pillow used to be a runtime image dependency. termin-image now owns image
@@ -122,6 +128,66 @@ def _sdk_packages(repo_root: Path) -> list[PackageEntry]:
         load_manifest(repo_root),
         repo_root=repo_root,
     )
+
+
+def _installed_core_input(
+    *, expected_python_abi: PythonAbiIdentity
+) -> InstalledSdkInput | None:
+    root = os.environ.get(CORE_SDK_ENV)
+    expected_build_id = os.environ.get(CORE_BUILD_ID_ENV) or None
+    if root is None:
+        if expected_build_id is not None:
+            raise RuntimeError(
+                f"{CORE_BUILD_ID_ENV} cannot be used without {CORE_SDK_ENV}"
+            )
+        return None
+    return load_installed_sdk_input(
+        Path(root),
+        expected_product="core",
+        expected_build_id=expected_build_id,
+        expected_python_abi=expected_python_abi,
+    )
+
+
+def _source_built_sdk_packages(
+    repo_root: Path, *, expected_python_abi: PythonAbiIdentity
+) -> list[PackageEntry]:
+    packages = _sdk_packages(repo_root)
+    core_input = _installed_core_input(expected_python_abi=expected_python_abi)
+    if core_input is None:
+        if not any(package.source == "installed-core" for package in packages):
+            return packages
+        raise RuntimeError(
+            f"{CORE_SDK_ENV} is required: installed Core packages are external inputs"
+        )
+    core_distributions = {
+        distribution.lower().replace("_", "-")
+        for distribution in core_input.distributions
+    }
+    required_core_distributions = {
+        package.distribution.lower().replace("_", "-")
+        for package in packages
+        if package.source == "installed-core"
+    }
+    missing = sorted(required_core_distributions - core_distributions)
+    if missing:
+        raise RuntimeError(
+            "installed Core SDK is missing required Python distributions: "
+            + ", ".join(missing)
+        )
+    return [package for package in packages if package.source == "repository"]
+
+
+def _composed_sdk_wheel_count(
+    repo_root: Path, *, expected_python_abi: PythonAbiIdentity
+) -> int:
+    core_input = _installed_core_input(expected_python_abi=expected_python_abi)
+    return len(
+        _source_built_sdk_packages(
+            repo_root,
+            expected_python_abi=expected_python_abi,
+        )
+    ) + (len(core_input.distributions) if core_input is not None else 0)
 
 
 def _sdk_application_payloads(repo_root: Path):
@@ -192,18 +258,21 @@ def _powershell_executable() -> str:
 
 def _stage_script(repo_root: Path, basename: str) -> list[str]:
     script_name = basename.removeprefix("build-sdk-")
-    script_root = repo_root / "scripts" / "build"
+    suffix = ".ps1" if _is_windows() else ".sh"
+    modern = repo_root / "scripts" / "build" / f"{script_name}{suffix}"
+    legacy = repo_root / f"{basename}{suffix}"
+    script = modern if modern.is_file() else legacy
     if _is_windows():
         return [
             _powershell_executable(),
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(script_root / f"{script_name}.ps1"),
+            str(script),
         ]
     if basename == "build-sdk-csharp":
-        return ["bash", str(script_root / f"{script_name}.sh")]
-    return [str(script_root / f"{script_name}.sh")]
+        return ["bash", str(script)]
+    return [str(script)]
 
 
 def _nanobind_error() -> str | None:
@@ -572,12 +641,16 @@ def install_python_packages(
         return 1
     try:
         profile = _active_sdk_profile(repo_root)
+        core_input = _installed_core_input(expected_python_abi=target_python_abi)
         write_python_runtime_manifest(
             repo_root,
             sdk_prefix,
             bundled_site_packages,
             runtime_python_abi=target_python_abi,
             packages=_sdk_packages(repo_root),
+            additional_local_distributions=(
+                core_input.distributions if core_input is not None else ()
+            ),
             runtime_lock_relative=profile.runtime_lock,
         )
     except RuntimeError as error:
@@ -898,7 +971,10 @@ def _install_prepared_runtime_wheels(
             python_abi=python_abi,
             supported_tags=supported_wheel_tags(build_python),
         )
-        expected_local_count = len(_sdk_packages(repo_root))
+        expected_local_count = _composed_sdk_wheel_count(
+            repo_root,
+            expected_python_abi=python_abi,
+        )
         validate_local_wheel_artifact_set(
             local_wheels,
             sdk_prefix=sdk_prefix,
@@ -962,14 +1038,17 @@ def _sdk_valid(path: Path) -> bool:
 
 
 def _resolve_sdk_prefix(repo_root: Path, sdk_prefix: Path) -> Path:
+    # An explicit orchestration output wins over the SDK selected by the
+    # launcher which happens to host the build frontend. Domain builds run the
+    # frontend from Core but publish and resolve artifacts in their own prefix.
+    if _sdk_valid(sdk_prefix):
+        return sdk_prefix
     env_sdk = os.environ.get("TERMIN_SDK")
     if env_sdk:
         resolved = Path(env_sdk)
         if not _sdk_valid(resolved):
             raise RuntimeError(f"TERMIN_SDK={resolved} is set but does not contain lib/")
         return resolved
-    if _sdk_valid(sdk_prefix):
-        return sdk_prefix
     if _is_windows():
         local_app_data = os.environ.get("LOCALAPPDATA")
         if local_app_data:
@@ -1425,29 +1504,61 @@ def _build_local_package_wheels(
     wheel_dir: Path,
     build_python: Path,
 ) -> int:
-    return build_local_wheel_artifact_set(
+    python_abi = PythonAbiIdentity.from_runtime_probe(
+        _python_version_and_paths(str(build_python)),
+        context="SDK wheel build Python",
+    )
+    packages = _source_built_sdk_packages(
+        repo_root,
+        expected_python_abi=python_abi,
+    )
+    result = build_local_wheel_artifact_set(
         repo_root=repo_root,
         sdk_prefix=termin_sdk,
         bindings_dir=bindings_dir,
         wheel_dir=wheel_dir.resolve(),
         build_python=build_python,
-        packages=_sdk_packages(repo_root),
+        packages=packages,
         run=_run,
         clear_build_caches=_clear_python_package_build_caches,
     )
+    if result != 0:
+        return result
+    core_input = _installed_core_input(expected_python_abi=python_abi)
+    if core_input is None:
+        return 0
+    try:
+        compose_local_wheel_artifact_set(
+            wheel_dir,
+            ((core_input.root / "wheels", core_input.root, len(core_input.distributions)),),
+            wheel_dir,
+            sdk_prefix=termin_sdk,
+            expected_primary_wheel_count=len(packages),
+        )
+    except (LocalWheelArtifactError, OSError) as error:
+        print(
+            f"ERROR: cannot compose Core and domain wheel artifacts: {error}",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 def _publish_runtime_wheelhouse(repo_root: Path, sdk_prefix: Path) -> int:
     _, local_wheels = _runtime_wheel_dirs(repo_root)
     wheel_dir = sdk_prefix / "wheels"
     try:
+        artifact_manifest = ArtifactManifest.load(sdk_prefix / SDK_MANIFEST_NAME)
         publish_local_wheel_artifact_set(
             local_wheels,
             wheel_dir,
             sdk_prefix=sdk_prefix,
-            expected_wheel_count=len(_sdk_packages(repo_root)),
+            expected_wheel_count=_composed_sdk_wheel_count(
+                repo_root,
+                expected_python_abi=artifact_manifest.python_abi,
+            ),
         )
-    except (LocalWheelArtifactError, OSError) as error:
+    except (ArtifactManifestError, LocalWheelArtifactError, OSError, RuntimeError) as error:
         print(f"ERROR: failed to publish SDK wheelhouse: {error}", file=sys.stderr)
         return 1
     print(f"Published canonical SDK wheelhouse: {wheel_dir}")
