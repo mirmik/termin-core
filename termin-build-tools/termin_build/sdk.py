@@ -67,7 +67,11 @@ from .sdk_python_layout import (
     resolve_sdk_python_layout,
 )
 from .sdk_capabilities import write_android_capabilities, write_desktop_capabilities
-from .sdk_composition import InstalledSdkInput, load_installed_sdk_input
+from .sdk_composition import (
+    InstalledSdkInput,
+    compose_installed_sdk,
+    load_installed_sdk_input,
+)
 from .product_manifest import load_product_manifest
 from .sdk_profiles import (
     SdkProfile,
@@ -2151,6 +2155,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_parser.add_argument("--build-type", default="Release")
 
+    compose_parser = subparsers.add_parser(
+        "compose-sdk",
+        help="Compose a standalone SDK and one or more thin SDK layers.",
+    )
+    compose_parser.add_argument("--base-sdk", type=Path, required=True)
+    compose_parser.add_argument(
+        "--layer-sdk", type=Path, action="append", required=True
+    )
+    compose_parser.add_argument("--output", type=Path, required=True)
+
     import_gate_parser = subparsers.add_parser(
         "verify-python-import-graph",
         help="Import the installed SDK graph and require the GIL to remain disabled.",
@@ -2329,6 +2343,18 @@ def main(argv: list[str] | None = None) -> int:
         build_dir = _build_dir(repo_root, args.build_type)
         sdk_prefix = _sdk_prefix(repo_root)
         return verify_sdk(sdk_prefix=sdk_prefix, build_dir=build_dir)
+    if args.command == "compose-sdk":
+        try:
+            output = compose_installed_sdk(
+                base_root=args.base_sdk,
+                layer_roots=tuple(args.layer_sdk),
+                output_root=args.output,
+            )
+        except (OSError, RuntimeError) as error:
+            print(f"ERROR: cannot compose installed SDK: {error}", file=sys.stderr)
+            return 1
+        print(f"Composed SDK: {output.parent}")
+        return 0
     if args.command == "verify-python-import-graph":
         sdk_prefix = (args.sdk_prefix or _sdk_prefix(repo_root)).resolve()
         product = load_installed_sdk_product(sdk_prefix)
