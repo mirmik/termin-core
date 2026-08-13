@@ -45,3 +45,13 @@ tasks:
     platforms: [linux]
     cmds:
       - ./scripts/build/web.sh {{.CLI_ARGS}}
+
+  docs:build:
+    desc: Build the documentation site strictly
+    cmds:
+      - '{{if eq OS "windows"}}python -m mkdocs build --strict{{else}}python3 -m mkdocs build --strict{{end}}'
+
+  docs:serve:
+    desc: Serve the documentation with live reload
+    cmds:
+      - '{{if eq OS "windows"}}python -m mkdocs serve{{else}}python3 -m mkdocs serve{{end}}'

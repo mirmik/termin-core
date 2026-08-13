@@ -2,8 +2,8 @@
 
 Date: 2026-08-13
 
-Status: accepted target architecture. The physical repository split is not yet
-complete. The first implementation step is extraction of `termin-core`.
+Status: accepted architecture. The first physical extraction, `termin-core`,
+is complete; the remaining domain repositories are extracted incrementally.
 
 Implementation plan:
 
@@ -11,7 +11,7 @@ Implementation plan:
 
 Earlier analysis:
 
-- [Repository and SDK split](../analysis/2026-08-07-repository-and-sdk-split.md)
+- [Repository and SDK split][earlier-analysis]
 
 The earlier analysis remains useful as an inventory, but its single
 `termin-platform` ownership model is superseded by this decision. In particular,
@@ -31,11 +31,13 @@ independent domain repositories:
              Graphics pack    Physics pack   Engine pack
                      \         |         /
                       \        |        /
-                       deterministic composition
+deterministic composition
                                 |
                                 v
                      product SDKs and applications
 ```
+
+[earlier-analysis]: https://github.com/mirmik/termin/blob/master/docs/analysis/2026-08-07-repository-and-sdk-split.md
 
 The intended repositories are coarse product/domain boundaries, not one git
 repository per library. `termin-core`, `termin-graphics`, `termin-physics` and

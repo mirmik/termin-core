@@ -1,0 +1,55 @@
+site_name: Termin Core
+site_description: Нижний, переносимый и проверяемый слой экосистемы Termin
+site_url: https://mirmik.github.io/termin-core/
+repo_url: https://github.com/mirmik/termin-core
+repo_name: mirmik/termin-core
+
+exclude_docs: |
+  taskboard-guidelines.md
+not_in_nav: |
+  plans/*
+
+theme:
+  name: material
+  language: ru
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: termin-day
+      toggle:
+        icon: material/weather-night
+        name: Переключить на тёмную сторону
+    - media: "(prefers-color-scheme: dark)"
+      scheme: termin-night
+      toggle:
+        icon: material/weather-sunny
+        name: Вернуться к дневному свету
+
+nav:
+  - Вход: index.md
+  - Первый выезд: getting-started.md
+  - Что в чемодане: toolbox.md
+  - Жизнь за пределами checkout: using-the-sdk.md
+  - Пограничная служба: boundaries.md
+  - Сборочная система: build-system.md
+  - Архитектурная граница: architecture/2026-08-13-core-domain-repositories.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css
+
+copyright: Termin Core — скучная инфраструктура, которой позволено иметь хороший слог.

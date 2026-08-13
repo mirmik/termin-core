@@ -9,6 +9,11 @@ Core deliberately contains no graphics, image, mesh, asset, scene, physics,
 editor or engine facilities. Domain repositories consume a versioned installed
 Core SDK; sibling source checkouts are not a supported dependency mechanism.
 
+The human-oriented guide lives at
+[mirmik.github.io/termin-core](https://mirmik.github.io/termin-core/). It starts
+with the shape and intent of the library; the repository README remains the
+short operational reference.
+
 ## Build
 
 The repository is one product, so there is no SDK profile or graphics-backend
@@ -64,3 +69,15 @@ task test
 
 See [the repository boundary](docs/architecture/2026-08-13-core-domain-repositories.md)
 and [the extraction plan](docs/plans/2026-08-13-termin-core-repository-extraction.md).
+
+## Documentation
+
+Install the pinned documentation dependency and run the local site:
+
+```console
+python3 -m pip install -r requirements-docs.txt
+task docs:serve
+```
+
+`task docs:build` performs the same strict build used by the GitHub Pages
+workflow.

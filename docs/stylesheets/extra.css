@@ -1,0 +1,43 @@
+[data-md-color-scheme="termin-day"] {
+  --md-primary-fg-color: #312e2a;
+  --md-primary-fg-color--light: #514c45;
+  --md-primary-fg-color--dark: #171614;
+  --md-accent-fg-color: #b14d2f;
+  --md-default-bg-color: #f5f0e6;
+  --md-code-bg-color: #e9e1d3;
+}
+
+[data-md-color-scheme="termin-night"] {
+  color-scheme: dark;
+  --md-primary-fg-color: #171614;
+  --md-primary-fg-color--light: #312e2a;
+  --md-primary-fg-color--dark: #0d0c0b;
+  --md-accent-fg-color: #ef8b61;
+  --md-default-fg-color: hsla(36, 24%, 90%, 0.92);
+  --md-default-bg-color: #191817;
+  --md-code-bg-color: #262321;
+  --md-typeset-a-color: #ef8b61;
+}
+
+.termin-lead {
+  max-width: 46rem;
+  margin: 1.2rem 0 2rem;
+  padding-left: 1rem;
+  border-left: 0.22rem solid var(--md-accent-fg-color);
+  font-size: 1.22rem;
+  line-height: 1.55;
+}
+
+.md-typeset h1 {
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.md-typeset h2 {
+  margin-top: 2.1em;
+}
+
+.md-typeset blockquote {
+  color: inherit;
+  border-left-color: var(--md-accent-fg-color);
+}
