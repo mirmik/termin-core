@@ -221,8 +221,9 @@ def test_windows_dry_run_uses_powershell_stages_and_windows_python_layout(
     output = capsys.readouterr().out
     assert result == 0
     assert "pwsh.exe -ExecutionPolicy Bypass -File" in output
-    assert "build-sdk-bindings.ps1 --profile=full --no-parallel" in output
-    assert "build-sdk-csharp.ps1 --profile=full --no-parallel" in output
+    normalized = output.replace("\\", "/")
+    assert "scripts/build/bindings.ps1 --profile=full --no-parallel" in normalized
+    assert "scripts/build/csharp.ps1 --profile=full --no-parallel" in normalized
     assert "sdk/python/Lib/site-packages" in output.replace("\\", "/")
 
 
@@ -247,8 +248,8 @@ def test_linux_sdk_build_skips_csharp_unless_requested(tmp_path, monkeypatch, ca
 
     output = capsys.readouterr().out
     assert result == 0
-    assert "build-sdk-bindings.sh" in output
-    assert "build-sdk-csharp.sh" not in output
+    assert "scripts/build/bindings.sh" in output
+    assert "scripts/build/csharp.sh" not in output
     assert "Skipping C# bindings (use --csharp on Linux)." in output
 
 
@@ -278,12 +279,14 @@ def test_linux_sdk_build_can_request_csharp(tmp_path, monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert result == 0
-    assert "build-sdk-csharp.sh --profile=full" in output
+    assert "scripts/build/csharp.sh --profile=full" in output
 
 
 def test_linux_csharp_stage_accepts_forwarded_profiles() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    csharp_script = (repo_root / "build-sdk-csharp.sh").read_text(encoding="utf-8")
+    csharp_script = (repo_root / "scripts/build/csharp.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert '[[ "$arg" == --profile=* ]]' in csharp_script
     assert 'full|plot-d3d11)' in csharp_script
@@ -292,8 +295,12 @@ def test_linux_csharp_stage_accepts_forwarded_profiles() -> None:
 
 def test_csharp_build_entrypoints_reset_generated_bindings() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    linux_script = (repo_root / "build-sdk-csharp.sh").read_text(encoding="utf-8")
-    windows_script = (repo_root / "build-sdk-csharp.ps1").read_text(encoding="utf-8")
+    linux_script = (repo_root / "scripts/build/csharp.sh").read_text(
+        encoding="utf-8"
+    )
+    windows_script = (repo_root / "scripts/build/csharp.ps1").read_text(
+        encoding="utf-8"
+    )
 
     assert 'find "$generated_dir" -maxdepth 1 -type f -delete' in linux_script
     assert "Get-ChildItem -Path $generatedDir -File" in windows_script
@@ -325,13 +332,14 @@ def test_graphics_sdk_profile_selects_chart_capable_native_and_csharp_stages(
 
     output = capsys.readouterr().out
     assert result == 0
-    assert "build-sdk-bindings.ps1 --profile=graphics --no-sdl" in output
-    assert "build-sdk-csharp.ps1 --profile=plot-d3d11 --no-sdl" in output
+    normalized = output.replace("\\", "/")
+    assert "scripts/build/bindings.ps1 --profile=graphics --no-sdl" in normalized
+    assert "scripts/build/csharp.ps1 --profile=plot-d3d11 --no-sdl" in normalized
 
 
 def test_windows_bindings_keep_d3d11_shader_artifacts_without_opengl() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    windows_script = (repo_root / "build-sdk-bindings.ps1").read_text(
+    windows_script = (repo_root / "scripts/build/bindings.ps1").read_text(
         encoding="utf-8"
     )
 
@@ -348,10 +356,10 @@ def test_windows_bindings_keep_d3d11_shader_artifacts_without_opengl() -> None:
 
 def test_bindings_entrypoints_expose_core_profile_contract() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    linux_script = (repo_root / "build-sdk-bindings.sh").read_text(
+    linux_script = (repo_root / "scripts/build/bindings.sh").read_text(
         encoding="utf-8"
     )
-    windows_script = (repo_root / "build-sdk-bindings.ps1").read_text(
+    windows_script = (repo_root / "scripts/build/bindings.ps1").read_text(
         encoding="utf-8"
     )
 

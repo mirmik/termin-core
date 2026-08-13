@@ -65,8 +65,8 @@ def test_production_configuration_has_no_legacy_python_runtime() -> None:
         REPO_ROOT / ".github/workflows",
         REPO_ROOT / "cmake",
         REPO_ROOT / "CMakeLists.txt",
-        REPO_ROOT / "build-sdk-bindings.sh",
-        REPO_ROOT / "build-sdk-bindings.ps1",
+        REPO_ROOT / "scripts/build/bindings.sh",
+        REPO_ROOT / "scripts/build/bindings.ps1",
         REPO_ROOT / "termin-app",
         REPO_ROOT / "termin-nanobind-sdk",
     ]

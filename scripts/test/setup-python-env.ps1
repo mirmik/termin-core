@@ -2,7 +2,7 @@
 # Create checkout-local test tooling and a source overlay over bundled SDK Python.
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")).Path
 . (Join-Path $ScriptDir "scripts\Normalize-WindowsSdkPermissions.ps1")
 $Force = $false
 
@@ -10,7 +10,7 @@ foreach ($arg in $args) {
     if ($arg -eq "--force" -or $arg -eq "-f") {
         $Force = $true
     } elseif ($arg -eq "--help" -or $arg -eq "-h") {
-        Write-Host "Usage: .\setup-sdk-python-env.ps1 [--force]"
+        Write-Host "Usage: .\scripts\test\setup-python-env.ps1 [--force]"
         exit 0
     } else {
         throw "Unknown argument: $arg"
@@ -36,11 +36,11 @@ $TestToolsPython = if ($env:TERMIN_TEST_TOOLS_PYTHON) {
 }
 
 if (-not (Test-Path $SdkPython -PathType Leaf)) {
-    throw "Isolated SDK Python launcher is missing: $SdkPython. Run .\build-sdk.ps1 first."
+    throw "Isolated SDK Python launcher is missing: $SdkPython. Run task build first."
 }
 
 if (-not (Test-Path $TestToolsPython -PathType Leaf)) {
-    throw "Pinned SDK Python build frontend is missing: $TestToolsPython. Run .\build-sdk.ps1 first."
+    throw "Pinned SDK Python build frontend is missing: $TestToolsPython. Run task build first."
 }
 $EnvironmentBootstrap = "import sys; sys.path.insert(0, sys.argv.pop(1)); from termin_build.python_test_environment import main; raise SystemExit(main())"
 $PrepareArgs = @(

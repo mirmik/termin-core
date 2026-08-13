@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 # Run C/C++ test suites through the SDK's top-level CMake graph.
-# The default build directory is shared with build-sdk.ps1 so native product
+# The default build directory is shared with task build so native product
 # libraries and bundled third-party dependencies are reused incrementally.
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")).Path
 . (Join-Path $ScriptDir "scripts\Normalize-WindowsBuildEnvironment.ps1")
 . (Join-Path $ScriptDir "scripts\Invoke-CMakeBuild.ps1")
 Normalize-WindowsBuildEnvironment
@@ -49,7 +49,7 @@ function Test-VulkanSdkAvailable {
 }
 
 function Show-Help {
-    Write-Host "Usage: .\run-tests-cpp.ps1 [OPTIONS]"
+    Write-Host "Usage: .\scripts\test\cpp.ps1 [OPTIONS]"
     Write-Host ""
     Write-Host "By default this runs the working CTest set and does not build"
     Write-Host "tests that create windows/GL contexts. Use --full to include them."
@@ -159,7 +159,7 @@ $PythonForCMake = if ($env:PYTHON_BIN) {
     Join-Path $ScriptDir "build\python-runtime\build-env\Scripts\python.exe"
 }
 if (-not (Test-Path $PythonForCMake -PathType Leaf)) {
-    Write-Error "Pinned SDK Python is required for CMake test configuration: $PythonForCMake. Run .\build-sdk.ps1 first."
+    Write-Error "Pinned SDK Python is required for CMake test configuration: $PythonForCMake. Run task build first."
     exit 1
 }
 

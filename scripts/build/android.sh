@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 android_abi="${ANDROID_ABI:-arm64-v8a}"
 android_api="${ANDROID_PLATFORM:-android-26}"
 ndk_root="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"

@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 # Build and install Python/nanobind bindings through the top-level CMake graph.
-# This mirrors build-sdk-bindings.sh for Windows/PowerShell.
+# This mirrors scripts/build/bindings.sh for Windows/PowerShell.
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")).Path
 . (Join-Path $ScriptDir "scripts\Normalize-WindowsBuildEnvironment.ps1")
 . (Join-Path $ScriptDir "scripts\Invoke-CMakeBuild.ps1")
 Normalize-WindowsBuildEnvironment
@@ -26,7 +26,7 @@ $BuildJobs = if ($env:BUILD_JOBS) { [int]$env:BUILD_JOBS } else { [Environment]:
 $CmakeGeneratorName = if ($env:CMAKE_GENERATOR_NAME) { $env:CMAKE_GENERATOR_NAME } elseif ($env:TERMIN_CMAKE_GENERATOR) { $env:TERMIN_CMAKE_GENERATOR } else { $null }
 
 function Show-Help {
-    Write-Host "Usage: .\build-sdk-bindings.ps1 [OPTIONS]"
+    Write-Host "Usage: .\scripts\build\bindings.ps1 [OPTIONS]"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  --debug, -d       Debug build"

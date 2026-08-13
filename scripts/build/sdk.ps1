@@ -2,7 +2,7 @@
 # Build the standalone Termin Core SDK through the shared Python orchestrator.
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")).Path
 . (Join-Path $ScriptDir "scripts\Normalize-WindowsSdkPermissions.ps1")
 
 $pythonCommand = $null

@@ -12,17 +12,16 @@ Core SDK; sibling source checkouts are not a supported dependency mechanism.
 ## Build
 
 The repository is one product, so there is no SDK profile or graphics-backend
-selection:
+selection. [Task](https://taskfile.dev/) is the public command interface on
+Linux and Windows:
 
-```bash
-./build-sdk.sh
+```console
+task --list
+task build
 ```
 
-On Windows:
-
-```powershell
-.\build-sdk.ps1
-```
+Task selects the matching shell or PowerShell implementation. The launchers
+under `scripts/build/` remain available as low-level manual fallbacks.
 
 The result is written to `sdk/` and contains installed CMake packages, headers,
 libraries, the isolated `bin/termin_python` launcher, Core wheels, provenance
@@ -33,9 +32,9 @@ Native-only platform SDKs are separate products. They contain static Core
 libraries, headers and installed CMake packages, but no host Python runtime or
 wheels:
 
-```bash
-./build-sdk-android.sh --ndk /absolute/path/to/android-ndk
-./build-sdk-web.sh --setup
+```console
+task build:android -- --ndk /absolute/path/to/android-ndk
+task build:web -- --setup
 ```
 
 Android output is written to `sdk-platform/android/<abi>/`, Web output to
@@ -46,17 +45,16 @@ a host, Android or Web Core SDK is never substituted for another platform.
 
 Verify installed external consumption and relocation with:
 
-```bash
-./sdk/bin/termin_python -I scripts/smoke-installed-core-consumers --sdk-root sdk
-./sdk/bin/termin_python -m termin_build.relocated_sdk_smoke --sdk-root sdk
+```console
+task smoke
 ```
 
-Run the repository tests through `./run-tests.sh` after initializing the one
+Run the repository tests through `task test` after initializing the one
 test-only submodule:
 
-```bash
+```console
 git submodule update --init termin-thirdparty/guard
-./run-tests.sh
+task test
 ```
 
 See [the repository boundary](docs/architecture/2026-08-13-core-domain-repositories.md)

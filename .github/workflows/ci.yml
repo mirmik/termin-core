@@ -11,8 +11,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.51.1
       - name: Build and test standalone Core
-        run: ./run-tests.sh
+        run: task test
       - name: Publish Linux Core SDK input
         uses: actions/upload-artifact@v4
         with:
@@ -27,9 +30,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.51.1
       - name: Build and test standalone Core
         shell: pwsh
-        run: .\run-tests.ps1
+        run: task test
       - name: Publish Windows Core SDK input
         uses: actions/upload-artifact@v4
         with:
@@ -42,8 +48,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.51.1
       - name: Build verified Android Core SDK
-        run: ./build-sdk-android.sh --ndk "$ANDROID_NDK_LATEST_HOME"
+        run: task build:android -- --ndk "$ANDROID_NDK_LATEST_HOME"
       - name: Publish Android Core SDK input
         uses: actions/upload-artifact@v4
         with:
@@ -56,13 +65,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.51.1
       - name: Cache pinned Emscripten toolchain
         uses: actions/cache@v4
         with:
           path: build/toolchains/emsdk
           key: termin-core-emsdk-${{ hashFiles('build-system/emscripten-version.txt') }}
       - name: Build verified Web Core SDK
-        run: ./build-sdk-web.sh --setup
+        run: task build:web -- --setup
       - name: Publish Web Core SDK input
         uses: actions/upload-artifact@v4
         with:

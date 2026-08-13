@@ -4,22 +4,22 @@
 # Uses the isolated bundled SDK Python plus a checkout-local source overlay.
 #
 # Usage:
-#   .\run-tests-python.ps1
-#   .\run-tests-python.ps1 --full
-#   .\run-tests-python.ps1 --jobs 4
-#   .\run-tests-python.ps1 termin-app/tests/test_project_file_watcher.py -q
+#   .\scripts\test\python.ps1
+#   .\scripts\test\python.ps1 --full
+#   .\scripts\test\python.ps1 --jobs 4
+#   .\scripts\test\python.ps1 termin-app/tests/test_project_file_watcher.py -q
 # Selected pytest-target runs skip the repo-wide Python lint suite.
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")).Path
 . (Join-Path $ScriptDir "scripts\Normalize-WindowsSdkPermissions.ps1")
 $PytestTargets = New-Object System.Collections.Generic.List[string]
 $Full = $false
 $PytestJobs = if ($env:TERMIN_PYTEST_JOBS) { $env:TERMIN_PYTEST_JOBS } else { "1" }
 
 function Show-Help {
-    Write-Host "Usage: .\run-tests-python.ps1 [pytest-target ...]"
+    Write-Host "Usage: .\scripts\test\python.ps1 [pytest-target ...]"
     Write-Host ""
     Write-Host "  (no flags)  Use SDK Python + checkout overlay and run working tests"
     Write-Host "  --full      Include pytest tests marked full"
@@ -34,7 +34,7 @@ while ($index -lt $args.Count) {
     $arg = $args[$index]
     $index += 1
     if ($arg -eq "--no-venv") {
-        Write-Error "--no-venv is no longer supported; run .\setup-sdk-python-env.ps1 first."
+        Write-Error "--no-venv is no longer supported; run .\scripts\test\setup-python-env.ps1 first."
         exit 1
     } elseif ($arg -eq "--full") {
         $Full = $true
@@ -94,7 +94,7 @@ if (-not (Test-Path $PythonBin -PathType Leaf)) {
     throw "SDK Python launcher is missing: $PythonBin"
 }
 if (-not (Test-Path $OverlayManifest -PathType Leaf)) {
-    throw "Python test overlay is missing: $OverlayManifest. Run .\setup-sdk-python-env.ps1 first."
+    throw "Python test overlay is missing: $OverlayManifest. Run .\scripts\test\setup-python-env.ps1 first."
 }
 $EnvironmentRoot = Split-Path -Parent $OverlayManifest
 $EnvironmentBootstrap = "import sys; sys.path.insert(0, sys.argv.pop(1)); from termin_build.python_test_environment import main; raise SystemExit(main())"
@@ -120,7 +120,7 @@ if ($pathEntries.Count -gt 0) {
 # Shader compiler tests must exercise the executable produced by the current
 # C++ test graph, never a potentially stale SDK copy.
 if (-not $env:TERMIN_SHADERC) {
-    throw "TERMIN_SHADERC is not set. Run .\run-tests.ps1 so it can select the compiler from the active CMake graph, or set TERMIN_SHADERC explicitly."
+    throw "TERMIN_SHADERC is not set. Run task test so it can select the compiler from the active CMake graph, or set TERMIN_SHADERC explicitly."
 }
 if (-not (Test-Path $env:TERMIN_SHADERC -PathType Leaf)) {
     throw "TERMIN_SHADERC does not point to a file: $env:TERMIN_SHADERC"

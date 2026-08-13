@@ -431,8 +431,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {error}", file=sys.stderr)
         if args.command == "validate":
             print(
-                "Run ./setup-sdk-python-env.sh "
-                "(or .\\setup-sdk-python-env.ps1 on Windows) to rebuild it.",
+                "Run scripts/test/setup-python-env.sh "
+                "(or scripts\\test\\setup-python-env.ps1 on Windows) to rebuild it.",
                 file=sys.stderr,
             )
         return 1

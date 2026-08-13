@@ -2,7 +2,7 @@
 # Build and verify the complete standalone Core repository.
 
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR"
 
 if [[ ! -f termin-thirdparty/guard/guard_main.h ]]; then
@@ -11,7 +11,7 @@ if [[ ! -f termin-thirdparty/guard/guard_main.h ]]; then
     exit 1
 fi
 
-./build-sdk.sh
+./scripts/build/sdk.sh
 
 cmake -S . -B build/Tests \
     -DCMAKE_BUILD_TYPE=Release \
@@ -21,7 +21,7 @@ cmake -S . -B build/Tests \
 cmake --build build/Tests --parallel "${BUILD_JOBS:-$(nproc)}"
 ctest --test-dir build/Tests --output-on-failure
 
-./setup-sdk-python-env.sh
+./scripts/test/setup-python-env.sh
 ./sdk/bin/termin_python \
     --termin-overlay build/python-envs/test/overlay.json \
     -m pytest -q \
@@ -41,6 +41,7 @@ ctest --test-dir build/Tests --output-on-failure
     termin-build-tools/tests/test_sdk_profiles.py \
     termin-build-tools/tests/test_sdk_release.py \
     termin-build-tools/tests/test_source_size_policy.py \
+    termin-build-tools/tests/test_task_entrypoints.py \
     termin-build-tools/tests/test_wheelhouse.py
 
 ./sdk/bin/termin_python -I scripts/smoke-installed-core-consumers --sdk-root sdk

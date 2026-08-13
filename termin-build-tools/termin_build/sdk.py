@@ -191,17 +191,19 @@ def _powershell_executable() -> str:
 
 
 def _stage_script(repo_root: Path, basename: str) -> list[str]:
+    script_name = basename.removeprefix("build-sdk-")
+    script_root = repo_root / "scripts" / "build"
     if _is_windows():
         return [
             _powershell_executable(),
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(repo_root / f"{basename}.ps1"),
+            str(script_root / f"{script_name}.ps1"),
         ]
     if basename == "build-sdk-csharp":
-        return ["bash", str(repo_root / f"{basename}.sh")]
-    return [str(repo_root / f"{basename}.sh")]
+        return ["bash", str(script_root / f"{script_name}.sh")]
+    return [str(script_root / f"{script_name}.sh")]
 
 
 def _nanobind_error() -> str | None:

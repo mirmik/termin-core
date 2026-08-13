@@ -1,11 +1,11 @@
 #!/bin/bash
 # Run C/C++ test suites through the SDK's top-level CMake graph.
-# The default build directory is shared with build-sdk.sh so native product
+# The default build directory is shared with task build so native product
 # libraries and bundled third-party dependencies are reused incrementally.
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SDK_PREFIX="${SDK_PREFIX:-$SCRIPT_DIR/sdk}"
 BUILD_TYPE="Release"
 BUILD_JOBS="${BUILD_JOBS:-$(nproc)}"

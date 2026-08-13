@@ -435,7 +435,7 @@ $apkOutputDir = Join-Path $GradleBuildRoot "app\outputs\apk\$Variant"
 
 if (-not $IsQuest) {
     if (-not (Test-Path -LiteralPath $HostPython -PathType Leaf)) {
-        throw "Termin host Python was not found: $HostPython. Run build-sdk.ps1 first or set TERMIN_HOST_PYTHON."
+        throw "Termin host Python was not found: $HostPython. Run task build first or set TERMIN_HOST_PYTHON."
     }
     $stagedAssetsDir = Join-Path $GradleBuildRoot "runtime-assets"
     & $HostPython -m termin.project_build.android_runtime_assets `

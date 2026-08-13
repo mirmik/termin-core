@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 version="$(tr -d '[:space:]' < "$repo_root/build-system/emscripten-version.txt")"
 emsdk_dir="${TERMIN_EMSDK_DIR:-$repo_root/build/toolchains/emsdk}"
 build_dir="${TERMIN_CORE_WEB_BUILD_DIR:-$repo_root/build/platform/web/wasm32}"
@@ -24,7 +24,7 @@ while (($#)); do
 done
 
 if ((setup)); then
-    "$repo_root/setup-web-toolchain.sh"
+    "$repo_root/scripts/build/setup-web-toolchain.sh"
 fi
 emcmake="$emsdk_dir/upstream/emscripten/emcmake"
 emcc="$emsdk_dir/upstream/emscripten/emcc"

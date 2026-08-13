@@ -2,6 +2,10 @@
 
 Date: 2026-08-13
 
+Post-extraction note: the repository command interface was subsequently
+consolidated under `Taskfile.yml`. References below to root build/test scripts
+describe the extraction state at the time of the plan and are historical.
+
 Canonical architecture:
 
 - [Core SDK and domain repository boundary](../architecture/2026-08-13-core-domain-repositories.md)

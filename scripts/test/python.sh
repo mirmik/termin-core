@@ -12,7 +12,7 @@
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PYTEST_TARGETS=()
 FULL=0
 PYTEST_JOBS="${TERMIN_PYTEST_JOBS:-1}"
@@ -36,7 +36,7 @@ while (( $# > 0 )); do
             PYTEST_JOBS="${arg#--jobs=}"
             ;;
         --no-venv)
-            echo "--no-venv is no longer supported; run ./setup-sdk-python-env.sh first." >&2
+            echo "--no-venv is no longer supported; run scripts/test/setup-python-env.sh first." >&2
             exit 1
             ;;
         --help|-h)
@@ -80,12 +80,12 @@ BUILD_TOOLS_ROOT="$SCRIPT_DIR/termin-build-tools"
 TOOLS_REQUIREMENTS="$SCRIPT_DIR/build-system/python-test-requirements.txt"
 if [[ ! -x "$PYTHON_BIN" ]]; then
     echo "ERROR: SDK Python launcher is missing: $PYTHON_BIN" >&2
-    echo "Run ./build-sdk.sh first." >&2
+    echo "Run task build first." >&2
     exit 1
 fi
 if [[ ! -f "$OVERLAY_MANIFEST" ]]; then
     echo "ERROR: Python test overlay is missing: $OVERLAY_MANIFEST" >&2
-    echo "Run ./setup-sdk-python-env.sh first." >&2
+    echo "Run scripts/test/setup-python-env.sh first." >&2
     exit 1
 fi
 ENVIRONMENT_BOOTSTRAP='import sys; sys.path.insert(0, sys.argv.pop(1)); from termin_build.python_test_environment import main; raise SystemExit(main())'
@@ -104,7 +104,7 @@ export LD_LIBRARY_PATH="${SDK_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Shader compiler tests must exercise the executable selected by the top-level
 # runner from the current C++ test graph.
 if [[ -z "${TERMIN_SHADERC:-}" ]]; then
-    echo "ERROR: TERMIN_SHADERC is not set. Run ./run-tests.sh or set it to the compiler produced by the current C++ test graph." >&2
+    echo "ERROR: TERMIN_SHADERC is not set. Run task test or set it to the compiler produced by the current C++ test graph." >&2
     exit 1
 fi
 if [[ ! -x "$TERMIN_SHADERC" ]]; then

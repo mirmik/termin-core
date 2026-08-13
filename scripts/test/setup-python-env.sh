@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_ROOT="${TERMIN_TEST_ENV:-$SCRIPT_DIR/build/python-envs/test}"
 TOOLS_SITE="$ENV_ROOT/site-packages"
 TOOLS_REQUIREMENTS="$SCRIPT_DIR/build-system/python-test-requirements.txt"
@@ -29,13 +29,13 @@ done
 
 if [[ ! -x "$SDK_PYTHON" ]]; then
     echo "ERROR: isolated SDK Python launcher is missing: $SDK_PYTHON" >&2
-    echo "Run ./build-sdk.sh first." >&2
+    echo "Run task build first." >&2
     exit 1
 fi
 
 if [[ ! -x "$TEST_TOOLS_PYTHON" ]]; then
     echo "ERROR: pinned SDK Python build frontend is missing: $TEST_TOOLS_PYTHON" >&2
-    echo "Run ./build-sdk.sh first." >&2
+    echo "Run task build first." >&2
     exit 1
 fi
 
@@ -61,4 +61,4 @@ OVERLAY_BOOTSTRAP='import sys; sys.path.insert(0, sys.argv.pop(1)); from termin_
     --extra-site "$TOOLS_SITE"
 
 echo "SDK-backed Python test environment is ready."
-echo "Run: ./run-tests-python.sh"
+echo "Run: scripts/test/python.sh"

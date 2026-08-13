@@ -66,10 +66,10 @@ def test_resolver_does_not_fall_back_to_unrelated_layout(
 def test_test_runners_have_no_legacy_release_tests_fallback() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     runner_paths = (
-        repo_root / "run-tests.sh",
-        repo_root / "run-tests.ps1",
-        repo_root / "run-tests-python.sh",
-        repo_root / "run-tests-python.ps1",
+        repo_root / "scripts/test/all.sh",
+        repo_root / "scripts/test/all.ps1",
+        repo_root / "scripts/test/python.sh",
+        repo_root / "scripts/test/python.ps1",
     )
 
     for runner_path in runner_paths:
@@ -87,8 +87,8 @@ def test_test_runners_have_no_legacy_release_tests_fallback() -> None:
 def test_central_runners_propagate_window_capability_to_python_planner() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     for suffix in ("sh", "ps1"):
-        central = (repo_root / f"run-tests.{suffix}").read_text(encoding="utf-8")
-        python = (repo_root / f"run-tests-python.{suffix}").read_text(
+        central = (repo_root / "scripts/test" / f"all.{suffix}").read_text(encoding="utf-8")
+        python = (repo_root / "scripts/test" / f"python.{suffix}").read_text(
             encoding="utf-8"
         )
 
@@ -100,20 +100,20 @@ def test_central_runners_propagate_window_capability_to_python_planner() -> None
 
 def test_cpp_runners_build_shader_compiler_before_python_resolution() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    linux_runner = (repo_root / "run-tests-cpp.sh").read_text(encoding="utf-8")
-    windows_runner = (repo_root / "run-tests-cpp.ps1").read_text(encoding="utf-8")
+    linux_runner = (repo_root / "scripts/test/cpp.sh").read_text(encoding="utf-8")
+    windows_runner = (repo_root / "scripts/test/cpp.ps1").read_text(encoding="utf-8")
 
     # Resolving an existing path is not a freshness guarantee.  Both central
     # C++ runners must explicitly build the producer target in the active
-    # graph before run-tests.sh/run-tests.ps1 resolve TERMIN_SHADERC.
+    # graph before the central test launchers resolve TERMIN_SHADERC.
     assert linux_runner.count("--target termin_shaderc") == 1
     assert '$NativeBuildTargets += "termin_shaderc"' in windows_runner
 
 
 def test_cpp_runners_build_exact_planner_selected_targets() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    linux_runner = (repo_root / "run-tests-cpp.sh").read_text(encoding="utf-8")
-    windows_runner = (repo_root / "run-tests-cpp.ps1").read_text(encoding="utf-8")
+    linux_runner = (repo_root / "scripts/test/cpp.sh").read_text(encoding="utf-8")
+    windows_runner = (repo_root / "scripts/test/cpp.ps1").read_text(encoding="utf-8")
 
     assert '--target "${CTEST_BUILD_TARGETS[@]}"' in linux_runner
     assert "$NativeBuildTargets = @($CtestBuildTargets)" in windows_runner

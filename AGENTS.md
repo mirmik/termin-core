@@ -11,14 +11,17 @@ sibling-checkout or source-tree fallbacks.
 
 ## Build and tests
 
-- Build the complete SDK with `./build-sdk.sh` (PowerShell equivalent on
-  Windows). The repository has one product and no SDK profile/backend flags.
-- Run tests through `./run-tests.sh` after initializing
-  `termin-thirdparty/guard`.
+- Use `task` as the public repository command interface (`task --list` shows
+  the available commands). Build the complete SDK with `task build`. The
+  repository has one product and no SDK profile/backend flags.
+- Run tests through `task test` after initializing `termin-thirdparty/guard`.
 - Python tests use `sdk/bin/termin_python` and the checkout overlay prepared by
-  `./setup-sdk-python-env.sh`.
-- Validate the installed boundary with
-  `scripts/smoke-installed-core-consumers` and the relocated SDK smoke.
+  the internal platform launcher under `scripts/test/`.
+- Validate the installed boundary and relocation with `task smoke`.
+
+The scripts under `scripts/build/` and `scripts/test/` are implementation
+details and manual fallback entrypoints. Keep Linux shell and Windows
+PowerShell launchers behaviorally equivalent.
 
 Use `apply_patch` for edits, preserve unrelated work, log failures, avoid
 non-reflective `getattr`/`setattr`/`hasattr`, and do not introduce C/C++

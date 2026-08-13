@@ -2,14 +2,14 @@
 # Build and verify the complete standalone Core repository.
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")).Path
 Set-Location $ScriptDir
 
 if (-not (Test-Path "termin-thirdparty\guard\guard_main.h" -PathType Leaf)) {
     throw "termin-thirdparty/guard is missing; run git submodule update --init termin-thirdparty/guard"
 }
 
-.\build-sdk.ps1 --no-pch
+.\scripts\build\sdk.ps1 --no-pch
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 cmake -S . -B build\Tests `
@@ -22,7 +22,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ctest --test-dir build\Tests -C Release --output-on-failure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-.\setup-sdk-python-env.ps1
+.\scripts\test\setup-python-env.ps1
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 .\sdk\bin\termin_python.exe `
     --termin-overlay build\python-envs\test\overlay.json `
@@ -43,6 +43,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     termin-build-tools\tests\test_sdk_profiles.py `
     termin-build-tools\tests\test_sdk_release.py `
     termin-build-tools\tests\test_source_size_policy.py `
+    termin-build-tools\tests\test_task_entrypoints.py `
     termin-build-tools\tests\test_wheelhouse.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

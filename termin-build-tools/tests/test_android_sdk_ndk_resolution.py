@@ -9,12 +9,12 @@ import pytest
 
 
 pytestmark = pytest.mark.skipif(
-    os.name == "nt", reason="exercises the POSIX build-sdk-android.sh wrapper"
+    os.name == "nt", reason="exercises the POSIX Android build wrapper"
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BUILD_SCRIPT = REPO_ROOT / "build-sdk-android.sh"
+BUILD_SCRIPT = REPO_ROOT / "scripts/build/android.sh"
 
 
 def _ndk(root: Path, name: str) -> Path:

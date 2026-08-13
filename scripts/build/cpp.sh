@@ -5,7 +5,7 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SDK_PREFIX="${SDK_PREFIX:-$SCRIPT_DIR/sdk}"
 BUILD_DIR="${BUILD_DIR:-}"
 
@@ -42,7 +42,7 @@ for arg in "$@"; do
         --no-opengl)   OPENGL_MODE="off" ;;
         --opengl)      OPENGL_MODE="on" ;;
         --help|-h)
-            echo "Usage: $0 [OPTIONS]"
+            echo "Usage: scripts/build/cpp.sh [OPTIONS]"
             echo ""
             echo "Options:"
             echo "  --debug, -d       Debug build"
